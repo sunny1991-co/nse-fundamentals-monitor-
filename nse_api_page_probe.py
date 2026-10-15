@@ -27,3 +27,18 @@ for label, landing, referer in bootstraps:
             except Exception as e: print("JSONERR",label,type(e).__name__,str(e)[:100])
     except Exception as e:
         print("ERROR",label,type(e).__name__,str(e)[:250])
+
+
+print("NSE_QUOTE_PAGE_HTML_PROBE")
+s=requests.Session()
+s.headers.update({"User-Agent":UAS,"Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8","Accept-Language":"en-US,en;q=0.9","Referer":"https://www.nseindia.com/"})
+page_url="https://www.nseindia.com/get-quote/equity/RELIANCE/Reliance-Industries-Limited"
+try:
+    rr=s.get(page_url,timeout=20)
+    print("HTML_PAGE",rr.status_code,len(rr.content),rr.url)
+    low=rr.text.lower()
+    for key in ["industryinfo","basicindustry","macro economic sector","industry","sector","reliance industries limited"]:
+        pos=low.find(key.lower())
+        print("HTML_KEY",key,"FOUND",pos,"CONTEXT",rr.text[max(0,pos-180):pos+450].replace("\n"," ") if pos>=0 else "")
+    print("HTML_SCRIPT_HINTS",__import__("re").findall(r'<script[^>]+src=["\']([^"\']+)',rr.text,flags=__import__("re").I)[:15])
+except Exception as e: print("HTML_ERROR",type(e).__name__,str(e)[:300])
