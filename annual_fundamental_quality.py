@@ -349,7 +349,12 @@ def main():
         roe_pass = truthy_series(roe_recent, lambda x: x >= 15) and roe_values.get("2025-26", 0) >= 15
         roce_pass = truthy_series(roce_recent, lambda x: x >= 15)
         debt_pass = de_latest is not None and de_latest <= 0.5 and get(latest, "Total_Equity_Cr") is not None and get(latest, "Total_Equity_Cr") > 0
-        interest_pass = ic_latest is not None and ic_latest >= 3
+        latest_finance_cost = get(latest, "Finance_Cost_Cr")
+        latest_total_debt = get(latest, "Total_Borrowings_Cr")
+        # If both debt and finance cost are explicitly zero, interest coverage
+        # is not applicable rather than a failure.
+        interest_not_applicable = latest_finance_cost == 0 and latest_total_debt == 0
+        interest_pass = (ic_latest is not None and ic_latest >= 3) or interest_not_applicable
         if not roe_pass:
             blockers.append("ROE_MUST_BE_AT_LEAST_15_PERCENT_IN_LAST_3_YEARS")
         if not roce_pass:
@@ -425,20 +430,25 @@ def main():
     failed = report[~report["Full_Fundamental_Criteria_Pass"].astype(bool)].copy()
     failed.to_csv(GAPS, index=False, na_rep="")
     summary_rows = []
-    for year, df in read_baselines().groupby("Financial_Year"):
+    for year, df in annual.groupby("Financial_Year"):
+        source_verified = df.get("Source_Verification_Status", pd.Series([""] * len(df), index=df.index)).astype(str).eq("NSE_INDEX_AND_XBRL_BASIS_MATCH")
         summary_rows.append({
-            "Financial_Year": year,
-            "Baseline_Rows": len(df),
-            "Unique_Symbols": df["Symbol"].nunique(),
-            "Core_Fields_Complete": int(df["Six_Core_Fields_Complete"].sum()),
-            "NSE_Source_Basis_CrossVerified": int(sum(1 for x in annual.to_dict("records") if x["Financial_Year"] == year and x.get("Year_Data_Quality") == "PASS")),
+            "Financial_Year": str(year),
+            "Rows_Assessed": len(df),
+            "Unique_Symbols": int(df["Symbol"].nunique()),
+            "Six_Core_Fields_Complete": int(df[CORE].notna().all(axis=1).sum()),
+            "NSE_Metadata_XBRL_Basis_Match": int(source_verified.sum()),
+            "Year_Data_Quality_Pass": int(df["Year_Data_Quality"].eq("PASS").sum()),
+            "Rows_Requiring_Data_Review": int(df["Year_Data_Quality"].ne("PASS").sum()),
         })
     summary_rows.append({
         "Financial_Year": "FUNDAMENTAL_SCREEN",
-        "Baseline_Rows": len(report),
-        "Unique_Symbols": report["Symbol"].nunique(),
-        "Core_Fields_Complete": int((report["Two_Year_Baseline_Data_Quality"] == "PASS").sum()),
-        "NSE_Source_Basis_CrossVerified": int(report["Full_Fundamental_Criteria_Pass"].astype(bool).sum()),
+        "Rows_Assessed": len(report),
+        "Unique_Symbols": int(report["Symbol"].nunique()) if not report.empty else 0,
+        "Six_Core_Fields_Complete": int(report["Two_Year_Baseline_Data_Quality"].eq("PASS").sum()) if not report.empty else 0,
+        "NSE_Metadata_XBRL_Basis_Match": 0,
+        "Year_Data_Quality_Pass": int(report["Full_Fundamental_Criteria_Pass"].astype(bool).sum()) if not report.empty else 0,
+        "Rows_Requiring_Data_Review": int(report["Full_Fundamental_Criteria_Pass"].astype(bool).eq(False).sum()) if not report.empty else 0,
     })
     pd.DataFrame(summary_rows).to_csv(SUMMARY, index=False, na_rep="")
     print(f"Annual rows assessed: {len(annual)}; sectors cached: {len(sector_map)}")
