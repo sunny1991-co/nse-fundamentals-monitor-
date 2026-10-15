@@ -23,8 +23,8 @@ LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-f
 PAGE_SIZE = 100
 MAX_PAGES = 300
 LOOKBACK_DAYS = 560
-MAX_NEW_XBRL_PER_RUN = 6000
-PARSER_VERSION = "4"
+MAX_NEW_XBRL_PER_RUN = 9000
+PARSER_VERSION = "5"
 TARGET_BASIS = "Consolidated"
 ANNUAL_QUALITY_FILE = ROOT / "annual_fundamental_quality_report.csv"
 
@@ -167,15 +167,11 @@ def fetch_recent_records(session: requests.Session) -> list[dict]:
         if not items:
             break
         all_records.extend(items)
-        known_dates = [record_publish_date(x) for x in items]
-        known_dates = [d for d in known_dates if d is not None]
         if len(items) < PAGE_SIZE:
             break
-        # NSE's index is newest-first. Stop only when the whole page is old.
-        if len(known_dates) >= max(10, int(0.8 * len(items))) and max(known_dates) < cutoff:
-            print(f"Reached older filings at page {page}; stopping pagination.")
-            break
-        time.sleep(0.12)
+        # Scan every page; revisions and historical quarters are not guaranteed
+        # to remain strictly ordered by publication date in the NSE index.
+        time.sleep(0.08)
     print(f"Indexed {len(all_records)} API records.")
     return all_records
 
