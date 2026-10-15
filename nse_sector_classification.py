@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Cache official NSE equity industry classification for screened symbols."""
+from __future__ import annotations
+
+import time
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+import pandas as pd
+import requests
+
+ROOT = Path(__file__).resolve().parent
+LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
+QUOTE_URL = "https://www.nseindia.com/api/quote-equity"
+MAP_FILE = ROOT / "nse_sector_map.csv"
+MAX_LOOKUPS_PER_RUN = 2500
+REFRESH_DAYS = 60
+RETRY_FAILED_AFTER_DAYS = 7
+
+
+def read_csv(path):
+    if not path.exists() or path.stat().st_size == 0:
+        return pd.DataFrame()
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
+    return df
+
+
+def session_create():
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": LANDING_URL,
+        "X-Requested-With": "XMLHttpRequest",
+    })
+    r = s.get(LANDING_URL, timeout=30)
+    r.raise_for_status()
+    return s
+
+
+def candidate_symbols():
+    files = [
+        ROOT / "FY2425.csv",
+        ROOT / "NSE_FY2025-26_Consolidated_Fundamentals.csv",
+        ROOT / "annual_historical_results.csv",
+    ]
+    symbols = set()
+    for path in files:
+        df = read_csv(path)
+        if "Symbol" in df:
+            symbols.update(x.strip().upper() for x in df["Symbol"].astype(str) if x.strip() and x.strip().lower() != "nan")
+    return sorted(symbols)
+
+
+def fresh_date(value):
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def lookup(s, sym):
+    last = None
+    for attempt in range(3):
+        try:
+            r = s.get(QUOTE_URL, params={"symbol": sym}, timeout=20)
+            if r.status_code in (403, 429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"NSE quote HTTP {r.status_code}")
+            r.raise_for_status()
+            data = r.json()
+            info = data.get("industryInfo") or {}
+            if not any(info.get(k) for k in ("macro", "sector", "industry", "basicIndustry")):
+                raise ValueError("industryInfo missing")
+            return {
+                "Symbol": sym,
+                "Macro_Economic_Sector": info.get("macro", ""),
+                "Sector": info.get("sector", ""),
+                "Industry": info.get("industry", ""),
+                "Basic_Industry": info.get("basicIndustry", ""),
+                "Lookup_Status": "OK",
+                "Lookup_Date": date.today().isoformat(),
+                "Source_URL": f"{QUOTE_URL}?symbol={sym}",
+                "Error": "",
+            }
+        except Exception as exc:
+            last = exc
+            time.sleep(1.0 * (attempt + 1))
+    return {
+        "Symbol": sym, "Macro_Economic_Sector": "", "Sector": "",
+        "Industry": "", "Basic_Industry": "", "Lookup_Status": "ERROR",
+        "Lookup_Date": date.today().isoformat(),
+        "Source_URL": f"{QUOTE_URL}?symbol={sym}", "Error": str(last),
+    }
+
+
+def main():
+    current = read_csv(MAP_FILE)
+    symbols = candidate_symbols()
+    cache = {}
+    if not current.empty and "Symbol" in current:
+        for _, row in current.iterrows():
+            cache[str(row.get("Symbol", "")).upper()] = row.to_dict()
+    to_lookup = []
+    today = date.today()
+    for sym in symbols:
+        old = cache.get(sym)
+        dt = fresh_date(old.get("Lookup_Date")) if old else None
+        status = str(old.get("Lookup_Status", "")) if old else ""
+        max_age = REFRESH_DAYS if status == "OK" else RETRY_FAILED_AFTER_DAYS
+        if old is None or dt is None or (today - dt).days >= max_age:
+            to_lookup.append(sym)
+    to_lookup = to_lookup[:MAX_LOOKUPS_PER_RUN]
+    print(f"Symbols needed: {len(symbols)}; cached: {len(cache)}; lookups this run: {len(to_lookup)}")
+    s = session_create()
+    for i, sym in enumerate(to_lookup, 1):
+        cache[sym] = lookup(s, sym)
+        if i % 100 == 0:
+            print(f"Classified {i}/{len(to_lookup)} symbols")
+        time.sleep(0.06)
+    columns = ["Symbol", "Macro_Economic_Sector", "Sector", "Industry", "Basic_Industry", "Lookup_Status", "Lookup_Date", "Source_URL", "Error"]
+    out = pd.DataFrame([cache[k] for k in sorted(cache)])
+    for col in columns:
+        if col not in out:
+            out[col] = ""
+    out = out[columns].sort_values("Symbol")
+    out.to_csv(MAP_FILE, index=False, na_rep="")
+    success = int(out["Lookup_Status"].eq("OK").sum())
+    errors = int(out["Lookup_Status"].ne("OK").sum())
+    print(f"Sector map saved. Official sector rows={success}; missing/error rows={errors}")
+
+
+if __name__ == "__main__":
+    main()
