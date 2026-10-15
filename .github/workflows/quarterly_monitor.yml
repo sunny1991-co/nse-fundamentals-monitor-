@@ -11,6 +11,7 @@ permissions:
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,5 +27,23 @@ jobs:
       - name: List repository files
         run: ls -la
 
-      - name: Run fundamentals check
+      - name: Validate Python syntax
+        run: python -m py_compile nse_fundamentals_check.py nse_quarterly_monitor.py
+
+      - name: Check annual baseline files
         run: python nse_fundamentals_check.py
+
+      - name: Fetch and compare quarterly fundamentals
+        run: python nse_quarterly_monitor.py
+
+      - name: Commit generated quarterly reports
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quarterly_results.csv quarterly_change_report.csv quarterly_unverified_filings.csv quarterly_processed_filings.csv
+          if git diff --cached --quiet; then
+            echo "No quarterly report changes to commit."
+          else
+            git commit -m "Update NSE quarterly fundamentals reports"
+            git push
+          fi
