@@ -453,6 +453,41 @@ def main() -> None:
     if "Source_URL" not in existing_processed.columns:
         existing_processed["Source_URL"] = ""
     processed_urls = set(existing_processed.loc[existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
+    # Quarterly work is intentionally gated by the complete annual screen.
+    # If that report is unavailable, stop rather than quietly checking every
+    # listed company without the user's required annual-first verification.
+    if not ANNUAL_QUALITY_FILE.exists():
+        raise RuntimeError("Annual quality report is missing; quarterly screening is blocked.")
+    annual_quality = read_csv(ANNUAL_QUALITY_FILE)
+    required_annual_columns = {"Symbol", "Full_Fundamental_Criteria_Pass"}
+    if annual_quality.empty or not required_annual_columns.issubset(annual_quality.columns):
+        raise RuntimeError("Annual quality report is empty/incomplete; quarterly screening is blocked.")
+    eligible_symbols = set(
+        annual_quality.loc[
+            annual_quality["Full_Fundamental_Criteria_Pass"].astype(str).str.lower().isin(["true", "1", "yes"]),
+            "Symbol"
+        ].astype(str).str.strip().str.upper()
+    )
+    print(f"Annual full-screen PASS symbols eligible for quarterly re-verification: {len(eligible_symbols)}")
+    if not eligible_symbols:
+        print("No symbols passed the full annual screen; skipping all quarterly XBRL downloads.")
+        empty_columns = [
+            "Symbol", "Quarter_End", "Reporting_Basis", *VALUE_FIELDS, "Missing_Fields",
+            "Fundamentals_Complete", "Reporting_Type", "Submission_Subtype", "Revision_Date",
+            "Revision_Remark", "Sequence_ID", "Filing_Audit_Status", "Filing_Consolidation_Status",
+            "Filing_Published_At", "Source_URL", "Quarter_Context_Days", "Quarter_Context_IDs",
+            "Instant_Context_IDs", "Basis_Verification",
+        ]
+        save_frame(pd.DataFrame(columns=empty_columns), RESULTS_FILE)
+        save_frame(pd.DataFrame(columns=empty_columns), COMPARE_FILE)
+        save_frame(pd.DataFrame(columns=["Symbol", "Quarter_End", "Source_URL", "Reason", "Submission_Subtype", "Revision_Date"]), UNVERIFIED_FILE)
+        if "Source_URL" not in existing_processed.columns:
+            existing_processed["Source_URL"] = ""
+        if "Parser_Version" not in existing_processed.columns:
+            existing_processed["Parser_Version"] = ""
+        save_frame(existing_processed, PROCESSED_FILE)
+        return
+
     session = make_session()
     index_records = fetch_recent_records(session)
 
@@ -463,7 +498,7 @@ def main() -> None:
         sym = record_symbol(rec)
         qend = record_quarter_end(rec)
         pubdate = record_publish_date(rec)
-        if not url or not sym:
+        if not url or not sym or sym not in eligible_symbols:
             continue
         if (pubdate and pubdate < cutoff) and (not qend or qend < cutoff):
             continue
