@@ -78,3 +78,25 @@ for node in root.iter():
     if local(node.tag).lower()=="natureofreportstandaloneconsolidated":
         basis.append({"value":(node.text or "").strip(),"context":node.attrib.get("contextRef")})
 print("REPORT_BASIS_FACTS",json.dumps(basis,ensure_ascii=False))
+
+print("EARNINGS_AND_CAPEX_TAG_CANDIDATES")
+found=[]
+seen=set()
+needles=("earnings","per share","eps","acquire","purchase","capex","propertyplant","intangible","capitalexpenditure","purchaseproperty","paymentsfor")
+for node in root.iter():
+    name=local(node.tag)
+    low=name.lower()
+    if not any(x in low for x in needles):
+        continue
+    cref=node.attrib.get("contextRef","")
+    if cref not in annual_ids and cref not in instant_ids:
+        continue
+    raw=(node.text or "").strip()
+    if not raw or len(raw)>100:
+        continue
+    key=(name,cref,raw)
+    if key in seen: continue
+    seen.add(key)
+    found.append({"tag":name,"context":cref,"value":raw,"unitRef":node.attrib.get("unitRef","")})
+print(json.dumps(found[:100],ensure_ascii=False)[:14000])
+
