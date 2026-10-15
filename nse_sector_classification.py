@@ -120,7 +120,17 @@ def main():
             to_lookup.append(sym)
     to_lookup = to_lookup[:MAX_LOOKUPS_PER_RUN]
     print(f"Symbols needed: {len(symbols)}; cached: {len(cache)}; lookups this run: {len(to_lookup)}")
-    s = session_create()
+    s = None
+    if to_lookup:
+        try:
+            s = session_create()
+        except requests.RequestException as exc:
+            print(f"NSE session unavailable: {exc}; recording unknown sectors, not approving them.")
+            for sym in to_lookup:
+                cache[sym] = {"Symbol": sym, "Lookup_Status": "ERROR",
+                              "Lookup_Date": today.isoformat(), "Error": str(exc),
+                              "Source_URL": LANDING_URL}
+            to_lookup = []
     consecutive_blocks = 0
     for i, sym in enumerate(to_lookup, 1):
         cache[sym] = lookup(s, sym)
@@ -137,6 +147,7 @@ def main():
     for col in columns:
         if col not in out:
             out[col] = ""
+    out = out.fillna("")
     out = out[columns].sort_values("Symbol")
     out.to_csv(MAP_FILE, index=False, na_rep="")
     success = int(out["Lookup_Status"].eq("OK").sum())
@@ -146,3 +157,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

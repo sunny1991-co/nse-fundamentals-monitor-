@@ -194,7 +194,7 @@ def main():
         else:
             excluded_rows.append(result)
 
-    shortlist = pd.DataFrame(short_rows)
+    shortlist = pd.DataFrame(short_rows, columns=list(result) if len(annual) else ["Symbol", "Final_Fundamental_Criteria_Pass"])
     exclusions = pd.DataFrame(excluded_rows)
     shortlist.to_csv(SHORTLIST_FILE, index=False, na_rep="")
     exclusions.to_csv(EXCLUSIONS_FILE, index=False, na_rep="")
@@ -214,3 +214,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

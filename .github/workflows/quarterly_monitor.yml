@@ -13,7 +13,7 @@ on:
       - '.github/workflows/quarterly_monitor.yml'
   workflow_dispatch:
   schedule:
-    - cron: "0 9 * * 1"
+    - cron: "0 9 * * *"
 
 permissions:
   contents: write
@@ -43,6 +43,9 @@ jobs:
 
       - name: Validate Python syntax
         run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
+
+      - name: Test trading and sector safety rules
+        run: python -m unittest test_monitor_safety -v
 
       - name: Check annual baseline files
         run: python nse_fundamentals_check.py
@@ -121,3 +124,4 @@ jobs:
 
           echo "Could not publish reports after four attempts."
           exit 1
+

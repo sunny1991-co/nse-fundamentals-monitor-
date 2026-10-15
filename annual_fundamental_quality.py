@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import date
 import math
 import pandas as pd
 
@@ -240,7 +241,11 @@ def load_sector_map():
         return {}
     out = {}
     for _, row in df.iterrows():
-        if str(row.get("Lookup_Status", "")) == "OK":
+        try:
+            age = (date.today() - date.fromisoformat(str(row.get("Lookup_Date", ""))[:10])).days
+        except ValueError:
+            continue
+        if str(row.get("Lookup_Status", "")) == "OK" and 0 <= age < 60:
             out[str(row.get("Symbol", "")).upper()] = row.to_dict()
     return out
 
@@ -462,3 +467,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
