@@ -1,2 +1,2 @@
 Run_Date,Collection_Status,Error,Indexed_URLs,Pending_URLs,Attempted_URLs,New_Verified_URLs,Verified_Quarter_Rows,Qualified_Comparison_Rows
-2026-10-15,NSE_XBRL_ACCESS_BLOCKED,Download error: XBRL HTTP 403,22832,22832,4,0,0,0
+2026-10-15,NSE_XBRL_ACCESS_BLOCKED,Download error: XBRL HTTP 403,22834,22834,4,0,0,0
