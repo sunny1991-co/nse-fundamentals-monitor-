@@ -1,75 +1,80 @@
 #!/usr/bin/env python3
-"""Temporary, small diagnostic to verify where NSE exposes consolidated/standalone metadata."""
+"""Diagnostic probe of annual XBRL context periods and fundamental aliases."""
 import json
-import re
-import time
 import requests
 import xml.etree.ElementTree as ET
+from datetime import date
 
+URL = "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1736893_13102026033734_WEB.xml"
 LANDING = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
-API = "https://www.nseindia.com/api/integrated-filing-results"
 
 def local(tag):
     return tag.rsplit("}", 1)[-1].split(":")[-1]
 
-def items(payload):
-    if isinstance(payload, list):
-        return payload
-    if isinstance(payload, dict):
-        for key in ("data", "results", "records", "result", "items"):
-            val = payload.get(key)
-            if isinstance(val, list):
-                return val
-            if isinstance(val, dict):
-                found = items(val)
-                if found:
-                    return found
-    return []
-
 s = requests.Session()
-s.headers.update({
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json, text/plain, */*",
-    "Referer": LANDING,
-    "X-Requested-With": "XMLHttpRequest",
-})
-page = s.get(LANDING, timeout=30)
-print("LANDING_STATUS", page.status_code)
-page.raise_for_status()
-r = s.get(API, params={"type":"Integrated Filing- Financials","index":"equities","page":0,"size":3}, timeout=30)
-print("API_STATUS", r.status_code)
+s.headers.update({"User-Agent":"Mozilla/5.0","Accept":"application/json, text/plain, */*","Referer":LANDING,"X-Requested-With":"XMLHttpRequest"})
+r=s.get(LANDING,timeout=30)
+print("NSE_LANDING_HTTP",r.status_code)
 r.raise_for_status()
-payload = r.json()
-print("PAYLOAD_KEYS", list(payload) if isinstance(payload, dict) else type(payload).__name__)
-records = items(payload)
-print("RECORD_COUNT", len(records))
-for i, rec in enumerate(records[:3]):
-    print("RECORD", i, json.dumps(rec, ensure_ascii=False, default=str)[:6000])
-    url = str(rec.get("xbrl") or rec.get("xbrlUrl") or "")
-    if not url:
+r=s.get(URL,timeout=40)
+print("ANNUAL_XBRL_HTTP",r.status_code,"bytes",len(r.content))
+r.raise_for_status()
+root=ET.fromstring(r.content)
+contexts={}
+for c in root.iter():
+    if local(c.tag).lower()!="context" or not c.attrib.get("id"):
         continue
-    xml_resp = s.get(url, timeout=30)
-    print("XML_STATUS", xml_resp.status_code, "XML_BYTES", len(xml_resp.content), "URL", url)
-    xml_resp.raise_for_status()
-    root = ET.fromstring(xml_resp.content)
-    print("ROOT", root.tag)
-    found = []
-    for node in root.iter():
-        name = local(node.tag)
-        text = (node.text or "").strip()
-        combined = (name + " " + text).lower()
-        if text and len(text) < 180 and any(k in combined for k in ("consolidated", "standalone", "natureofreport", "natureofstatement", "reportingtype", "auditedunaudited")):
-            found.append((name, text, node.attrib))
-    print("BASIS_FACT_CANDIDATES", json.dumps(found[:60], ensure_ascii=False, default=str))
-    contexts = []
-    for node in root.iter():
-        if local(node.tag).lower() != "context":
-            continue
-        members = []
-        for child in node.iter():
-            if local(child.tag).lower() in ("explicitmember", "typedmember"):
-                members.append((child.attrib, (child.text or "").strip()))
-        if members:
-            contexts.append((node.attrib.get("id"), members))
-    print("DIMENSION_CONTEXTS", json.dumps(contexts[:15], ensure_ascii=False, default=str))
-    break
+    p=next((x for x in c.iter() if local(x.tag).lower()=="period"),None)
+    if p is None: continue
+    start=end=instant=None
+    for x in p:
+        name=local(x.tag).lower()
+        if name=="startdate": start=(x.text or "").strip()
+        elif name=="enddate": end=(x.text or "").strip()
+        elif name=="instant": instant=(x.text or "").strip()
+    members=[]
+    for x in c.iter():
+        if local(x.tag).lower()=="explicitmember":
+            members.append((x.attrib.get("dimension",""),(x.text or "").strip()))
+    days=None
+    try:
+        if start and end: days=(date.fromisoformat(end)-date.fromisoformat(start)).days
+    except Exception: pass
+    contexts[c.attrib["id"]]={"start":start,"end":end,"instant":instant,"days":days,"members":members}
+print("CONTEXT_COUNT",len(contexts))
+print("ANNUAL_CONTEXTS",json.dumps({k:v for k,v in contexts.items() if v["days"] and 330<=v["days"]<=400 and not v["members"]},ensure_ascii=False)[:5000])
+print("INSTANT_CONTEXTS",json.dumps({k:v for k,v in contexts.items() if v["instant"]=="2026-03-31" and not v["members"]},ensure_ascii=False)[:3000])
+aliases={
+"Revenue_Operations_Cr":["RevenueFromOperations","RevenueFromOperationsNetOfExciseDuty"],
+"Net_Profit_Cr":["ProfitLossForPeriod","ProfitLoss"],
+"Basic_EPS_Rs":["BasicEarningsLossPerShare","EarningsPerShareBasic","BasicEPS"],
+"Profit_Before_Tax_Cr":["ProfitLossBeforeTax","ProfitBeforeTax"],
+"Total_Expenses_Cr":["TotalExpenses"],
+"Finance_Cost_Cr":["FinanceCosts","FinanceCost"],
+"Depreciation_Amortisation_Cr":["DepreciationDepletionAndAmortisationExpense","DepreciationAndAmortisationExpense"],
+"Cash_Flow_Operating_Cr":["NetCashFlowsFromUsedInOperatingActivities","NetCashFlowsFromOperatingActivities","CashFlowsFromUsedInOperatingActivities","CashFlowsFromOperatingActivities","NetCashFlowFromOperatingActivities"],
+"Total_Assets_Cr":["Assets","TotalAssets"],
+"Total_Equity_Cr":["Equity","TotalEquity"],
+"Current_Liabilities_Cr":["LiabilitiesCurrent","CurrentLiabilities"],
+"Cash_CashEquivalents_Cr":["CashAndCashEquivalents","CashCashEquivalents","CashAndCashEquivalentsAtCarryingValue"],
+"CapEx_Cr":["PaymentsToAcquirePropertyPlantAndEquipment","PurchaseOfPropertyPlantAndEquipment","PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets","PurchaseOfPropertyPlantAndEquipmentAndIntangibleAssets","PaymentsToAcquireTangibleAssets"],
+"Total_Borrowings_Cr":["Borrowings","TotalBorrowings","BorrowingsCurrent","CurrentBorrowings","BorrowingsNoncurrent","NoncurrentBorrowings","BorrowingsNonCurrent"],
+}
+annual_ids={k for k,v in contexts.items() if v["days"] and 330<=v["days"]<=400 and not v["members"]}
+instant_ids={k for k,v in contexts.items() if v["instant"]=="2026-03-31" and not v["members"]}
+matched={}
+for node in root.iter():
+    name=local(node.tag)
+    cref=node.attrib.get("contextRef","")
+    if not cref: continue
+    for metric,names in aliases.items():
+        if name.lower() not in {x.lower() for x in names}: continue
+        if cref not in annual_ids and cref not in instant_ids: continue
+        bucket="annual_duration" if cref in annual_ids else "instant"
+        matched.setdefault(metric,[]).append({"tag":name,"context":cref,"period":bucket,"value":(node.text or "").strip(),"unitRef":node.attrib.get("unitRef","")})
+print("ALIAS_MATCHES",json.dumps(matched,ensure_ascii=False)[:12000])
+basis=[]
+for node in root.iter():
+    if local(node.tag).lower()=="natureofreportstandaloneconsolidated":
+        basis.append({"value":(node.text or "").strip(),"context":node.attrib.get("contextRef")})
+print("REPORT_BASIS_FACTS",json.dumps(basis,ensure_ascii=False))
