@@ -468,30 +468,21 @@ def main() -> None:
             "Symbol"
         ].astype(str).str.strip().str.upper()
     )
-    print(f"Annual full-screen PASS symbols eligible for quarterly re-verification: {len(eligible_symbols)}")
+    # Collect quarter facts for the entire tracked annual universe even when
+    # nobody yet meets the strict four-year screen. Otherwise the zero-pass
+    # starting state permanently starves quarterly history and backtests.
+    # Annual PASS still gates the published comparison and final trade signals.
+    tracked_symbols = set(
+        annual_quality["Symbol"].astype(str).str.strip().str.upper()
+    ) - {"", "NAN", "NONE", "<NA>"}
+    print(
+        f"Tracked symbols for quarterly history: {len(tracked_symbols)}; "
+        f"annual full-screen PASS for qualified reports: {len(eligible_symbols)}"
+    )
+    if not tracked_symbols:
+        raise RuntimeError("Annual quality report contains no tracked symbols.")
     if not eligible_symbols:
-        print("No symbols passed the full annual screen; skipping all quarterly XBRL downloads.")
-        empty_columns = [
-            "Symbol", "Quarter_End", "Reporting_Basis", *VALUE_FIELDS, "Missing_Fields",
-            "Fundamentals_Complete", "Reporting_Type", "Submission_Subtype", "Revision_Date",
-            "Revision_Remark", "Sequence_ID", "Filing_Audit_Status", "Filing_Consolidation_Status",
-            "Filing_Published_At", "Source_URL", "Quarter_Context_Days", "Quarter_Context_IDs",
-            "Instant_Context_IDs", "Basis_Verification",
-        ]
-        # Preserve previous raw records and the unverified audit trail. Only
-        # clear the qualified comparison report when nobody passes annual checks.
-        if not RESULTS_FILE.exists():
-            save_frame(pd.DataFrame(columns=empty_columns), RESULTS_FILE)
-        save_frame(pd.DataFrame(columns=empty_columns), COMPARE_FILE)
-        if not UNVERIFIED_FILE.exists():
-            save_frame(pd.DataFrame(columns=["Symbol", "Quarter_End", "Source_URL", "Reason", "Submission_Subtype", "Revision_Date"]), UNVERIFIED_FILE)
-        if "Source_URL" not in existing_processed.columns:
-            existing_processed["Source_URL"] = ""
-        if "Parser_Version" not in existing_processed.columns:
-            existing_processed["Parser_Version"] = ""
-        if not PROCESSED_FILE.exists() or not existing_processed.empty:
-            save_frame(existing_processed, PROCESSED_FILE)
-        return
+        print("No annual PASS yet; collect raw verified quarters, but publish no qualified comparisons.")
 
     session = make_session()
     index_records = fetch_recent_records(session)
@@ -503,7 +494,7 @@ def main() -> None:
         sym = record_symbol(rec)
         qend = record_quarter_end(rec)
         pubdate = record_publish_date(rec)
-        if not url or not sym or sym not in eligible_symbols:
+        if not url or not sym or sym not in tracked_symbols:
             continue
         if (pubdate and pubdate < cutoff) and (not qend or qend < cutoff):
             continue
