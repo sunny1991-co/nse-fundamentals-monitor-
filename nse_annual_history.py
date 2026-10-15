@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -17,9 +19,10 @@ LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-f
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 PAGE_SIZE = 500
 MAX_PAGES = 100
-HISTORY_DAYS = 1900
-MAX_XBRL_PER_RUN = 6000
-PARSER_VERSION = "annual-v3"
+HISTORY_DAYS = 1500
+MAX_XBRL_PER_RUN = 9000
+MAX_DOWNLOAD_WORKERS = 8
+PARSER_VERSION = "annual-v4"
 
 RESULTS_FILE = ROOT / "annual_historical_results.csv"
 UNVERIFIED_FILE = ROOT / "annual_historical_unverified.csv"
@@ -400,6 +403,59 @@ def parse_annual(record: dict, url: str, body: bytes) -> tuple[dict | None, str]
     return row, ""
 
 
+
+_worker_state = threading.local()
+
+
+def process_annual_task(url: str, rec: dict) -> tuple[dict | None, dict | None, dict]:
+    """Download and parse one official annual filing using a worker-local session."""
+    row = None
+    reason = ""
+    status = "UNVERIFIED"
+    for attempt in range(3):
+        try:
+            sess = getattr(_worker_state, "session", None)
+            if sess is None:
+                sess = session_create()
+                _worker_state.session = sess
+            response = sess.get(
+                url,
+                headers={"Referer": "https://www.nseindia.com/"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            row, reason = parse_annual(rec, url, response.content)
+            if row:
+                status = row["Status"]
+            break
+        except Exception as exc:
+            reason = f"Download/parser error: {exc}"
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+
+    processed = {
+        "Source_URL": url,
+        "Symbol": symbol(rec),
+        "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+        "Status": status,
+        "Reason": reason,
+        "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "Parser_Version": PARSER_VERSION,
+    }
+    unverified = None
+    if row is None:
+        unverified = {
+            "Symbol": symbol(rec),
+            "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+            "Source_URL": url,
+            "Reason": reason,
+            "Audit_Status": str(value(rec, "audited") or ""),
+            "NSE_Consolidation_Status": str(value(rec, "consolidated") or ""),
+            "Revision_Date": str(value(rec, "revised_Date") or ""),
+        }
+    return row, unverified, processed
+
+
 def read_csv(path: Path) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
@@ -422,64 +478,101 @@ def main():
         old_processed["Parser_Version"] = ""
     if "Source_URL" not in old_processed.columns:
         old_processed["Source_URL"] = ""
-    processed_urls = set(old_processed.loc[old_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
+    processed_urls = set(
+        old_processed.loc[
+            old_processed["Parser_Version"].astype(str).eq(PARSER_VERSION),
+            "Source_URL"
+        ].astype(str)
+    )
+
+    # Restrict history downloads to the symbols in the requested annual baseline.
+    # We still verify their original NSE filing metadata and exact XBRL source.
+    target_symbols: set[str] = set()
+    for filename in ("FY2425.csv", "NSE_FY2025-26_Consolidated_Fundamentals.csv"):
+        path = ROOT / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Required baseline file not found: {filename}")
+        baseline = read_csv(path)
+        if "Symbol" not in baseline.columns:
+            raise ValueError(f"{filename} has no Symbol column")
+        target_symbols.update(
+            str(v).strip().upper() for v in baseline["Symbol"].astype(str)
+            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
+        )
+    if not target_symbols:
+        raise RuntimeError("No baseline symbols found; refusing to create an empty annual screen.")
+    if not old_results.empty and "Symbol" in old_results.columns:
+        target_symbols.update(
+            str(v).strip().upper() for v in old_results["Symbol"].astype(str)
+            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
+        )
+    print(f"Target baseline symbols: {len(target_symbols)}", flush=True)
+
     s = session_create()
     indexed = all_recent_records(s)
-    by_url = {}
+    # Pick the newest audited-consolidated filing per symbol and fiscal year.
+    # This avoids spending time downloading stale originals and older revisions.
+    latest_by_company_year: dict[tuple[str, str], dict] = {}
     for rec in indexed:
+        sym = symbol(rec)
         d = end_date(rec)
         url = xbrl_url(rec)
-        if not d or d < cutoff or d.month != 3 or d.day != 31 or not url:
+        if sym not in target_symbols or not d or d < cutoff or d.month != 3 or d.day != 31 or not url:
             continue
         if normalize_basis(value(rec, "consolidated")) != "Consolidated":
             continue
         if not str(value(rec, "audited") or "").lower().startswith("audited"):
             continue
-        prior = by_url.get(url)
+        key = (sym, d.isoformat())
+        prior = latest_by_company_year.get(key)
         if prior is None or (published_date(rec) or date.min) >= (published_date(prior) or date.min):
-            by_url[url] = rec
+            latest_by_company_year[key] = rec
 
+    by_url = {xbrl_url(rec): rec for rec in latest_by_company_year.values() if xbrl_url(rec)}
     pending = sorted(
-        [(u, rec) for u, rec in by_url.items() if u not in processed_urls],
+        [(url, rec) for url, rec in by_url.items() if url not in processed_urls],
         key=lambda item: published_date(item[1]) or date.min,
         reverse=True,
     )[:MAX_XBRL_PER_RUN]
-    print(f"Audited consolidated annual URLs in history window: {len(by_url)}; to process this run: {len(pending)}")
+    print(
+        f"Annual index records examined: {len(indexed)}; latest audited consolidated symbol-years: {len(by_url)}; "
+        f"to process this run: {len(pending)}; workers: {MAX_DOWNLOAD_WORKERS}",
+        flush=True,
+    )
+
     new_rows, new_unverified, new_processed = [], [], []
-    for idx, (url, rec) in enumerate(pending, 1):
-        status = "UNVERIFIED"
-        reason = ""
-        row = None
-        try:
-            response = s.get(url, headers={"Referer": "https://www.nseindia.com/"}, timeout=40)
-            response.raise_for_status()
-            row, reason = parse_annual(rec, url, response.content)
-            if row:
-                status = row["Status"]
-        except Exception as exc:
-            reason = f"Download/parser error: {exc}"
-        stamp = date.today().isoformat()
-        new_processed.append({
-            "Source_URL": url, "Symbol": symbol(rec),
-            "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
-            "Status": status, "Reason": reason,
-            "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "Parser_Version": PARSER_VERSION,
-        })
-        if row:
-            new_rows.append(row)
-        else:
-            new_unverified.append({
-                "Symbol": symbol(rec),
-                "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
-                "Source_URL": url, "Reason": reason,
-                "Audit_Status": str(value(rec, "audited") or ""),
-                "NSE_Consolidation_Status": str(value(rec, "consolidated") or ""),
-                "Revision_Date": str(value(rec, "revised_Date") or ""),
-            })
-        if idx % 100 == 0:
-            print(f"Processed {idx}/{len(pending)} annual XBRL files")
-        time.sleep(0.05)
+    with ThreadPoolExecutor(max_workers=MAX_DOWNLOAD_WORKERS) as pool:
+        futures = {pool.submit(process_annual_task, url, rec): (url, rec) for url, rec in pending}
+        for idx, future in enumerate(as_completed(futures), 1):
+            try:
+                row, unverified_row, processed_row = future.result()
+            except Exception as exc:
+                url, rec = futures[future]
+                reason = f"Worker exception: {exc}"
+                row = None
+                unverified_row = {
+                    "Symbol": symbol(rec),
+                    "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+                    "Source_URL": url,
+                    "Reason": reason,
+                    "Audit_Status": str(value(rec, "audited") or ""),
+                    "NSE_Consolidation_Status": str(value(rec, "consolidated") or ""),
+                    "Revision_Date": str(value(rec, "revised_Date") or ""),
+                }
+                processed_row = {
+                    "Source_URL": url, "Symbol": symbol(rec),
+                    "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+                    "Status": "UNVERIFIED", "Reason": reason,
+                    "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "Parser_Version": PARSER_VERSION,
+                }
+            if row is not None:
+                new_rows.append(row)
+            if unverified_row is not None:
+                new_unverified.append(unverified_row)
+            new_processed.append(processed_row)
+            if idx % 100 == 0 or idx == len(pending):
+                print(f"Processed {idx}/{len(pending)} annual XBRL files", flush=True)
 
     results = pd.concat([old_results, pd.DataFrame(new_rows)], ignore_index=True, sort=False)
     if not results.empty:
@@ -491,6 +584,10 @@ def main():
         results = results.sort_values(["Symbol", "Fiscal_Year_End"])
     save_csv(results, RESULTS_FILE)
 
+    # Remove prior unverified notes for URLs that have now parsed successfully.
+    successful_urls = {str(row.get("Source_URL", "")) for row in new_rows}
+    if not old_unverified.empty and "Source_URL" in old_unverified.columns and successful_urls:
+        old_unverified = old_unverified[~old_unverified["Source_URL"].astype(str).isin(successful_urls)]
     unverified = pd.concat([old_unverified, pd.DataFrame(new_unverified)], ignore_index=True, sort=False)
     if not unverified.empty:
         unverified = unverified.drop_duplicates(["Source_URL"], keep="last").sort_values(["Fiscal_Year_End", "Symbol"])
@@ -500,10 +597,11 @@ def main():
     if not processed.empty:
         processed = processed.drop_duplicates(["Source_URL"], keep="last")
     save_csv(processed, PROCESSED_FILE)
-    print(f"Annual history rows saved: {len(results)}; annual XBRL URL ledger: {len(processed)}")
+    print(f"Annual history rows saved: {len(results)}; annual XBRL URL ledger: {len(processed)}", flush=True)
     if not results.empty:
-        print("Years available:", ", ".join(sorted(results["Financial_Year"].astype(str).unique())))
-        print("Full annual dataset remains incomplete until all candidate filings and missing fields are resolved.")
+        years = sorted(results["Financial_Year"].astype(str).unique())
+        print("Years available:", ", ".join(years), flush=True)
+    print("Full annual dataset remains incomplete until all candidate filings and required fields are resolved.", flush=True)
 
 
 if __name__ == "__main__":
