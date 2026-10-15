@@ -220,7 +220,7 @@ def parse_contexts(root: ET.Element) -> dict[str, dict]:
         for axis, member in members:
             is_basis_member = (
                 "consolidated" in member or "standalone" in member
-                or "separatefinancialstatementsmember" in member
+                or "separate" in member
                 or "consolidated" in axis
                 or "typeofstatement" in axis
                 or "financialstatement" in axis
