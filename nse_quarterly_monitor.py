@@ -213,7 +213,7 @@ def parse_contexts(root: ET.Element) -> dict[str, dict]:
             combined = axis + " " + member
             if "consolidated" in combined and "separate" not in combined and "standalone" not in combined:
                 basis_hits.add("Consolidated")
-            if "standalone" in combined or "separatefinancialstatementsmember" in combined:
+            if "standalone" in combined or "separate" in member:
                 basis_hits.add("Standalone")
         basis = next(iter(basis_hits)) if len(basis_hits) == 1 else ("MIXED" if len(basis_hits) > 1 else "UNVERIFIED")
         other_dimensions = []
