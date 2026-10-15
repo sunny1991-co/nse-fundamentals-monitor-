@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity"
 MAP_FILE = ROOT / "nse_sector_map.csv"
-MAX_LOOKUPS_PER_RUN = 2500
+MAX_LOOKUPS_PER_RUN = 3500
 REFRESH_DAYS = 60
 RETRY_FAILED_AFTER_DAYS = 7
 
