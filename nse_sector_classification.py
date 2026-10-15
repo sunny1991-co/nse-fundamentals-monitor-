@@ -15,7 +15,7 @@ MAP_FILE = ROOT / "nse_sector_map.csv"
 MAX_LOOKUPS_PER_RUN = 3500
 MAX_CONSECUTIVE_BLOCKS = 2  # Stop on persistent NSE 403/429; do not waste hours retrying.
 REFRESH_DAYS = 60
-RETRY_FAILED_AFTER_DAYS = 7
+RETRY_FAILED_AFTER_DAYS = 1  # Recheck NSE access daily; never treat 403 as successful classification.
 
 
 def read_csv(path):
@@ -125,11 +125,14 @@ def main():
         try:
             s = session_create()
         except requests.RequestException as exc:
-            print(f"NSE session unavailable: {exc}; recording unknown sectors, not approving them.")
-            for sym in to_lookup:
-                cache[sym] = {"Symbol": sym, "Lookup_Status": "ERROR",
-                              "Lookup_Date": today.isoformat(), "Error": str(exc),
-                              "Source_URL": LANDING_URL}
+            print(f"NSE session unavailable: {exc}; preserving old sector cache and leaving unvisited symbols pending.")
+            # Do not date-stamp all 1,700+ symbols after a *single* request failed.
+            # That would postpone the entire universe's retry unnecessarily.
+            for sym in to_lookup[:MAX_CONSECUTIVE_BLOCKS]:
+                if str(cache.get(sym, {}).get("Lookup_Status", "")) != "OK":
+                    cache[sym] = {"Symbol": sym, "Lookup_Status": "ERROR",
+                                  "Lookup_Date": today.isoformat(), "Error": str(exc),
+                                  "Source_URL": LANDING_URL}
             to_lookup = []
     consecutive_blocks = 0
     for i, sym in enumerate(to_lookup, 1):
