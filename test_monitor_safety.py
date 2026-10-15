@@ -64,5 +64,21 @@ class SafetyTests(unittest.TestCase):
             with patch.object(sector,'MAP_FILE',path),patch.object(sector,'candidate_symbols',return_value=['ABC']),patch.object(sector,'session_create') as connect:
                 sector.main();connect.assert_not_called()
 
+    def test_sector_session_block_does_not_quarantine_whole_universe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'map.csv'
+            symbols = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE']
+            with (
+                patch.object(sector, 'MAP_FILE', path),
+                patch.object(sector, 'candidate_symbols', return_value=symbols),
+                patch.object(sector, 'session_create', side_effect=requests.HTTPError('403')),
+            ):
+                sector.main()
+            frame = pd.read_csv(path)
+            self.assertLessEqual(len(frame), sector.MAX_CONSECUTIVE_BLOCKS)
+            self.assertTrue(frame['Lookup_Status'].eq('ERROR').all())
+            self.assertTrue({'CCC', 'DDD', 'EEE'}.isdisjoint(set(frame['Symbol'])))
+
+
 if __name__=='__main__':
     unittest.main()
