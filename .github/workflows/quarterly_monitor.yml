@@ -1,6 +1,12 @@
 name: NSE Fundamentals Monitor
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'nse_quarterly_monitor.py'
+      - 'nse_fundamentals_check.py'
+      - '.github/workflows/quarterly_monitor.yml'
   workflow_dispatch:
   schedule:
     - cron: "0 9 * * 1"
