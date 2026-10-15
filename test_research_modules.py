@@ -3,8 +3,18 @@ from datetime import datetime,timezone,timedelta
 from research_monitor.risk import quote_errors,size_plan
 from research_monitor.ipo import review_ipo
 from research_monitor.contracts import validate_contract
+from research_monitor.context_filters import market_strength,event_and_concentration
 
 class ResearchTests(unittest.TestCase):
+    def test_unaligned_price_history_rejected(self):
+        self.assertEqual(market_strength(list(range(1,201)),list(range(1,201)))['status'],'BLOCKED')
+    def test_near_event_and_concentration_blocked(self):
+        now=datetime.now(timezone.utc)
+        result=event_and_concentration(checked_at=now.isoformat(),event_calendar_verified=True,
+            next_event_at=(now+timedelta(days=1)).isoformat(),capital=100000,
+            sector_exposure_after=30000,position_exposure_after=10000,now=now)
+        self.assertIn('MATERIAL_EVENT_WITHIN_72_HOURS',result['reasons'])
+        self.assertIn('SECTOR_OR_POSITION_CONCENTRATION_LIMIT',result['reasons'])
     def test_contract_unknown_is_blocked(self):
         self.assertEqual(validate_contract({'instrument_type':'OPTIDX'})['status'],'BLOCKED')
     def test_stock_settlement_and_ban_required(self):

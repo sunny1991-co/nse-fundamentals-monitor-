@@ -43,7 +43,7 @@ def size_plan(plan, quote, cfg, portfolio, now=None):
     # Stock backtests must never be reused as evidence for an option contract.
     required=['holdout_pass','paper_validation_pass','strategy_version_match','entry_rules_match','exit_rules_match']
     if kind=='equity':
-        required+=['fundamentals_pass']
+        required+=['fundamentals_pass','market_regime_pass','relative_strength_pass','event_risk_clear','portfolio_concentration_pass']
     else:
         required+=['actual_option_contract_backtest','lot_and_expiry_verified','greeks_and_iv_verified']
         try:
