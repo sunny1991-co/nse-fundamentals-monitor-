@@ -19,7 +19,7 @@ PAGE_SIZE = 100
 MAX_PAGES = 300
 HISTORY_DAYS = 1900
 MAX_XBRL_PER_RUN = 6000
-PARSER_VERSION = "annual-v1"
+PARSER_VERSION = "annual-v2"
 
 RESULTS_FILE = ROOT / "annual_historical_results.csv"
 UNVERIFIED_FILE = ROOT / "annual_historical_unverified.csv"
@@ -28,7 +28,13 @@ PROCESSED_FILE = ROOT / "annual_history_processed.csv"
 ANNUAL_ALIASES = {
     "Revenue_Operations_Cr": ["RevenueFromOperations", "RevenueFromOperationsNetOfExciseDuty"],
     "Net_Profit_Cr": ["ProfitLossForPeriod", "ProfitLoss"],
-    "Basic_EPS_Rs": ["BasicEarningsLossPerShare", "EarningsPerShareBasic", "BasicEPS"],
+    "Basic_EPS_Rs": [
+        "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        "BasicEarningsLossPerShare",
+        "BasicEarningsLossPerShareFromContinuingOperations",
+        "EarningsPerShareBasic",
+        "BasicEPS",
+    ],
     "Profit_Before_Tax_Cr": ["ProfitLossBeforeTax", "ProfitBeforeTax"],
     "Total_Expenses_Cr": ["TotalExpenses"],
     "Finance_Cost_Cr": ["FinanceCosts", "FinanceCost"],
@@ -47,12 +53,24 @@ INSTANT_ALIASES = {
     "Current_Liabilities_Cr": ["LiabilitiesCurrent", "CurrentLiabilities"],
     "Cash_CashEquivalents_Cr": ["CashAndCashEquivalents", "CashCashEquivalents", "CashAndCashEquivalentsAtCarryingValue"],
 }
-CAPEX_ALIASES = [
-    "PaymentsToAcquirePropertyPlantAndEquipment",
+CAPEX_PPE_ALIASES = [
+    "PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",
     "PurchaseOfPropertyPlantAndEquipment",
+    "PaymentsToAcquirePropertyPlantAndEquipment",
+]
+CAPEX_INTANGIBLE_ALIASES = [
+    "PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities",
+    "PurchaseOfIntangibleAssets",
+]
+CAPEX_COMBINED_ALIASES = [
     "PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets",
     "PurchaseOfPropertyPlantAndEquipmentAndIntangibleAssets",
     "PaymentsToAcquireTangibleAssets",
+]
+CAPEX_ADDITIONAL_COMPONENTS = [
+    ["PurchaseOfInvestmentPropertyClassifiedAsInvestingActivities", "PurchaseOfInvestmentProperty"],
+    ["PurchaseOfGoodwillClassifiedAsInvestingActivities", "PurchaseOfGoodwill"],
+    ["PurchaseOfBiologicalAssetsOtherThanBearerPlantsClassifiedAsInvestingActivities"],
 ]
 CURRENT_BORROWING_ALIASES = ["BorrowingsCurrent", "CurrentBorrowings", "BorrowingsCurrentPortion"]
 NONCURRENT_BORROWING_ALIASES = ["BorrowingsNoncurrent", "NoncurrentBorrowings", "BorrowingsNonCurrent"]
@@ -315,8 +333,31 @@ def parse_annual(record: dict, url: str, body: bytes) -> tuple[dict | None, str]
         facts["Total_Borrowings_Cr"] = cr(current_debt + noncurrent_debt)
     else:
         facts["Total_Borrowings_Cr"] = None
-    capex_raw = get_fact(root, CAPEX_ALIASES, duration_ids)
-    facts["CapEx_Cr"] = cr(abs(capex_raw)) if capex_raw is not None else None
+    ppe_capex = get_fact(root, CAPEX_PPE_ALIASES, duration_ids)
+    intangible_capex = get_fact(root, CAPEX_INTANGIBLE_ALIASES, duration_ids)
+    extra_capex_values = [
+        get_fact(root, aliases, duration_ids)
+        for aliases in CAPEX_ADDITIONAL_COMPONENTS
+    ]
+    disclosed_extra_capex = sum(abs(v) for v in extra_capex_values if v is not None)
+    capex_complete = False
+    capex_raw = None
+    capex_method = ""
+    if ppe_capex is not None and intangible_capex is not None:
+        capex_raw = abs(ppe_capex) + abs(intangible_capex) + disclosed_extra_capex
+        capex_complete = True
+        capex_method = "PPE+Intangible purchases plus separately disclosed additional asset purchases"
+    else:
+        # A combined total is used only when both main components are not available;
+        # never add individual components on top of a combined total.
+        combined_capex = get_fact(root, CAPEX_COMBINED_ALIASES, duration_ids)
+        if combined_capex is not None:
+            capex_raw = abs(combined_capex) + disclosed_extra_capex
+            capex_complete = True
+            capex_method = "Reported combined PPE/intangible purchases plus separately disclosed additional asset purchases"
+    facts["CapEx_Cr"] = cr(capex_raw) if capex_raw is not None else None
+    facts["CapEx_Components_Verified"] = capex_complete
+    facts["CapEx_Method"] = capex_method
     core_missing = [k for k in CORE if facts.get(k) is None]
     upload = file_stamp_date(url) or published_date(record) or date.min
     row = {
@@ -339,6 +380,8 @@ def parse_annual(record: dict, url: str, body: bytes) -> tuple[dict | None, str]
         "Depreciation_Amortisation_Cr": facts.get("Depreciation_Amortisation_Cr"),
         "Cash_Flow_Operating_Cr": facts.get("Cash_Flow_Operating_Cr"),
         "CapEx_Cr": facts.get("CapEx_Cr"),
+        "CapEx_Components_Verified": facts.get("CapEx_Components_Verified", False),
+        "CapEx_Method": facts.get("CapEx_Method", ""),
         "Current_Liabilities_Cr": facts.get("Current_Liabilities_Cr"),
         "Cash_CashEquivalents_Cr": facts.get("Cash_CashEquivalents_Cr"),
         "Annual_Context_Days": annual_days,
