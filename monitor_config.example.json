@@ -27,5 +27,21 @@
     "example_index": "NIFTY 50",
     "contracts_from": "current_verified_official_instrument_master",
     "execution": "paper_only"
+  },
+  "monitor_accounts": {
+    "SWING": {
+      "capital_inr": null,
+      "ledger": "runtime/swing_paper.sqlite",
+      "performance_report": "runtime/swing_performance.json",
+      "alert_label": "SWING",
+      "risk_budget_isolated": true
+    },
+    "FNO": {
+      "paper_capital_inr": null,
+      "ledger": "runtime/fno_paper.sqlite",
+      "performance_report": "runtime/fno_performance.json",
+      "alert_label": "FNO",
+      "risk_budget_isolated": true
+    }
   }
 }
