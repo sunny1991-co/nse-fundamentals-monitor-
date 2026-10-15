@@ -9,3 +9,5 @@ Symbol,Macro_Economic_Sector,Sector,Industry,Basic_Industry,Lookup_Status,Lookup
 A2ZINFRA,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=A2ZINFRA,NSE quote HTTP 403 (blocked)
 AADHARHFC,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AADHARHFC,NSE quote HTTP 403 (blocked)
 AARTECH,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTECH,NSE quote HTTP 403 (blocked)
+AARTIDRUGS,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIDRUGS,NSE quote HTTP 403 (blocked)
+AARTIIND,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIIND,NSE quote HTTP 403 (blocked)
