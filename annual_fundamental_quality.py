@@ -121,7 +121,7 @@ def standardize_history():
                 "NSE_Consolidation_Status", "NSE_Consolidation_Verified",
                 "Source_URL", "Filing_Published_At", "Revision_Date",
                 "Submission_Subtype", "Revision_Remark", "Missing_Core_Fields",
-                "Six_Core_Fields_Complete", "Status",
+                "Six_Core_Fields_Complete", "Status", "CapEx_Components_Verified", "CapEx_Method",
             ] + CORE + EXTRA
             for field in fields:
                 row[field] = raw.get(field, "")
@@ -159,6 +159,7 @@ def standardize_history():
                     "NSE_Consolidation_Verified", "Source_Verification_Status",
                     "Source_URL", "Filing_Published_At", "Revision_Date",
                     "Submission_Subtype", "Revision_Remark", "Baseline_Source_Status", "Status",
+                    "CapEx_Components_Verified", "CapEx_Method",
                 ]:
                     current[field] = incoming.get(field, "")
                 for field in CORE + EXTRA:
@@ -369,7 +370,8 @@ def main():
                 fcf_vals.append(None)
             else:
                 ocf, capex = get(r, "Cash_Flow_Operating_Cr"), get(r, "CapEx_Cr")
-                fcf_vals.append(ocf - capex if ocf is not None and capex is not None else None)
+                capex_verified = bool_value(r.get("CapEx_Components_Verified"))
+                fcf_vals.append(ocf - capex if ocf is not None and capex is not None and capex_verified else None)
         fcf_pass = sum(1 for v in fcf_vals if v is not None and v > 0) >= 3 and sum(1 for v in fcf_vals if v is None) == 0
         if not cash_flow_pass:
             blockers.append("OPERATING_CASH_FLOW_MUST_BE_POSITIVE_AND_AT_LEAST_80_PERCENT_OF_3Y_NET_PROFIT")
