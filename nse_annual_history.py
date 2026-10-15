@@ -19,7 +19,7 @@ PAGE_SIZE = 100
 MAX_PAGES = 300
 HISTORY_DAYS = 1900
 MAX_XBRL_PER_RUN = 6000
-PARSER_VERSION = "annual-v2"
+PARSER_VERSION = "annual-v3"
 
 RESULTS_FILE = ROOT / "annual_historical_results.csv"
 UNVERIFIED_FILE = ROOT / "annual_historical_unverified.csv"
@@ -189,12 +189,10 @@ def all_recent_records(s: requests.Session) -> list[dict]:
         if not batch:
             break
         out.extend(batch)
-        dates = [published_date(x) for x in batch]
-        dates = [d for d in dates if d]
         if len(batch) < PAGE_SIZE:
             break
-        if len(dates) >= max(10, int(0.8 * len(batch))) and max(dates) < cutoff:
-            break
+        # Do not stop early from a publication-date heuristic: older annual
+        # filings/revisions can appear out of chronological order in the NSE index.
         time.sleep(0.08)
     print(f"Annual index records examined: {len(out)}; history cutoff: {cutoff}")
     return out
@@ -321,7 +319,8 @@ def parse_annual(record: dict, url: str, body: bytes) -> tuple[dict | None, str]
     duration_ids = annual_by_days[annual_days]
     facts = {}
     for name, aliases in ANNUAL_ALIASES.items():
-        facts[name] = cr(get_fact(root, aliases, duration_ids))
+        raw_fact = get_fact(root, aliases, duration_ids)
+        facts[name] = raw_fact if name == "Basic_EPS_Rs" else cr(raw_fact)
     for name, aliases in INSTANT_ALIASES.items():
         facts[name] = cr(get_fact(root, aliases, instant_ids))
     total_debt = get_fact(root, TOTAL_BORROWING_ALIASES, instant_ids)
