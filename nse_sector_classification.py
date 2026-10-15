@@ -13,6 +13,7 @@ LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-f
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity"
 MAP_FILE = ROOT / "nse_sector_map.csv"
 MAX_LOOKUPS_PER_RUN = 3500
+MAX_CONSECUTIVE_BLOCKS = 2  # Stop on persistent NSE 403/429; do not waste hours retrying.
 REFRESH_DAYS = 60
 RETRY_FAILED_AFTER_DAYS = 7
 
@@ -67,7 +68,9 @@ def lookup(s, sym):
     for attempt in range(3):
         try:
             r = s.get(QUOTE_URL, params={"symbol": sym}, timeout=20)
-            if r.status_code in (403, 429, 500, 502, 503, 504):
+            if r.status_code in (403, 429):
+                raise requests.HTTPError(f"NSE quote HTTP {r.status_code} (blocked)")
+            if r.status_code in (500, 502, 503, 504):
                 raise requests.HTTPError(f"NSE quote HTTP {r.status_code}")
             r.raise_for_status()
             data = r.json()
@@ -87,7 +90,10 @@ def lookup(s, sym):
             }
         except Exception as exc:
             last = exc
-            time.sleep(1.0 * (attempt + 1))
+            if "HTTP 403" in str(exc) or "HTTP 429" in str(exc):
+                break  # Blocked requests should not be retried for every symbol.
+            if attempt < 2:
+                time.sleep(1.0 * (attempt + 1))
     return {
         "Symbol": sym, "Macro_Economic_Sector": "", "Sector": "",
         "Industry": "", "Basic_Industry": "", "Lookup_Status": "ERROR",
@@ -115,8 +121,14 @@ def main():
     to_lookup = to_lookup[:MAX_LOOKUPS_PER_RUN]
     print(f"Symbols needed: {len(symbols)}; cached: {len(cache)}; lookups this run: {len(to_lookup)}")
     s = session_create()
+    consecutive_blocks = 0
     for i, sym in enumerate(to_lookup, 1):
         cache[sym] = lookup(s, sym)
+        blocked = "HTTP 403" in cache[sym]["Error"] or "HTTP 429" in cache[sym]["Error"]
+        consecutive_blocks = consecutive_blocks + 1 if blocked else 0
+        if consecutive_blocks >= MAX_CONSECUTIVE_BLOCKS:
+            print("NSE sector API blocked; leaving remaining symbols unclassified, never guessing sector.")
+            break
         if i % 100 == 0:
             print(f"Classified {i}/{len(to_lookup)} symbols")
         time.sleep(0.06)
