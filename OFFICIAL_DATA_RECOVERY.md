@@ -38,6 +38,28 @@ verified annual, quarter, sector, and historical market data gates all pass.
    prefer free official browser exports and authorized sources for this
    cost-sensitive personal research project.
 
+## Automated low-cost legacy index attempt
+
+The scheduled workflow now tries the official legacy Financial Results *metadata*
+endpoint with two bounded historical publication windows (FY2022-23 and
+FY2023-24), using `nse_legacy_index_fetch.py`. The read-only index fetch is
+NOT an audited-fact extractor, and it stops if NSE returns HTTP 403/429.
+Its result is recorded in `legacy_index_fetch_status.csv`. If authorized
+access succeeds, raw metadata is saved as
+`nse_legacy_financial_results_2022-23.csv` and
+`nse_legacy_financial_results_2023-24.csv`. A later audit creates
+`legacy_annual_recovery_manifest.csv` and
+`legacy_annual_recovery_summary.csv`.
+
+A March-quarter statement is not interchangeable with a full fiscal-year
+annual statement. Even an audited consolidated index row remains
+`PENDING_INDEPENDENT_XBRL_REVIEW` until the original official filing and its
+consolidation, audit, annual duration and financial facts are verified.
+Index candidate files are never copied into `annual_historical_results.csv`.
+If the archive API remains unavailable, a separately downloaded official
+browser CSV can be reviewed by the same manifest checker. No automation
+promotes the source solely on a matching symbol or CSV headline.
+
 ## Safe ingestion principles
 
 - Never evade access controls, rotate proxies to bypass denial, use stolen
