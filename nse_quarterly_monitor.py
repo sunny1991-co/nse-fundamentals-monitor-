@@ -478,14 +478,19 @@ def main() -> None:
             "Filing_Published_At", "Source_URL", "Quarter_Context_Days", "Quarter_Context_IDs",
             "Instant_Context_IDs", "Basis_Verification",
         ]
-        save_frame(pd.DataFrame(columns=empty_columns), RESULTS_FILE)
+        # Preserve previous raw records and the unverified audit trail. Only
+        # clear the qualified comparison report when nobody passes annual checks.
+        if not RESULTS_FILE.exists():
+            save_frame(pd.DataFrame(columns=empty_columns), RESULTS_FILE)
         save_frame(pd.DataFrame(columns=empty_columns), COMPARE_FILE)
-        save_frame(pd.DataFrame(columns=["Symbol", "Quarter_End", "Source_URL", "Reason", "Submission_Subtype", "Revision_Date"]), UNVERIFIED_FILE)
+        if not UNVERIFIED_FILE.exists():
+            save_frame(pd.DataFrame(columns=["Symbol", "Quarter_End", "Source_URL", "Reason", "Submission_Subtype", "Revision_Date"]), UNVERIFIED_FILE)
         if "Source_URL" not in existing_processed.columns:
             existing_processed["Source_URL"] = ""
         if "Parser_Version" not in existing_processed.columns:
             existing_processed["Parser_Version"] = ""
-        save_frame(existing_processed, PROCESSED_FILE)
+        if not PROCESSED_FILE.exists() or not existing_processed.empty:
+            save_frame(existing_processed, PROCESSED_FILE)
         return
 
     session = make_session()
