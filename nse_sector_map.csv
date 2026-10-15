@@ -1,0 +1,3 @@
+Symbol,Macro_Economic_Sector,Sector,Industry,Basic_Industry,Lookup_Status,Lookup_Date,Source_URL,Error
+20MICRONS,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=20MICRONS,NSE quote HTTP 403 (blocked)
+21STCENMGM,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=21STCENMGM,NSE quote HTTP 403 (blocked)
