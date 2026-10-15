@@ -10,6 +10,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent
 ANNUAL_FILE = ROOT / "annual_fundamental_quality_report.csv"
 QUARTERLY_FILE = ROOT / "quarterly_change_report.csv"
+QUARTERLY_SOURCE_STATUS_FILE = ROOT / "quarterly_collection_status.csv"
 SHORTLIST_FILE = ROOT / "final_fundamental_shortlist.csv"
 EXCLUSIONS_FILE = ROOT / "final_fundamental_exclusions.csv"
 SUMMARY_FILE = ROOT / "final_fundamental_screen_summary.csv"
@@ -55,6 +56,24 @@ def parse_day(value):
         return None
 
 
+def quarterly_source_readiness(path: Path) -> tuple[bool, str]:
+    """Current NSE source access must be validated independently of old facts.
+
+    Historical financial records remain stored after a 403, but must not
+    authorize a new tradable shortlist using stale collector state.
+    """
+    frame = read_csv(path)
+    if frame.empty or not {"Run_Date", "Collection_Status"}.issubset(frame.columns):
+        return False, "QUARTERLY_SOURCE_STATUS_MISSING"
+    last = frame.iloc[-1]
+    if str(last.get("Collection_Status", "")) != "OK":
+        return False, "QUARTERLY_SOURCE_ACCESS_NOT_VERIFIED"
+    stamp = parse_day(last.get("Run_Date", ""))
+    if stamp is None or not 0 <= (date.today() - stamp).days <= 1:
+        return False, "QUARTERLY_SOURCE_STATUS_STALE"
+    return True, "OK"
+
+
 def latest_three_quarters(rows: pd.DataFrame) -> list[pd.Series]:
     if rows.empty:
         return []
@@ -68,6 +87,9 @@ def latest_three_quarters(rows: pd.DataFrame) -> list[pd.Series]:
 def main():
     annual = read_csv(ANNUAL_FILE)
     quarterly = read_csv(QUARTERLY_FILE)
+    source_ready, source_reason = quarterly_source_readiness(QUARTERLY_SOURCE_STATUS_FILE)
+    if not source_ready:
+        print(f"Quarterly collector not ready: {source_reason}; final trade eligibility blocked.")
     if annual.empty or "Symbol" not in annual or "Full_Fundamental_Criteria_Pass" not in annual:
         raise RuntimeError("Annual quality report missing/empty; final shortlist cannot be produced.")
     if not quarterly.empty and "Symbol" in quarterly:
@@ -92,6 +114,8 @@ def main():
                 blockers.append(annual_blockers)
             quarterly_status = "NOT_CHECKED_ANNUAL_SCREEN_FAILED"
         else:
+            if not source_ready:
+                blockers.append(source_reason)
             if qrows.empty:
                 blockers.append("NO_COMPLETE_VERIFIED_QUARTERLY_COMPARISON_AVAILABLE")
                 quarterly_status = "NO_COMPLETE_VERIFIED_QUARTERLY_COMPARISON_AVAILABLE"
@@ -202,6 +226,8 @@ def main():
         "Annual_Screen_Companies": len(annual),
         "Annual_Pass_Companies": int(annual["Full_Fundamental_Criteria_Pass"].map(truthy).sum()),
         "Companies_With_Quarterly_Data": len(q_by_symbol),
+        "Quarterly_Source_Gate_Pass": source_ready,
+        "Quarterly_Source_Gate_Reason": source_reason,
         "Final_Shortlist_Count": len(shortlist),
         "Excluded_After_Annual_And_Quarterly_Checks": len(exclusions),
         "Report_Generated_On": date.today().isoformat(),
