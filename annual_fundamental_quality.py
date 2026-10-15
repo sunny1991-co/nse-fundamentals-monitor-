@@ -146,19 +146,29 @@ def standardize_history():
         current, incoming = merged[key], row
         is_history = bool_value(incoming.get("NSE_Consolidation_Verified"))
         current_is_history = bool_value(current.get("NSE_Consolidation_Verified"))
-        # Prefer basis-verified history metadata, but use any available numeric
-        # baseline value to fill gaps in the same fiscal year.
-        if is_history and not current_is_history:
-            for field in ["Reporting_Basis", "Audit_Status", "NSE_Consolidation_Status", "NSE_Consolidation_Verified", "Source_Verification_Status", "Source_URL", "Filing_Published_At", "Revision_Date", "Submission_Subtype", "Revision_Remark", "Baseline_Source_Status", "Status"]:
-                if not blank(incoming.get(field)):
-                    current[field] = incoming.get(field)
-        elif current_is_history and not is_history:
-            pass
-        for field in CORE + EXTRA:
-            if number(incoming.get(field)) is not None:
-                # Baseline core values are current two-year source rows; supplement
-                # cash flow / finance-cost details from the annual-history parser.
-                if field in CORE or number(current.get(field)) is None:
+        if is_history:
+            # Once a source URL is independently verified, its own facts are
+            # authoritative. Do not fill a missing verified fact with a value
+            # extracted from another revision/source; preserve it as missing.
+            incoming_stamp = str(incoming.get("Filing_Published_At", "") or "")
+            current_stamp = str(current.get("Filing_Published_At", "") or "")
+            replace_verified = (not current_is_history) or (incoming_stamp and incoming_stamp >= current_stamp)
+            if replace_verified:
+                for field in [
+                    "Reporting_Basis", "Audit_Status", "NSE_Consolidation_Status",
+                    "NSE_Consolidation_Verified", "Source_Verification_Status",
+                    "Source_URL", "Filing_Published_At", "Revision_Date",
+                    "Submission_Subtype", "Revision_Remark", "Baseline_Source_Status", "Status",
+                ]:
+                    current[field] = incoming.get(field, "")
+                for field in CORE + EXTRA:
+                    current[field] = number(incoming.get(field))
+        elif not current_is_history:
+            # Baseline-only rows are not independently source-verified and will
+            # fail the final gate. Retain numeric observations for gap reporting,
+            # without treating them as verified evidence.
+            for field in CORE + EXTRA:
+                if number(current.get(field)) is None and number(incoming.get(field)) is not None:
                     current[field] = number(incoming.get(field))
         if blank(current.get("Company")) and not blank(incoming.get("Company")):
             current["Company"] = incoming.get("Company")
