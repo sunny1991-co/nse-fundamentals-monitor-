@@ -19,3 +19,16 @@ for size in [100,500,1000]:
         print("COUNT",len(rec or []),"TOTAL",j.get("totalCount") if isinstance(j,dict) else None)
     except Exception as e:
         print("SIZE_ERROR",size,type(e).__name__,str(e)[:300])
+
+
+print("SECTOR_LOOKUP_PROBE")
+for sym in ["RELIANCE", "HDFCBANK", "SBIN"]:
+    t=time.time()
+    try:
+        r=s.get("https://www.nseindia.com/api/quote-equity",params={"symbol":sym},timeout=20)
+        print("QUOTE",sym,"HTTP",r.status_code,"SECONDS",round(time.time()-t,2),"BYTES",len(r.content))
+        r.raise_for_status()
+        j=r.json()
+        print("INDUSTRY_INFO",sym,j.get("industryInfo"))
+    except Exception as e:
+        print("QUOTE_ERROR",sym,type(e).__name__,str(e)[:200])
