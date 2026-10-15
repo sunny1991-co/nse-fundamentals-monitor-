@@ -18,7 +18,7 @@ API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 PAGE_SIZE = 100
 MAX_PAGES = 300
 HISTORY_DAYS = 1900
-MAX_XBRL_PER_RUN = 4500
+MAX_XBRL_PER_RUN = 6000
 PARSER_VERSION = "annual-v1"
 
 RESULTS_FILE = ROOT / "annual_historical_results.csv"
