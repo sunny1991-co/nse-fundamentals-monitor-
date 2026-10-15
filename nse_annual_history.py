@@ -22,6 +22,8 @@ MAX_PAGES = 100
 HISTORY_DAYS = 1500
 MAX_XBRL_PER_RUN = 9000
 MAX_DOWNLOAD_WORKERS = 8
+DOWNLOAD_BATCH_SIZE = MAX_DOWNLOAD_WORKERS * 4
+MAX_BLOCKED_DOWNLOADS_PER_BATCH = MAX_DOWNLOAD_WORKERS * 2
 PARSER_VERSION = "annual-v4"
 
 RESULTS_FILE = ROOT / "annual_historical_results.csv"
@@ -430,6 +432,11 @@ def process_annual_task(url: str, rec: dict) -> tuple[dict | None, dict | None, 
             break
         except Exception as exc:
             reason = f"Download/parser error: {exc}"
+            # NSE 403/429 is access blocking, not a transient XML fault.
+            # Retrying the same blocked request immediately makes it worse.
+            response = getattr(exc, "response", None)
+            if isinstance(exc, requests.HTTPError) and getattr(response, "status_code", None) in (403, 429):
+                break
             if attempt < 2:
                 time.sleep(0.5 * (attempt + 1))
 
@@ -537,10 +544,21 @@ def main():
             latest_by_company_year[key] = rec
 
     by_url = {xbrl_url(rec): rec for rec in latest_by_company_year.values() if xbrl_url(rec)}
+    # Failed URLs remain retryable, but put never-attempted URLs first.
+    # Without fair scheduling, the same blocked newest URLs starve older
+    # company-years on every daily run.
+    previous_attempts = {
+        str(row.get("Source_URL", "")): str(row.get("Processed_At_UTC", ""))
+        for _, row in old_processed.iterrows()
+        if str(row.get("Source_URL", ""))
+    }
     pending = sorted(
         [(url, rec) for url, rec in by_url.items() if url not in processed_urls],
-        key=lambda item: published_date(item[1]) or date.min,
-        reverse=True,
+        key=lambda item: (
+            item[0] in previous_attempts,
+            previous_attempts.get(item[0], ""),
+            -(published_date(item[1]) or date.min).toordinal(),
+        ),
     )[:MAX_XBRL_PER_RUN]
     print(
         f"Annual index records examined: {len(indexed)}; latest audited consolidated symbol-years: {len(by_url)}; "
@@ -549,38 +567,61 @@ def main():
     )
 
     new_rows, new_unverified, new_processed = [], [], []
+    attempted = 0
+    blocked_stop = False
+    # Submit bounded batches rather than scheduling all 9,000 tasks at once.
+    # A block on the GitHub runner must not spawn thousands of doomed requests.
     with ThreadPoolExecutor(max_workers=MAX_DOWNLOAD_WORKERS) as pool:
-        futures = {pool.submit(process_annual_task, url, rec): (url, rec) for url, rec in pending}
-        for idx, future in enumerate(as_completed(futures), 1):
-            try:
-                row, unverified_row, processed_row = future.result()
-            except Exception as exc:
-                url, rec = futures[future]
-                reason = f"Worker exception: {exc}"
-                row = None
-                unverified_row = {
-                    "Symbol": symbol(rec),
-                    "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
-                    "Source_URL": url,
-                    "Reason": reason,
-                    "Audit_Status": str(value(rec, "audited") or ""),
-                    "NSE_Consolidation_Status": str(value(rec, "consolidated") or ""),
-                    "Revision_Date": str(value(rec, "revised_Date") or ""),
-                }
-                processed_row = {
-                    "Source_URL": url, "Symbol": symbol(rec),
-                    "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
-                    "Status": "UNVERIFIED", "Reason": reason,
-                    "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "Parser_Version": PARSER_VERSION,
-                }
-            if row is not None:
-                new_rows.append(row)
-            if unverified_row is not None:
-                new_unverified.append(unverified_row)
-            new_processed.append(processed_row)
-            if idx % 100 == 0 or idx == len(pending):
-                print(f"Processed {idx}/{len(pending)} annual XBRL files", flush=True)
+        for start in range(0, len(pending), DOWNLOAD_BATCH_SIZE):
+            batch = pending[start:start + DOWNLOAD_BATCH_SIZE]
+            futures = {pool.submit(process_annual_task, url, rec): (url, rec) for url, rec in batch}
+            blocked_in_batch = 0
+            for future in as_completed(futures):
+                try:
+                    row, unverified_row, processed_row = future.result()
+                except Exception as exc:
+                    url, rec = futures[future]
+                    reason = f"Worker exception: {exc}"
+                    row = None
+                    unverified_row = {
+                        "Symbol": symbol(rec),
+                        "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+                        "Source_URL": url,
+                        "Reason": reason,
+                        "Audit_Status": str(value(rec, "audited") or ""),
+                        "NSE_Consolidation_Status": str(value(rec, "consolidated") or ""),
+                        "Revision_Date": str(value(rec, "revised_Date") or ""),
+                    }
+                    processed_row = {
+                        "Source_URL": url, "Symbol": symbol(rec),
+                        "Fiscal_Year_End": end_date(rec).isoformat() if end_date(rec) else "",
+                        "Status": "UNVERIFIED", "Reason": reason,
+                        "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "Parser_Version": PARSER_VERSION,
+                    }
+                reason_text = str(processed_row.get("Reason", ""))
+                if (
+                    "403" in reason_text or "429" in reason_text
+                ) and ("Download/parser error:" in reason_text or "Worker exception:" in reason_text):
+                    blocked_in_batch += 1
+                if row is not None:
+                    new_rows.append(row)
+                if unverified_row is not None:
+                    new_unverified.append(unverified_row)
+                new_processed.append(processed_row)
+                attempted += 1
+                if attempted % 100 == 0 or attempted == len(pending):
+                    print(f"Processed {attempted}/{len(pending)} annual XBRL files", flush=True)
+            if blocked_in_batch >= MAX_BLOCKED_DOWNLOADS_PER_BATCH:
+                blocked_stop = True
+                print(
+                    f"NSE XBRL access blocked for {blocked_in_batch}/{len(batch)} in this batch. "
+                    f"Stopping after {attempted} attempts; remaining URLs will be retried in later runs.",
+                    flush=True,
+                )
+                break
+    if blocked_stop:
+        print("Annual history is INCOMPLETE due to NSE 403/429; do not approve unverified symbols.", flush=True)
 
     results = pd.concat([old_results, pd.DataFrame(new_rows)], ignore_index=True, sort=False)
     if not results.empty:
