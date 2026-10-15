@@ -46,7 +46,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add quarterly_results.csv quarterly_change_report.csv quarterly_unverified_filings.csv quarterly_processed_filings.csv
+          git add annual_fundamental_quality_report.csv annual_fundamental_data_gaps.csv annual_fundamental_quality_summary.csv quarterly_results.csv quarterly_change_report.csv quarterly_unverified_filings.csv quarterly_processed_filings.csv
           if git diff --cached --quiet; then
             echo "No quarterly report changes to commit."
           else
