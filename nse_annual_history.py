@@ -478,6 +478,8 @@ def main():
         old_processed["Parser_Version"] = ""
     if "Source_URL" not in old_processed.columns:
         old_processed["Source_URL"] = ""
+    if "Status" not in old_processed.columns:
+        old_processed["Status"] = ""
     # Cache only successful verifications. A failed download, 403/429, or
     # inconclusive XBRL parse must be retried on later scheduled runs; otherwise
     # a transient NSE failure permanently blocks annual history coverage.
