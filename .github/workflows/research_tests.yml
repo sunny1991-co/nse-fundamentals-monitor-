@@ -1,0 +1,27 @@
+name: Research app and security tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app.py'
+      - 'monitor.py'
+      - 'setup_auth.py'
+      - 'research_monitor/**'
+      - 'test_*.py'
+      - 'swing_*.py'
+      - 'requirements.txt'
+      - '.github/workflows/research_tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest test_monitor_safety test_research_modules test_app_security -v

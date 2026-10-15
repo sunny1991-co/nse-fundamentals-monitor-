@@ -1,0 +1,31 @@
+{
+  "mode": "research_and_paper",
+  "capital_inr": null,
+  "risk_per_trade_fraction": 0.005,
+  "max_total_open_risk_fraction": 0.02,
+  "max_position_fraction": 0.1,
+  "daily_loss_limit_fraction": 0.015,
+  "max_quote_age_seconds": 15,
+  "max_spread_fraction": 0.005,
+  "cost_fraction_per_side": 0.002,
+  "slippage_fraction_per_side": 0.001,
+  "mainboard_only": true,
+  "derivatives_mode": "paper_only",
+  "ipo_mode": "research_only",
+  "kill_switch": false,
+  "derivatives_research_scope": {
+    "underlying_types": [
+      "INDEX",
+      "STOCK"
+    ],
+    "contract_types": [
+      "OPTIDX",
+      "FUTIDX",
+      "OPTSTK",
+      "FUTSTK"
+    ],
+    "example_index": "NIFTY 50",
+    "contracts_from": "current_verified_official_instrument_master",
+    "execution": "paper_only"
+  }
+}

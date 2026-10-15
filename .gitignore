@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+monitor_config.json
+runtime/
+market_ohlcv.csv
+market_data_metadata.json
+watchlist.json
+instrument_master.json
+*.sqlite
+*.sqlite3
