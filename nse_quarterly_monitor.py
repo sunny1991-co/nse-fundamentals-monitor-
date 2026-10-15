@@ -263,21 +263,70 @@ def get_fact(root: ET.Element, aliases: list[str], context_ids: set[str]) -> flo
     return candidates[0][1]
 
 
+
+def normalize_basis(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"consolidated", "consolidated financial statements"}:
+        return "Consolidated"
+    if text in {"standalone", "separate", "separate financial statements"}:
+        return "Standalone"
+    return "UNVERIFIED"
+
+
+def xbrl_report_basis(root: ET.Element) -> set[str]:
+    # NSE's XBRL uses this fact; the filing index separately exposes
+    # the "consolidated" column. Require the two independent values to agree.
+    basis_tag_names = {
+        "natureofreportstandaloneconsolidated",
+        "natureofreport",
+        "natureofstatement",
+        "natureoffinancialstatements",
+    }
+    found: set[str] = set()
+    for node in root.iter():
+        name = local_name(node.tag).lower()
+        if name not in basis_tag_names:
+            continue
+        value = (node.text or "").strip().lower()
+        if value == "consolidated":
+            found.add("Consolidated")
+        elif value in {"standalone", "separate"}:
+            found.add("Standalone")
+    return found
+
+
 def parse_xbrl(xml_bytes: bytes, record: dict, url: str) -> tuple[dict | None, str]:
     try:
         root = ET.fromstring(xml_bytes)
     except ET.ParseError as exc:
         return None, f"Invalid XBRL XML: {exc}"
     contexts = parse_contexts(root)
-    all_basis = {ctx["basis"] for ctx in contexts.values() if ctx["basis"] in ("Consolidated", "Standalone")}
+    metadata_basis = normalize_basis(first_value(
+        record, "consolidated", "consolidatedStandalone", "natureOfReport",
+        "nature_Of_Report", "reportingBasis"
+    ))
+    fact_basis = xbrl_report_basis(root)
+    if metadata_basis == "UNVERIFIED":
+        return None, "NSE filing index has no recognized Consolidated/Standalone label"
+    if len(fact_basis) != 1:
+        return None, "XBRL reporting-basis fact missing or conflicting"
+    xbrl_basis = next(iter(fact_basis))
+    if metadata_basis != xbrl_basis:
+        return None, f"NSE/XBRL reporting-basis mismatch: index={metadata_basis}, XBRL={xbrl_basis}"
+    if metadata_basis != TARGET_BASIS:
+        return None, "NSE and XBRL both mark this filing as Standalone"
+
+    # Many NSE files state the basis in a dedicated fact rather than as a
+    # dimension on every context. This is accepted only after index and XBRL
+    # basis values agree. Contexts explicitly marked as the opposite basis or
+    # mixed are still excluded, as are dimensional detail contexts.
     target_contexts = {
         cid: ctx for cid, ctx in contexts.items()
-        if ctx["basis"] == TARGET_BASIS and not ctx["other_dimensions"]
+        if ctx["basis"] not in ("Standalone", "MIXED")
+        and not ctx["other_dimensions"]
     }
     if not target_contexts:
-        if not all_basis:
-            return None, "Reporting basis not explicitly verifiable in XBRL contexts"
-        return None, "No clean consolidated context; dimensional/statement context mismatch"
+        return None, "No clean context for consolidated statement facts"
 
     quarter_end = record_quarter_end(record)
     if quarter_end is None:
@@ -314,6 +363,8 @@ def parse_xbrl(xml_bytes: bytes, record: dict, url: str) -> tuple[dict | None, s
         "Total_Equity_Cr": None,
         "Total_Borrowings_Cr": None,
         "Reporting_Type": str(first_value(record, "type", "reportingType") or ""),
+        "Filing_Audit_Status": str(first_value(record, "audited", "auditStatus") or ""),
+        "Filing_Consolidation_Status": str(first_value(record, "consolidated", "consolidatedStandalone", "natureOfReport") or ""),
         "Submission_Subtype": str(first_value(record, "type_Sub", "typeSub") or ""),
         "Revision_Date": str(first_value(record, "revised_Date", "revisedDate") or ""),
         "Revision_Remark": str(first_value(record, "revision_Remark", "revisionRemark") or ""),
@@ -323,7 +374,7 @@ def parse_xbrl(xml_bytes: bytes, record: dict, url: str) -> tuple[dict | None, s
         "Quarter_Context_Days": min(duration_candidates),
         "Quarter_Context_IDs": "|".join(sorted(quarter_context_ids)),
         "Instant_Context_IDs": "|".join(sorted(instant_context_ids)),
-        "Basis_Verification": "Explicit XBRL context member",
+        "Basis_Verification": "NSE filing index label matches XBRL NatureOfReportStandaloneConsolidated fact",
     }
     currency_fields = ["Revenue_Operations_Cr", "Net_Profit_Cr"]
     for field in currency_fields:
@@ -473,7 +524,7 @@ def main() -> None:
     result_columns = [
         "Symbol", "Quarter_End", "Reporting_Basis", *VALUE_FIELDS, "Missing_Fields",
         "Fundamentals_Complete", "Reporting_Type", "Submission_Subtype", "Revision_Date",
-        "Revision_Remark", "Sequence_ID", "Filing_Published_At", "Source_URL",
+        "Revision_Remark", "Sequence_ID", "Filing_Audit_Status", "Filing_Consolidation_Status", "Filing_Published_At", "Source_URL",
         "Quarter_Context_Days", "Quarter_Context_IDs", "Instant_Context_IDs", "Basis_Verification",
     ]
     all_results = pd.concat([existing_results, pd.DataFrame(new_rows)], ignore_index=True, sort=False)
