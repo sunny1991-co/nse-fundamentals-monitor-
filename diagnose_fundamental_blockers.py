@@ -38,7 +38,7 @@ def main():
     for year in sorted(by_year):
         print(f"{year}: {dict(by_year[year])}")
 
-    print("\\nAnnual unverified filing reasons:")
+    print("\nAnnual unverified filing reasons:")
     annual_failures = Counter()
     for row in rows("annual_historical_unverified.csv"):
         reason = row.get("Reason", "")
@@ -75,10 +75,10 @@ def main():
         str(row.get("Fundamentals_Complete", "")).lower() in ("true", "yes", "1")
         for row in raw_quarters
     )
-    print(f"\\nRaw verified quarterly rows: {len(raw_quarters)}; complete core facts: {complete_quarters}")
+    print(f"\nRaw verified quarterly rows: {len(raw_quarters)}; complete core facts: {complete_quarters}")
     print("Quarterly processed statuses:",
           dict(Counter(row.get("Status", "UNKNOWN") for row in rows("quarterly_processed_filings.csv"))))
-    print("\\nQuarterly change rows:", len(rows("quarterly_change_report.csv")))
+    print("\nQuarterly change rows:", len(rows("quarterly_change_report.csv")))
     print("\nRead-only diagnostic: no files or trading signals were changed.")
     print("Never infer that a source is verified merely because core metrics are populated.")
 
