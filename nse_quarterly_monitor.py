@@ -21,10 +21,12 @@ ROOT = Path(__file__).resolve().parent
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 PAGE_SIZE = 100
-MAX_PAGES = 120
-LOOKBACK_DAYS = 560
-MAX_NEW_XBRL_PER_RUN = 1000
+MAX_PAGES = 300
+LOOKBACK_DAYS = 1900
+MAX_NEW_XBRL_PER_RUN = 3000
+PARSER_VERSION = "2"
 TARGET_BASIS = "Consolidated"
+ANNUAL_QUALITY_FILE = ROOT / "annual_fundamental_quality_report.csv"
 
 RESULTS_FILE = ROOT / "quarterly_results.csv"
 COMPARE_FILE = ROOT / "quarterly_change_report.csv"
@@ -391,7 +393,9 @@ def main() -> None:
     existing_results = read_csv(RESULTS_FILE)
     existing_unverified = read_csv(UNVERIFIED_FILE)
     existing_processed = read_csv(PROCESSED_FILE)
-    processed_urls = set(existing_processed.get("Source_URL", pd.Series(dtype=str)).astype(str))
+    if "Parser_Version" not in existing_processed.columns:
+        existing_processed["Parser_Version"] = ""
+    processed_urls = set(existing_processed.loc[existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
     session = make_session()
     index_records = fetch_recent_records(session)
 
@@ -448,6 +452,7 @@ def main() -> None:
             "Status": "VERIFIED" if row else "UNVERIFIED",
             "Reason": reason,
             "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "Parser_Version": PARSER_VERSION,
         }
         new_processed.append(processed_row)
         if row:
@@ -486,7 +491,25 @@ def main() -> None:
         all_results = all_results[result_columns].sort_values(["Symbol", "Quarter_End"])
         all_results["Fundamentals_Complete"] = all_results["Fundamentals_Complete"].astype(str)
         save_frame(all_results, RESULTS_FILE)
-        save_frame(build_change_report(all_results), COMPARE_FILE)
+        full_change_report = build_change_report(all_results)
+        # The final comparison report only surfaces companies that pass the
+        # complete annual fundamental screen. Raw verified quarter facts remain
+        # in quarterly_results.csv for audit/review.
+        if ANNUAL_QUALITY_FILE.exists():
+            annual_quality = read_csv(ANNUAL_QUALITY_FILE)
+            if not annual_quality.empty and {"Symbol", "Full_Fundamental_Criteria_Pass"}.issubset(annual_quality.columns):
+                eligible = set(annual_quality.loc[
+                    annual_quality["Full_Fundamental_Criteria_Pass"].astype(str).str.lower().isin(["true", "1", "yes"]),
+                    "Symbol"
+                ].astype(str).str.upper())
+                full_change_report = full_change_report[
+                    full_change_report["Symbol"].astype(str).str.upper().isin(eligible)
+                ]
+            else:
+                full_change_report = full_change_report.iloc[0:0]
+        else:
+            full_change_report = full_change_report.iloc[0:0]
+        save_frame(full_change_report, COMPARE_FILE)
     else:
         save_frame(pd.DataFrame(columns=result_columns), RESULTS_FILE)
         save_frame(pd.DataFrame(columns=result_columns), COMPARE_FILE)
@@ -503,7 +526,7 @@ def main() -> None:
         all_unverified = pd.DataFrame(columns=unverified_columns)
     save_frame(all_unverified, UNVERIFIED_FILE)
 
-    processed_columns = ["Source_URL", "Symbol", "Quarter_End", "Status", "Reason", "Processed_At_UTC"]
+    processed_columns = ["Source_URL", "Symbol", "Quarter_End", "Status", "Reason", "Processed_At_UTC", "Parser_Version"]
     all_processed = pd.concat([existing_processed, pd.DataFrame(new_processed)], ignore_index=True, sort=False)
     if not all_processed.empty:
         for col in processed_columns:
