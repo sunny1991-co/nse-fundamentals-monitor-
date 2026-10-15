@@ -20,8 +20,8 @@ import requests
 ROOT = Path(__file__).resolve().parent
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
-PAGE_SIZE = 100
-MAX_PAGES = 300
+PAGE_SIZE = 500
+MAX_PAGES = 100
 LOOKBACK_DAYS = 560
 MAX_NEW_XBRL_PER_RUN = 9000
 PARSER_VERSION = "5"

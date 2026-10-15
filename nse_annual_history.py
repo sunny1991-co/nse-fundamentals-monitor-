@@ -15,8 +15,8 @@ import requests
 ROOT = Path(__file__).resolve().parent
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
-PAGE_SIZE = 100
-MAX_PAGES = 300
+PAGE_SIZE = 500
+MAX_PAGES = 100
 HISTORY_DAYS = 1900
 MAX_XBRL_PER_RUN = 6000
 PARSER_VERSION = "annual-v3"
@@ -193,7 +193,7 @@ def all_recent_records(s: requests.Session) -> list[dict]:
             break
         # Do not stop early from a publication-date heuristic: older annual
         # filings/revisions can appear out of chronological order in the NSE index.
-        time.sleep(0.08)
+        time.sleep(0.03)
     print(f"Annual index records examined: {len(out)}; history cutoff: {cutoff}")
     return out
 
