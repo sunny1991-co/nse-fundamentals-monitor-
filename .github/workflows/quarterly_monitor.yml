@@ -10,11 +10,13 @@ on:
       - 'final_fundamental_shortlist.py'
       - 'nse_annual_history.py'
       - 'nse_legacy_annual_recovery.py'
+      - 'nse_legacy_index_fetch.py'
       - 'nse_sector_classification.py'
       - 'diagnose_fundamental_blockers.py'
       - 'test_quarterly_collection.py'
       - 'test_final_shortlist_source.py'
       - 'test_legacy_annual_recovery.py'
+      - 'test_legacy_index_fetch.py'
       - '.github/workflows/quarterly_monitor.yml'
   workflow_dispatch:
   schedule:
@@ -47,16 +49,19 @@ jobs:
         run: ls -la
 
       - name: Validate Python syntax
-        run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_legacy_annual_recovery.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
+        run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_legacy_annual_recovery.py nse_legacy_index_fetch.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
 
       - name: Test trading and fundamental collection safety
-        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery -v
+        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery test_legacy_index_fetch -v
 
       - name: Check annual baseline files
         run: python nse_fundamentals_check.py
 
       - name: Fetch five-year audited consolidated annual history
         run: python nse_annual_history.py
+
+      - name: Fetch official NSE legacy filing metadata when authorized
+        run: python nse_legacy_index_fetch.py
 
       - name: Audit legacy FY2022-23 and FY2023-24 official-index recovery gaps
         run: python nse_legacy_annual_recovery.py
@@ -97,6 +102,9 @@ jobs:
             annual_history_processed.csv
             legacy_annual_recovery_manifest.csv
             legacy_annual_recovery_summary.csv
+            legacy_index_fetch_status.csv
+            nse_legacy_financial_results_2022-23.csv
+            nse_legacy_financial_results_2023-24.csv
             nse_sector_map.csv
             quarterly_results.csv
             quarterly_collection_status.csv
