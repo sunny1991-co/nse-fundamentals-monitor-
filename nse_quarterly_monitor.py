@@ -564,6 +564,15 @@ def main() -> None:
                 full_change_report = full_change_report[
                     full_change_report["Symbol"].astype(str).str.upper().isin(eligible)
                 ]
+                # Only publish quarterly comparisons when all six core facts for
+                # that quarterly filing were present; incomplete rows remain in
+                # the raw audited source file for explicit gap review.
+                if "Fundamentals_Complete" not in full_change_report.columns:
+                    full_change_report = full_change_report.iloc[0:0]
+                else:
+                    full_change_report = full_change_report[
+                        full_change_report["Fundamentals_Complete"].astype(str).str.lower().isin(["true", "1", "yes"])
+                    ]
             else:
                 full_change_report = full_change_report.iloc[0:0]
         else:
