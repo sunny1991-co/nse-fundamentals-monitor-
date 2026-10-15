@@ -478,9 +478,15 @@ def main():
         old_processed["Parser_Version"] = ""
     if "Source_URL" not in old_processed.columns:
         old_processed["Source_URL"] = ""
+    # Cache only successful verifications. A failed download, 403/429, or
+    # inconclusive XBRL parse must be retried on later scheduled runs; otherwise
+    # a transient NSE failure permanently blocks annual history coverage.
+    # Never promote an unverified filing into the verified results.
+    successful_statuses = {"VERIFIED", "VERIFIED_WITH_MISSING_CORE_FIELDS"}
     processed_urls = set(
         old_processed.loc[
-            old_processed["Parser_Version"].astype(str).eq(PARSER_VERSION),
+            old_processed["Parser_Version"].astype(str).eq(PARSER_VERSION)
+            & old_processed["Status"].astype(str).isin(successful_statuses),
             "Source_URL"
         ].astype(str)
     )
