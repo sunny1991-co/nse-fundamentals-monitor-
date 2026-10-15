@@ -446,6 +446,8 @@ def main() -> None:
     existing_processed = read_csv(PROCESSED_FILE)
     if "Parser_Version" not in existing_processed.columns:
         existing_processed["Parser_Version"] = ""
+    if "Source_URL" not in existing_processed.columns:
+        existing_processed["Source_URL"] = ""
     processed_urls = set(existing_processed.loc[existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
     session = make_session()
     index_records = fetch_recent_records(session)
