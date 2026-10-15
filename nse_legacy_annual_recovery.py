@@ -51,7 +51,7 @@ def field(row: dict, *aliases: str) -> str:
 
 
 def normalize_company(name: str) -> str:
-    return re.sub(r"\\s+", " ", str(name).strip().casefold())
+    return re.sub(r"\s+", " ", str(name).strip().casefold())
 
 
 def symbol_universe(root: Path) -> tuple[dict[str, str], dict[str, set[str]]]:
