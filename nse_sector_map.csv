@@ -13,3 +13,5 @@ AARTIDRUGS,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol
 AARTIIND,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIIND,NSE quote HTTP 403 (blocked)
 AARTIPHARM,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIPHARM,NSE quote HTTP 403 (blocked)
 AARTISURF,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTISURF,NSE quote HTTP 403 (blocked)
+AARVI,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARVI,NSE quote HTTP 403 (blocked)
+ABAN,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=ABAN,NSE quote HTTP 403 (blocked)
