@@ -38,6 +38,26 @@ def main():
     for year in sorted(by_year):
         print(f"{year}: {dict(by_year[year])}")
 
+    print("\\nAnnual unverified filing reasons:")
+    annual_failures = Counter()
+    for row in rows("annual_historical_unverified.csv"):
+        reason = row.get("Reason", "")
+        if "403" in reason:
+            category = "NSE XBRL HTTP 403 (access denied)"
+        elif "429" in reason:
+            category = "NSE XBRL HTTP 429 (rate limited)"
+        elif "No unambiguous" in reason:
+            category = "annual XBRL context missing"
+        elif "reporting-basis" in reason or "basis is" in reason:
+            category = "consolidated basis not verified"
+        elif "Missing" in reason or "missing" in reason:
+            category = "missing required source facts"
+        else:
+            category = "other: " + reason[:110]
+        annual_failures[category] += 1
+    for reason, count in annual_failures.most_common(10):
+        print(f"{count:5}  {reason}")
+
     print("\nOfficial NSE sector classification:")
     sectors = rows("nse_sector_map.csv")
     sector_status = Counter(x.get("Lookup_Status", "UNKNOWN") for x in sectors)
@@ -50,7 +70,15 @@ def main():
     for row in rows("annual_fundamental_quality_summary.csv"):
         print(" | ".join(f"{k}={v}" for k, v in row.items()))
 
-    print("\nQuarterly change rows:", len(rows("quarterly_change_report.csv")))
+    raw_quarters = rows("quarterly_results.csv")
+    complete_quarters = sum(
+        str(row.get("Fundamentals_Complete", "")).lower() in ("true", "yes", "1")
+        for row in raw_quarters
+    )
+    print(f"\\nRaw verified quarterly rows: {len(raw_quarters)}; complete core facts: {complete_quarters}")
+    print("Quarterly processed statuses:",
+          dict(Counter(row.get("Status", "UNKNOWN") for row in rows("quarterly_processed_filings.csv"))))
+    print("\\nQuarterly change rows:", len(rows("quarterly_change_report.csv")))
     print("\nRead-only diagnostic: no files or trading signals were changed.")
     print("Never infer that a source is verified merely because core metrics are populated.")
 
