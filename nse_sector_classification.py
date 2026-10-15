@@ -20,7 +20,10 @@ RETRY_FAILED_AFTER_DAYS = 7
 def read_csv(path):
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
     df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
     return df
 

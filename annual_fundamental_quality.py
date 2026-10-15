@@ -25,7 +25,10 @@ FOUR_YEARS = ["2022-23", "2023-24", "2024-25", "2025-26"]
 def read_csv(path: Path) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
     df.columns = [str(c).strip().lstrip("\ufeff") for c in df.columns]
     return df
 

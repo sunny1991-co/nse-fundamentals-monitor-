@@ -181,6 +181,8 @@ def read_csv(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
     try:
         return pd.read_csv(path, dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
     except Exception as exc:
         raise RuntimeError(f"Cannot read existing output {path.name}: {exc}") from exc
 

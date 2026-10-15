@@ -403,7 +403,10 @@ def parse_annual(record: dict, url: str, body: bytes) -> tuple[dict | None, str]
 def read_csv(path: Path) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
-    return pd.read_csv(path, dtype=str, keep_default_na=False)
+    try:
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
 
 
 def save_csv(df: pd.DataFrame, path: Path) -> None:
