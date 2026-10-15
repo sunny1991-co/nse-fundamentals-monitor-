@@ -373,9 +373,11 @@ def main():
     old_results = read_csv(RESULTS_FILE)
     old_unverified = read_csv(UNVERIFIED_FILE)
     old_processed = read_csv(PROCESSED_FILE)
-    if "Parser_Version" not in old_processed:
+    if "Parser_Version" not in old_processed.columns:
         old_processed["Parser_Version"] = ""
-    processed_urls = set(old_processed.loc[old_processed["Parser_Version"].eq(PARSER_VERSION), "Source_URL"].astype(str))
+    if "Source_URL" not in old_processed.columns:
+        old_processed["Source_URL"] = ""
+    processed_urls = set(old_processed.loc[old_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
     s = session_create()
     indexed = all_recent_records(s)
     by_url = {}
