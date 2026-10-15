@@ -10,24 +10,9 @@
   "cost_fraction_per_side": 0.002,
   "slippage_fraction_per_side": 0.001,
   "mainboard_only": true,
-  "derivatives_mode": "paper_only",
-  "ipo_mode": "research_only",
+  "derivatives_mode": "disabled",
+  "ipo_mode": "disabled",
   "kill_switch": false,
-  "derivatives_research_scope": {
-    "underlying_types": [
-      "INDEX",
-      "STOCK"
-    ],
-    "contract_types": [
-      "OPTIDX",
-      "FUTIDX",
-      "OPTSTK",
-      "FUTSTK"
-    ],
-    "example_index": "NIFTY 50",
-    "contracts_from": "current_verified_official_instrument_master",
-    "execution": "paper_only"
-  },
   "monitor_accounts": {
     "SWING": {
       "capital_inr": null,
@@ -35,13 +20,7 @@
       "performance_report": "runtime/swing_performance.json",
       "alert_label": "SWING",
       "risk_budget_isolated": true
-    },
-    "FNO": {
-      "paper_capital_inr": null,
-      "ledger": "runtime/fno_paper.sqlite",
-      "performance_report": "runtime/fno_performance.json",
-      "alert_label": "FNO",
-      "risk_budget_isolated": true
     }
-  }
+  },
+  "scope": "SWING_EQUITY_ONLY"
 }

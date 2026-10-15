@@ -2,6 +2,7 @@
 Paper automation and real-money manual decisions remain separate.
 """
 import hashlib
+import math
 import json
 import sqlite3
 from datetime import datetime,timezone
@@ -15,7 +16,7 @@ REQUIRED={'instrument','strategy_version','reason','entry_min','entry_max','stop
 def prepare_alert(path,event,now=None):
     now=now or datetime.now(timezone.utc)
     blockers=[]
-    if event.get('module') not in {'SWING','FNO'}:
+    if event.get('module') != 'SWING':
         blockers.append('MONITOR_MODULE_REQUIRED')
     if event.get('type') not in EVENTS or not event.get('event_id'):
         blockers.append('EVENT_ID_OR_TYPE_INVALID')
@@ -28,6 +29,14 @@ def prepare_alert(path,event,now=None):
             blockers.append('STALE_OR_EXPIRED_ALERT')
     except (KeyError,TypeError,ValueError):
         blockers.append('TIMESTAMP_INVALID')
+    try:
+        prices = [event['entry_min'], event['entry_max'], event['stop_loss'], *event['targets']]
+        if len(event['targets']) < 2 or any(isinstance(v,bool) or not math.isfinite(float(v)) or float(v)<=0 for v in prices):
+            raise ValueError('Invalid prices')
+        if event.get('type')=='ENTRY_SETUP' and not float(event['stop_loss']) < float(event['entry_min']) <= float(event['entry_max']) < float(event['targets'][0]) < float(event['targets'][1]):
+            raise ValueError('Invalid price ordering')
+    except (KeyError, TypeError, ValueError):
+        blockers.append('INVALID_PLAN_PRICES')
     if event.get('type')=='ENTRY_SETUP':
         for gate in ['backtest_validated','forward_paper_validated','current_setup_validated','risk_checks_passed']:
             if event.get(gate) is not True:

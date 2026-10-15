@@ -1,5 +1,7 @@
 """Private research dashboard shell. No trading or broker order routes."""
 import csv
+import json
+from datetime import datetime, timezone
 import hmac
 import os
 import secrets
@@ -9,7 +11,7 @@ from research_monitor.auth import AuthStore
 
 ROOT=Path(__file__).resolve().parent
 LOGIN='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Secure login</title><body><main><h1>NSE Research · सुरक्षित login</h1><p>Password और Authenticator code दोनों आवश्यक हैं।</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><p><label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label></p><p><label>Authenticator / recovery code <input name="code" autocomplete="one-time-code" required maxlength="80"></label></p><button>Login</button></form><p>{{ error }}</p></main></body></html>'''
-DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NSE Research</title><body><main><h1>NSE Research</h1><p>Research version · वास्तविक orders भेजने की सुविधा नहीं है।</p><h2>Swing</h2><p>Report date: {{ date }} · Fundamental shortlist: {{ count }}</p><p>Live feed और backtest validation अधूरे हों तो entry signal बंद रहता है।</p><h2>F&amp;O</h2><p>Paper/research only. Contract-level backtest और live-feed validation लंबित।</p><h2>IPO</h2><p>RHP research module. IPO feed connection लंबित। Pre-listing price backtest उपलब्ध नहीं।</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>'''
+DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Swing Research</title><body><main><h1>Swing Research</h1><p>Equity swing only · Orders aap manually broker app mein karenge.</p><h2>System status</h2><p>{{ worker }}</p><p>Live feed, approved SMS template aur forward paper validation pending hone par entry alerts blocked rahenge.</p><h2>Fundamental screening</h2><p>Report date: {{ date }} · Strict shortlist: {{ count }}</p><h2>Conditional research plans</h2><p>Yeh executable entry alerts nahi hain. Historical win rate future probability nahi hai.</p><table><thead><tr><th>Stock</th><th>Signal date</th><th>Entry range</th><th>Stop</th><th>Targets at minimum entry</th><th>Evidence/status</th></tr></thead><tbody>{% for r in candidates %}<tr><td>{{ r.Symbol }}</td><td>{{ r.Signal_Date }}</td><td>{{ r.Entry_Min }} – {{ r.Entry_Max_No_Chase }}</td><td>{{ r.Stop_Loss }}</td><td>{{ r.Target_1_At_Min_Entry }} / {{ r.Target_2_At_Min_Entry }}</td><td>{{ r.Status }}</td></tr>{% else %}<tr><td colspan="6">Abhi verified actionable setup nahi hai.</td></tr>{% endfor %}</tbody></table><h2>Schedule</h2><p>Verified exchange calendar ke mutabik market session monitoring; close ke baad fundamental screening aur backtest. Holidays aur special sessions calendar se aayenge. Laptop on aur internet connected rehna chahiye.</p><p>Capital abhi configure nahi hua ho to position sizing blocked rahegi. Stop loss ke paar gap hone par loss zyada ho sakta hai.</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>''' 
 
 def create_app(settings=None):
     cfg=dict(os.environ);cfg.update(settings or {})
@@ -68,7 +70,19 @@ def create_app(settings=None):
             with path.open() as f:
                 row=next(csv.DictReader(f),{})
                 count=row.get('Final_Shortlist_Count',count);day=row.get('Report_Generated_On',day)
-        return render_template_string(DASH,count=count,date=day,csrf=session['csrf'])
+        worker='Worker not started / status unavailable'
+        try:
+            state=json.loads((ROOT/'runtime'/'worker_status.json').read_text(encoding='utf-8'))
+            age=(datetime.now(timezone.utc)-datetime.fromisoformat(state['updated_at'])).total_seconds()
+            worker=(state['phase'] if 0<=age<=60 else 'WORKER STATUS STALE')+' · Live feed: '+state.get('live_feed','UNKNOWN')
+        except (OSError,ValueError,KeyError,TypeError):
+            pass
+        candidates=[]
+        candidate_path=ROOT/'swing_trade_candidates.csv'
+        if candidate_path.exists():
+            with candidate_path.open(encoding='utf-8') as f:
+                candidates=list(csv.DictReader(f))[:100]
+        return render_template_string(DASH,count=count,date=day,worker=worker,candidates=candidates,csrf=session['csrf'])
 
     @app.post('/logout')
     def logout():

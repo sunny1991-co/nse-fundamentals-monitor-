@@ -38,7 +38,7 @@ def size_plan(plan, quote, cfg, portfolio, now=None):
     if plan.get('symbol')!=quote.get('symbol') or str(plan.get('token'))!=str(quote.get('token')) or plan.get('exchange')!=quote.get('exchange'):
         errors.append('INSTRUMENT_MISMATCH')
     kind=plan.get('kind')
-    if kind not in {'equity','long_option'}:
+    if kind != 'equity':
         errors.append('INSTRUMENT_NOT_IMPLEMENTED')
     # Stock backtests must never be reused as evidence for an option contract.
     required=['holdout_pass','paper_validation_pass','strategy_version_match','entry_rules_match','exit_rules_match']

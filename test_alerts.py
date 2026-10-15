@@ -17,12 +17,11 @@ class AlertTests(unittest.TestCase):
     def test_dedup(self):
         self.assertEqual(prepare_alert(self.path,self.event,self.now)['status'],'QUEUED_NOT_SENT')
         self.assertEqual(prepare_alert(self.path,self.event,self.now)['status'],'DUPLICATE_SUPPRESSED')
-    def test_swing_and_fno_events_are_separate(self):
+    def test_fno_is_disabled(self):
         first=prepare_alert(self.path,self.event,self.now)
         self.event['module']='FNO'
         second=prepare_alert(self.path,self.event,self.now)
-        self.assertEqual(second['status'],'QUEUED_NOT_SENT')
-        self.assertNotEqual(first['id'],second['id'])
+        self.assertEqual(second['status'],'BLOCKED')
     def test_expiry_blocks(self):
         self.assertEqual(prepare_alert(self.path,self.event,self.now+timedelta(seconds=40))['status'],'BLOCKED')
     def test_unvalidated_paper_blocks(self):

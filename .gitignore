@@ -11,3 +11,5 @@ watchlist.json
 instrument_master.json
 *.sqlite
 *.sqlite3
+swing_watchlist.json
+exchange_sessions.json

@@ -24,4 +24,4 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
-      - run: python -m unittest test_monitor_safety test_research_modules test_app_security test_alerts -v
+      - run: python -m unittest test_monitor_safety test_research_modules test_app_security test_alerts test_swing_schedule_sms -v
