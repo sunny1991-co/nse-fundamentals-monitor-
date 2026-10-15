@@ -19,7 +19,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: nse-fundamentals-monitor-${{ github.ref }}
+  group: nse-fundamentals-monitor-fast-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
