@@ -24,7 +24,7 @@ PAGE_SIZE = 100
 MAX_PAGES = 300
 LOOKBACK_DAYS = 560
 MAX_NEW_XBRL_PER_RUN = 6000
-PARSER_VERSION = "3"
+PARSER_VERSION = "4"
 TARGET_BASIS = "Consolidated"
 ANNUAL_QUALITY_FILE = ROOT / "annual_fundamental_quality_report.csv"
 
@@ -45,7 +45,13 @@ METRICS = {
 ALIASES = {
     "Revenue_Operations_Cr": ["RevenueFromOperations", "RevenueFromOperationsNetOfExciseDuty"],
     "Net_Profit_Cr": ["ProfitLossForPeriod", "ProfitLoss"],
-    "Basic_EPS_Rs": ["BasicEarningsLossPerShare", "EarningsPerShareBasic", "BasicEPS"],
+    "Basic_EPS_Rs": [
+        "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        "BasicEarningsLossPerShare",
+        "BasicEarningsLossPerShareFromContinuingOperations",
+        "EarningsPerShareBasic",
+        "BasicEPS",
+    ],
     "Total_Assets_Cr": ["Assets", "TotalAssets"],
     "Total_Equity_Cr": ["Equity", "TotalEquity"],
 }
