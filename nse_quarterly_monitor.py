@@ -25,6 +25,9 @@ MAX_PAGES = 100
 LOOKBACK_DAYS = 560
 MAX_NEW_XBRL_PER_RUN = 9000
 PARSER_VERSION = "5"
+MAX_CONSECUTIVE_ACCESS_BLOCKS = 4
+MAX_CONSECUTIVE_DOWNLOAD_ERRORS = 12
+COLLECTION_STATUS_FILE = ROOT / "quarterly_collection_status.csv"
 TARGET_BASIS = "Consolidated"
 ANNUAL_QUALITY_FILE = ROOT / "annual_fundamental_quality_report.csv"
 
@@ -452,7 +455,19 @@ def main() -> None:
         existing_processed["Parser_Version"] = ""
     if "Source_URL" not in existing_processed.columns:
         existing_processed["Source_URL"] = ""
-    processed_urls = set(existing_processed.loc[existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"].astype(str))
+    if "Status" not in existing_processed.columns:
+        existing_processed["Status"] = ""
+    # A parser/index failure may become verifiable later. Cache verified files
+    # only, and keep an audit trail for unsuccessful attempts.
+    processed_urls = set(existing_processed.loc[
+        existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION)
+        & existing_processed["Status"].astype(str).eq("VERIFIED"), "Source_URL"
+    ].astype(str))
+    previous_attempts = {
+        str(row.get("Source_URL", "")): str(row.get("Processed_At_UTC", ""))
+        for _, row in existing_processed.iterrows()
+        if str(row.get("Source_URL", ""))
+    }
     # Quarterly work is intentionally gated by the complete annual screen.
     # If that report is unavailable, stop rather than quietly checking every
     # listed company without the user's required annual-first verification.
@@ -484,8 +499,21 @@ def main() -> None:
     if not eligible_symbols:
         print("No annual PASS yet; collect raw verified quarters, but publish no qualified comparisons.")
 
-    session = make_session()
-    index_records = fetch_recent_records(session)
+    # Respect upstream access blocks. Retain audited, already verified rows
+    # and still update the final fail-closed comparison and status report.
+    collection_status = "OK"
+    collection_error = ""
+    session = None
+    try:
+        session = make_session()
+        index_records = fetch_recent_records(session)
+    except (requests.RequestException, RuntimeError) as exc:
+        if "403" not in str(exc) and "429" not in str(exc):
+            raise
+        collection_status = "NSE_INDEX_ACCESS_BLOCKED"
+        collection_error = str(exc)[:240]
+        index_records = []
+        print(f"NSE filing index access blocked: {collection_error}. Keeping existing verified records.")
 
     cutoff = date.today() - timedelta(days=LOOKBACK_DAYS)
     by_url: dict[str, dict] = {}
@@ -494,7 +522,7 @@ def main() -> None:
         sym = record_symbol(rec)
         qend = record_quarter_end(rec)
         pubdate = record_publish_date(rec)
-        if not url or not sym or sym not in tracked_symbols:
+        if not url or not url.startswith("https://nsearchives.nseindia.com/corporate/xbrl/") or not sym or sym not in tracked_symbols:
             continue
         if (pubdate and pubdate < cutoff) and (not qend or qend < cutoff):
             continue
@@ -503,10 +531,15 @@ def main() -> None:
         if old is None or (record_publish_date(rec) or date.min) >= (record_publish_date(old) or date.min):
             by_url[url] = rec
 
+    # Fairness: try never-attempted filings first, then oldest failed retry.
+    # Prevent blocked recent files from starving other tracked quarters.
     candidates = sorted(
         [(url, rec) for url, rec in by_url.items() if url not in processed_urls],
-        key=lambda pair: record_publish_date(pair[1]) or date.min,
-        reverse=True,
+        key=lambda pair: (
+            pair[0] in previous_attempts,
+            previous_attempts.get(pair[0], ""),
+            -(record_publish_date(pair[1]) or date.min).toordinal(),
+        ),
     )
     print(f"Recent unique XBRL URLs: {len(by_url)}; unprocessed: {len(candidates)}")
     new_rows: list[dict] = []
@@ -514,6 +547,7 @@ def main() -> None:
     new_processed: list[dict] = []
     attempted = 0
     consecutive_download_errors = 0
+    consecutive_access_blocks = 0
     for url, rec in candidates:
         if attempted >= MAX_NEW_XBRL_PER_RUN:
             break
@@ -525,12 +559,42 @@ def main() -> None:
             resp.raise_for_status()
             row, reason = parse_xbrl(resp.content, rec, url)
             consecutive_download_errors = 0
-        except Exception as exc:
+            consecutive_access_blocks = 0
+        except requests.RequestException as exc:
             consecutive_download_errors += 1
+            is_blocked = "403" in str(exc) or "429" in str(exc)
+            consecutive_access_blocks = consecutive_access_blocks + 1 if is_blocked else 0
+            reason = f"Download error: {exc}"
             print(f"Download error for {record_symbol(rec)}: {exc}")
-            if consecutive_download_errors >= 12:
-                raise RuntimeError("12 consecutive XBRL download errors; stopping to avoid repeated blocked requests.")
-            time.sleep(0.8)
+            # Save blocked/error attempts before leaving, without inventing facts.
+            new_processed.append({
+                "Source_URL": url, "Symbol": record_symbol(rec),
+                "Quarter_End": record_quarter_end(rec).isoformat() if record_quarter_end(rec) else "",
+                "Status": "DOWNLOAD_BLOCKED" if is_blocked else "DOWNLOAD_ERROR",
+                "Reason": reason,
+                "Processed_At_UTC": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "Parser_Version": PARSER_VERSION,
+            })
+            new_unverified.append({
+                "Symbol": record_symbol(rec),
+                "Quarter_End": record_quarter_end(rec).isoformat() if record_quarter_end(rec) else "",
+                "Source_URL": url,
+                "Reason": reason,
+                "Submission_Subtype": str(first_value(rec, "type_Sub", "typeSub") or ""),
+                "Revision_Date": str(first_value(rec, "revised_Date", "revisedDate") or ""),
+            })
+            if consecutive_access_blocks >= MAX_CONSECUTIVE_ACCESS_BLOCKS:
+                collection_status = "NSE_XBRL_ACCESS_BLOCKED"
+                collection_error = reason[:240]
+                print("NSE XBRL access blocked repeatedly; stop requests and preserve history.")
+                break
+            if consecutive_download_errors >= MAX_CONSECUTIVE_DOWNLOAD_ERRORS:
+                collection_status = "XBRL_DOWNLOAD_ERRORS"
+                collection_error = reason[:240]
+                print("Too many XBRL download errors; stop requests and preserve history.")
+                break
+            if not is_blocked:
+                time.sleep(0.8)
             continue
 
         processed_row = {
@@ -639,8 +703,21 @@ def main() -> None:
     result_count = len(all_results)
     if not all_results.empty and "Fundamentals_Complete" in all_results:
         complete_count = all_results["Fundamentals_Complete"].astype(str).str.lower().isin(["true", "1"]).sum()
+    status = pd.DataFrame([{
+        "Run_Date": date.today().isoformat(),
+        "Collection_Status": collection_status,
+        "Error": collection_error,
+        "Indexed_URLs": len(by_url),
+        "Pending_URLs": len(candidates),
+        "Attempted_URLs": attempted,
+        "New_Verified_URLs": len(new_rows),
+        "Verified_Quarter_Rows": result_count,
+        "Qualified_Comparison_Rows": len(full_change_report) if not all_results.empty else 0,
+    }])
+    save_frame(status, COLLECTION_STATUS_FILE)
+    print(f"Quarterly source status={collection_status}; checked={attempted}; newly verified={len(new_rows)}.")
     print(f"Done. Verified symbol-quarter rows={result_count}; six-field complete={complete_count}; newly examined={attempted}.")
-    print(f"Saved: {RESULTS_FILE.name}, {COMPARE_FILE.name}, {UNVERIFIED_FILE.name}, {PROCESSED_FILE.name}")
+    print(f"Saved: {RESULTS_FILE.name}, {COMPARE_FILE.name}, {UNVERIFIED_FILE.name}, {PROCESSED_FILE.name}, {COLLECTION_STATUS_FILE.name}")
 
 
 if __name__ == "__main__":
