@@ -59,6 +59,7 @@ jobs:
         run: python nse_quarterly_monitor.py
 
       - name: Commit generated reports safely
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
