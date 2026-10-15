@@ -10,6 +10,7 @@ on:
       - 'final_fundamental_shortlist.py'
       - 'nse_annual_history.py'
       - 'nse_sector_classification.py'
+      - 'diagnose_fundamental_blockers.py'
       - '.github/workflows/quarterly_monitor.yml'
   workflow_dispatch:
   schedule:
@@ -64,6 +65,10 @@ jobs:
 
       - name: Apply final annual-plus-quarterly gates
         run: python final_fundamental_shortlist.py
+
+      - name: Diagnose verification and screening blockers
+        if: always()
+        run: python diagnose_fundamental_blockers.py
 
       - name: Commit generated reports safely
         if: always()
