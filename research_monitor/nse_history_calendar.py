@@ -10,7 +10,7 @@ Primary NSE references:
 - 2021: NSE/CMTR/46623
 - 2022: NSE/CMTR/50560
 - 2023: NSE/CMTR/54757 plus NSE/CMTR/57285 for the revised Bakri Id holiday
-- 2024: NSE/CMTR/59722, NSE/CMTR/60338 for 22-Jan-2024, NSE/CMTR/61516 for 20-May-2024, and NSE/CMTR/64960 for 20-Nov-2024
+- 2024: NSE/CMTR/59722, NSE/CMTR/60338 for 22-Jan-2024, NSE/CMTR/61518 for 20-May-2024, and NSE/CMTR/64960 for 20-Nov-2024
 - 2025: NSE/CMTR/65587
 - 2026: NSE/CMTR/71775 plus the current NSE Market Timings & Holidays page
 Special-session references include NSE/MSD/59999, NSE/MSD/60677,
