@@ -319,6 +319,12 @@ def reconcile(root, *, mapping_loader=verified_reference_map,
     try:
         os.chmod(temp,0o600)
         os.replace(temp,csv_path)
+        # Tie the review CSV to this exact reconciliation run. If changed
+        # between reconciliation and source triage, abort rather than ranking
+        # unaudited / potentially edited values.
+        summary["metric_comparisons_csv_sha256"] = hashlib.sha256(
+            csv_path.read_bytes()
+        ).hexdigest()
         atomic_status(summary_path,summary)
         os.chmod(summary_path,0o600)
     finally:
