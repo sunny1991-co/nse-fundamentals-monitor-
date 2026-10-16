@@ -160,9 +160,13 @@ class NseHistoryTests(unittest.TestCase):
                 db.commit()
                 self.assertEqual(unverified_no_file_days(db, d, d), [d.isoformat()])
                 self.assertFalse(terminal_day_coverage(db, d, d))
-                # Already checked NO_FILE is not hammered repeatedly; it remains
-                # a visible audit blocker instead.
+                # Expected-session NO_FILE receives bounded retries before
+                # becoming a permanent visible audit blocker.
+                self.assertEqual(pending_weekdays(db, d, d), [d])
+                db.execute("UPDATE days SET attempts=3 WHERE day=?", (d.isoformat(),))
+                db.commit()
                 self.assertEqual(pending_weekdays(db, d, d), [])
+                self.assertFalse(terminal_day_coverage(db, d, d))
             finally:
                 db.close()
 
@@ -181,6 +185,23 @@ class NseHistoryTests(unittest.TestCase):
                 date(2024, 12, 31),
             )
         )
+
+    def test_old_database_schema_gets_attempt_counter_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "history.sqlite"
+            db = sqlite3.connect(path)
+            db.execute(
+                "CREATE TABLE days(day TEXT PRIMARY KEY, status TEXT NOT NULL, source_url TEXT, "
+                "source_sha256 TEXT, rows INTEGER NOT NULL DEFAULT 0, checked_at TEXT NOT NULL, error TEXT)"
+            )
+            db.commit()
+            db.close()
+            migrated = init_db(path)
+            try:
+                cols = {row[1] for row in migrated.execute("PRAGMA table_info(days)")}
+                self.assertIn("attempts", cols)
+            finally:
+                migrated.close()
 
     def test_five_consecutive_weekday_404s_never_count_as_complete(self):
         with tempfile.TemporaryDirectory() as directory:
