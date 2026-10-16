@@ -1,5 +1,37 @@
 # Project progress — 16 October 2026
 
+## Owner-tested 1% risk exposure results — 16 October 2026
+
+Real private phone run: 660 symbols with sufficient history and the same frozen
+100-stock experiment. Hypothetical single-stock capital INR 100,000 each.
+These are **not portfolio returns**. Figures below are owner-supplied
+completed-trade averages normalized by *pre-trade stock-account cash*; the
+drawdowns are the **worst independent stock** in the same fixed sample.
+
+| Previously unprofitable hypothesis | Full-cash mean capital return per completed trade | Fixed 1%-risk mean | Worst individual-stock DD full cash → fixed 1% | Risk-budget breaches (fixed 1%; double-cost) |
+|---|---:|---:|---:|---:|
+| VCP breakout | -0.911% | -0.219% | 19.918% → 2.062% | 0; 1 |
+| Mean reversion | -1.649% | -0.241% | 42.519% → 5.055% | 4; 5 |
+| Custom dip reclaim | -1.759% | -0.373% | 25.169% → 4.015% | 1; 2 |
+
+The apparent reduction is driven primarily by smaller capital at risk (median
+deployed fraction: 9.338%, 12.005% and 12.486% respectively); **the
+underlying signal expectancy is still negative**. Actual exit prices and gap
+moves sometimes exceeded the hypothetical 1% initial-stop loss budget, even
+with correct fee-aware share sizing. Double-cost stress means remained
+negative. No winning strategy has been discovered and no live trading is
+permitted by this experiment.
+
+**Research disposition:** keep the original seven and custom hypotheses
+as failed retrospective attempts, retain frozen private historical records,
+and do not test endless loss-making parameter variations on the same already
+inspected sample. Prioritize verified primary-source multi-year fundamentals,
+corporate-action and dated market-history checks, a correctly dated universe,
+then preregistered new entry hypotheses and genuinely fresh forward/independent
+paper observations. Strict final fundamental screening remains blocked by
+missing verified coverage and must not be loosened to create a positive
+backtest. A lower drawdown alone does not establish trading merit.
+
 ## Fixed 1% stop-risk research — October 16, 2026
 
 The owner's private phone output showed heavy initial-stop exits on the inspected
