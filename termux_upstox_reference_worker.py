@@ -38,6 +38,9 @@ from upstox_reference_batches import (
 from upstox_reference_reconcile import (
     ReconciliationError, reconcile as reconcile_vendor_reference,
 )
+from upstox_reference_review import (
+    SourceReviewError, create_review as create_source_review_queue,
+)
 
 load_dotenv(CODE_ROOT / ".env", interpolate=False)
 
@@ -139,7 +142,8 @@ def _refresh_only_expired_mapping(root, now):
 
 def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
               collector=collect, refresh_mapping=_refresh_only_expired_mapping,
-              reconciler=reconcile_vendor_reference):
+              reconciler=reconcile_vendor_reference,
+              reviewer=create_source_review_queue):
     """Single safe daily attempt. Can be tested with all network dependencies mocked.
 
     Runs after 17:00 IST; persistent claim is acquired before public BOD
@@ -204,6 +208,8 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
         # NSE original history or corrupt vendor record must never be
         # disguised as an audited pass, and cannot re-enable orders.
         reconciliation_state = "NOT_RUN"
+        review_state = "NOT_RUN"
+        reviewed_companies = 0
         audit = {}
         try:
             audit = reconciler(root)
@@ -220,6 +226,20 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
                     if audit.get("metric_comparisons",0)==0
                     else "COMPARISON_RECORDED_REFERENCE_ONLY"
                 )
+                try:
+                    review = reviewer(root)
+                    if review.get("scope") != (
+                        "UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1"
+                    ):
+                        review_state = "UNTRUSTED_SOURCE_REVIEW"
+                    else:
+                        review_state = "OFFLINE_SOURCE_REVIEW_QUEUE_READY"
+                        reviewed_companies = review.get(
+                            "companies_requiring_source_review",0
+                        )
+                except (SourceReviewError,ReferenceBatchError,
+                        OSError,ValueError,TypeError):
+                    review_state = "OFFLINE_SOURCE_REVIEW_UNAVAILABLE"
         except (ReconciliationError,ReferenceBatchError,
                 OSError,ValueError,TypeError):
             reconciliation_state="SOURCE_COMPARISON_UNAVAILABLE"
@@ -247,6 +267,13 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
                 audit.get("companies_needing_vendor_vs_nse_review",0)
             ),
             source_reconciliation_is_trading_approval=False,
+            source_review_queue_state=review_state,
+            source_review_queue_companies=reviewed_companies,
+            source_review_queue_is_trading_approval=False,
+            private_source_review_queue=str(
+                _source_dir(root)/"upstox-reference-batches-v1" /
+                "reconciliation"/"company_source_review_queue.csv"
+            ),
             private_reconciliation_summary=str(
                 _source_dir(root)/"upstox-reference-batches-v1" /
                 "reconciliation"/"summary.json"
