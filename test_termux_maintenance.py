@@ -39,6 +39,8 @@ class TermuxMaintenanceTests(unittest.TestCase):
             self.assertEqual(result['quarterly_verified_rows'], 12)
             self.assertEqual(result['sector_verified_rows'], 1)
             self.assertEqual(result['adjusted_history'], 'MISSING')
+            self.assertEqual(result['official_eod_history_state'], 'NOT_STARTED')
+            self.assertEqual(result['official_eod_actions'], 'NOT_STARTED')
             self.assertEqual(result['upstox'], 'INTENTIONALLY_DEFERRED')
             self.assertEqual(result['orders'], 'MANUAL_ONLY')
 
