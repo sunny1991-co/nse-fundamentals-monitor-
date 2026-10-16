@@ -34,6 +34,8 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'fast_fundamental_screen.py')], 10*60),
     ("final_shortlist",
      [sys.executable, str(CODE_ROOT/'final_fundamental_shortlist.py')], 10*60),
+    ("research_swing_assistant_watchlist",
+     [sys.executable, str(CODE_ROOT/'swing_ai_assistant_scan.py')], 10*60),
     ("readiness",
      [sys.executable, str(CODE_ROOT/'swing_readiness.py')], 5*60),
     # Frozen retrospective comparisons are manual only. Their historical
