@@ -1,5 +1,61 @@
 # Project progress — 16 October 2026
 
+## Fixed GitHub XBRL false-exclusion diagnostic for SEBI/BSE issuer schemes — 16 Oct 2026
+
+The owner requested **fix directly on GitHub without further Termux commands**.
+The previous raw XBRL diagnostic was correctly conservative for trading
+but misleading for source QA: it called independently retrieved original
+NSE archive values `ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW`
+simply because XBRL's valid `www.sebi.gov.in` or `www.bseindia.com`
+issuer namespace differs from the expected NSESymbol scheme.
+
+Implemented in `nse_xbrl_discrepancy_audit.py`:
+- **Two completely separate evidence channels:** numerical reproduction
+  of an original NSE-hosted XBRL tag and **independent legal issuer
+  attribution**. A SEBI/BSE-scheme context may still be used for a
+  read-only raw source numeric cross-check, *without* declaring its
+  entity/period/basis independently certified.
+- New diagnostic verdict
+  `OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING` when the
+  NSE archived crore value matches an **exact April–March INR fact**
+  in an archived-selected context, with original NSE source URL,
+  matching XML-level symbol, consolidated global claim, and
+  **a single, consistent issuer identifier across ALL document
+  contexts**. Other company schemes or conflicting issuer IDs are
+  NOT automatically accepted.
+- Explicitly fail closed on alternate accounting tags with
+  **conflicting numeric values**, non-INR units, wrong-year facts,
+  extra segment dimensions, standalone document, incorrect context
+  references, or mixed legal-entity context identifiers.
+- Keep historical FY CSVs, issuer metadata, strict fundamental passes,
+  sector classification, Upstox vendor-reference records, order
+  permissions, backtests, and paper trading **unchanged**.
+  A reproducible raw fact is still **NOT a trading/accuracy approval**.
+- Separate counts
+  `official_nse_xml_numeric_reproductions_pending_issuer` and
+  `issuer_identity_attestation_pending_metric_cells`; expose
+  via `project_status.py` with another strict false attestation flag.
+- Added synthetic unit tests including an end-to-end local-offline
+  original NSE file drilldown showing positive numeric reproduction
+  and zero audited issuer attestation / trades.
+
+Latest owner-reported real NSE archive audit (prior to this patch):
+four XML downloads, 5 exact-period NSE archived-value raw matches
+whose issuer schemes were 3 SEBI and 1 BSE documents, all with
+single internally consistent entity identifiers; **no issuer's
+cross-exchange scheme was independently matched to an official
+symbol→legal entity ID mapping**. The five *new* numeric-reproduction
+verdicts are a predicted outcome of these source characteristics, but
+have **not** been recomputed on the user's Termux after the GitHub
+patch. GitHub Actions regression tests are synthetic and do not
+substitute for owner-local re-execution.
+
+Therefore: **the false exclusion logic has been corrected in GitHub,
+but the actual 104 Upstox-vs-NSE mismatches in 62 companies have not
+been resolved by accounting/source definition review.** Independent
+issuer crosswalk and consolidated legal-entity attestation are still
+a blocker before strict 4-year fundamentals or broker orders.
+
 ## Source-original issuer URI schemes identified; cautious XBRL standard handling — 16 Oct 2026
 
 User's actual on-device NSE XBRL output finally identified *which*
