@@ -62,7 +62,7 @@ PROTOCOL = {
         "Loss if filled at the INITIAL stop after all estimated delivery "
         "charges and assumed exit slippage <= 1% of independent stock cash."
     ),
-    "no_gap_loss_guarantee": True,
+    "initial_stop_budget_is_not_a_maximum_loss_guarantee": True,
     "broker_orders": "DISABLED",
     "strategies": list(STRATEGIES),
     "scenarios": [name for name, _ in SCENARIOS],
