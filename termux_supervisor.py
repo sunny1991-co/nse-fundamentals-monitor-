@@ -1,4 +1,4 @@
-"""Termux supervisor for the swing worker and optional loopback dashboard.
+"""Termux supervisor for swing research, NSE history catch-up, and dashboard.
 
 No broker order route exists. The dashboard is started only after password +
 Authenticator enrollment has produced all required private settings.
@@ -145,7 +145,12 @@ def main() -> int:
                         [sys.executable, str(CODE_ROOT/'swing_worker.py')],
                         cwd=CODE_ROOT, env=base_env, stdout=log,
                         stderr=subprocess.STDOUT, start_new_session=True,
-                    )
+                    ),
+                    'history': subprocess.Popen(
+                        [sys.executable, str(CODE_ROOT/'termux_history_worker.py')],
+                        cwd=CODE_ROOT, env=base_env, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                    ),
                 }
                 command = dashboard_command(base_env)
                 if command:
@@ -160,6 +165,7 @@ def main() -> int:
                         'updated_at': time.time(),
                         'supervisor_pid': os.getpid(),
                         'worker_pid': children.get('worker').pid if children.get('worker') else None,
+                        'history_pid': children.get('history').pid if children.get('history') else None,
                         'dashboard_pid': children.get('dashboard').pid if children.get('dashboard') else None,
                         'dashboard': mode,
                         'dashboard_url': 'http://localhost:8787' if 'dashboard' in children else None,
@@ -205,6 +211,7 @@ def main() -> int:
             'updated_at': time.time(),
             'supervisor_pid': os.getpid(),
             'worker_pid': None,
+            'history_pid': None,
             'dashboard_pid': None,
             'dashboard': dashboard_mode(dict(os.environ)),
             'dashboard_url': None,
