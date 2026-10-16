@@ -136,6 +136,14 @@ def main() -> int:
     env.pop('UPSTOX_ANALYTICS_TOKEN', None)
     env['SMS_ENABLED'] = '0'
 
+    atomic_status(status_path, {
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'state': 'STARTING',
+        'pid': os.getpid(),
+        'upstox': 'NOT_USED',
+        'orders': 'MANUAL_ONLY',
+    })
+
     try:
         # Let the main swing worker/dashboard finish startup first.
         initial_deadline = time.monotonic() + 20
@@ -147,6 +155,7 @@ def main() -> int:
             atomic_status(status_path, {
                 'updated_at': started,
                 'state': 'COLLECTING',
+                'pid': os.getpid(),
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
             })
@@ -212,6 +221,7 @@ def main() -> int:
             atomic_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'SLEEPING',
+                'pid': os.getpid(),
                 'collector_returncode': code,
                 'collector_state': collector.get('state', 'STATUS_UNAVAILABLE'),
                 'remaining_weekdays': int(
