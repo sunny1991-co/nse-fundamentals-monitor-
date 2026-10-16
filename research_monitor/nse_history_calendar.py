@@ -9,8 +9,8 @@ Primary NSE references:
 - 2020: NSE/CMTR/42877 (11-Dec-2019)
 - 2021: NSE/CMTR/46623
 - 2022: NSE/CMTR/50560
-- 2023: NSE/CMTR/54757
-- 2024: NSE/CMTR/59722, plus NSE/CMTR/60338 for 22-Jan-2024
+- 2023: NSE/CMTR/54757 plus NSE/CMTR/57285 for the revised Bakri Id holiday
+- 2024: NSE/CMTR/59722, NSE/CMTR/60338 for 22-Jan-2024, NSE/CMTR/61516 for 20-May-2024, and NSE/CMTR/64960 for 20-Nov-2024
 - 2025: NSE/CMTR/65587
 - 2026: NSE/CMTR/71775 plus the current NSE Market Timings & Holidays page
 Special-session references include NSE/MSD/59999, NSE/MSD/60677,
@@ -44,15 +44,15 @@ FULL_DAY_NONTRADING = {
     # 2023
     date(2023, 1, 26), date(2023, 3, 7), date(2023, 3, 30),
     date(2023, 4, 4), date(2023, 4, 7), date(2023, 4, 14),
-    date(2023, 5, 1), date(2023, 6, 28), date(2023, 8, 15),
+    date(2023, 5, 1), date(2023, 6, 29), date(2023, 8, 15),
     date(2023, 9, 19), date(2023, 10, 2), date(2023, 10, 24),
     date(2023, 11, 14), date(2023, 11, 27), date(2023, 12, 25),
     # 2024 (01-Nov was Muhurat Trading; 22-Jan was an added closure)
     date(2024, 1, 22), date(2024, 1, 26), date(2024, 3, 8),
     date(2024, 3, 25), date(2024, 3, 29), date(2024, 4, 11),
-    date(2024, 4, 17), date(2024, 5, 1), date(2024, 6, 17),
+    date(2024, 4, 17), date(2024, 5, 1), date(2024, 5, 20), date(2024, 6, 17),
     date(2024, 7, 17), date(2024, 8, 15), date(2024, 10, 2),
-    date(2024, 11, 15), date(2024, 12, 25),
+    date(2024, 11, 15), date(2024, 11, 20), date(2024, 12, 25),
     # 2025 (21-Oct was Muhurat Trading)
     date(2025, 2, 26), date(2025, 3, 14), date(2025, 3, 31),
     date(2025, 4, 10), date(2025, 4, 14), date(2025, 4, 18),
