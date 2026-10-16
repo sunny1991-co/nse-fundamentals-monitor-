@@ -46,6 +46,7 @@ FOLDER="upstox-nse-historical-reference-v1"
 MAX_BATCH=25
 MAX_SOURCE_AGE_DAYS=7
 PAUSE_SECONDS=.30
+SOFT_FAILURE_RETRY_HOURS=24
 FATAL_ERRORS={
     "UPSTOX_HTTP_401","UPSTOX_HTTP_403","UPSTOX_HTTP_429",
     "UPSTOX_NETWORK_OR_SCHEMA_ERROR","UPSTOX_JSON_TOO_LARGE",
@@ -138,6 +139,59 @@ def _stored_paths(root):
     return folder,records,folder/"last_batch.json"
 
 
+def _failed_issuer_status(folder, mapping, now=None):
+    """Keep soft failures from monopolizing the next resumed batch.
+
+    Expired entries are rechecked automatically after a 24-hour cooldown.
+    Authentication, rate-limit and network failures are never treated as
+    successful or permanent individual-company failures.
+    """
+    path=folder/"soft_failures.json"
+    if not path.exists():
+        return {},{}
+    payload=_json_object(path)
+    if payload.get("scope")!="UPSTOX_VENDOR_SOFT_FAILURE_COOLDOWN":
+        raise ReferenceBatchError("INVALID_VENDOR_FAILURE_LEDGER")
+    entries=payload.get("issues")
+    if not isinstance(entries,dict):
+        raise ReferenceBatchError("INVALID_VENDOR_FAILURE_LEDGER")
+    now=now or datetime.now(timezone.utc)
+    deferred={}
+    kept={}
+    for symbol,row in entries.items():
+        if not (
+            isinstance(symbol,str) and symbol in mapping
+            and isinstance(row,dict) and row.get("isin")==mapping[symbol]
+            and isinstance(row.get("status"),str)
+            and row["status"].startswith(("UPSTOX_REFERENCE_HTTP_",
+                                          "UPSTOX_CONSOLIDATED_YEARLY_",
+                                          "UPSTOX_DATA_SCHEMA_UNEXPECTED"))
+            and re.fullmatch(r"[A-Z0-9_]+",row["status"])
+            and isinstance(row.get("at_utc"),str)
+        ):
+            raise ReferenceBatchError("INVALID_OR_STALE_VENDOR_FAILURE_LEDGER")
+        try:
+            stamp=datetime.fromisoformat(row["at_utc"].replace("Z","+00:00"))
+        except ValueError:
+            raise ReferenceBatchError("INVALID_VENDOR_FAILURE_DATE") from None
+        if stamp.tzinfo is None or stamp>now:
+            raise ReferenceBatchError("INVALID_VENDOR_FAILURE_DATE")
+        kept[symbol]=row
+        if now-stamp < timedelta(hours=SOFT_FAILURE_RETRY_HOURS):
+            deferred[symbol]=row
+    return kept,deferred
+
+
+def _write_failures(folder, entries):
+    path=folder/"soft_failures.json"
+    atomic_status(path,{
+        "scope":"UPSTOX_VENDOR_SOFT_FAILURE_COOLDOWN",
+        "issues":entries,
+        "policy":"Retry non-auth non-network soft failures after 24 hours",
+    })
+    os.chmod(path,0o600)
+
+
 def _existing_records(records, mapping):
     completed={}
     if not records.exists():
@@ -198,7 +252,8 @@ def _checkpoint_one(records, mapping, sym, payload, *, checked_at=None):
 
 
 def _summary(root, mapping, completed, *, run_results, fatal, requests_made,
-             map_sha256, already_complete, seeded, tried):
+             map_sha256, already_complete, seeded, tried,
+             soft_failures, cooldown_skipped):
     all_rows=list(completed.values())
     return {
         "scope":"NSE_EQ_UPSTOX_SECONDARY_VENDOR_INCREMENTAL_REFERENCE_ONLY",
@@ -210,6 +265,9 @@ def _summary(root, mapping, completed, *, run_results, fatal, requests_made,
         "previous_company_records":already_complete,
         "restored_from_previously_verified_vendor_pilot":seeded,
         "requested_new_companies":tried,
+        "cached_soft_failures":soft_failures,
+        "soft_failure_companies_skipped_during_cooldown":cooldown_skipped,
+        "soft_failure_retry_after_hours":SOFT_FAILURE_RETRY_HOURS,
         "requests_this_run":requests_made,
         "new_company_records":len(run_results),
         "batch_results":run_results,
@@ -254,6 +312,7 @@ def collect(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
     records.mkdir(parents=True,exist_ok=True,mode=0o700)
     os.chmod(records,0o700)
     completed=_existing_records(records,mapping)
+    soft_issues,deferred=_failed_issuer_status(folder,mapping)
     existing_before=len(completed)
     seeded=0
     # Reuse previously fetched vendor reference sample, *only* if its symbol
@@ -272,7 +331,7 @@ def collect(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
                     seeded+=1
 
     pending=sorted(
-        (s for s in mapping if s not in completed),
+        (s for s in mapping if s not in completed and s not in deferred),
         key=lambda s:hashlib.sha256(s.encode()).hexdigest()
     )[:batch]
     own=session is None
@@ -303,11 +362,20 @@ def collect(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
                 ):
                     stop_reason=failed
                     break
+                soft_issues[symbol]={
+                    "isin":mapping[symbol],
+                    "status":failed,
+                    "at_utc":datetime.now(timezone.utc).isoformat(),
+                }
+                _write_failures(folder,soft_issues)
                 continue
             row=metrics(mapping[symbol],payloads)
             row["symbol"]=symbol
             row["status"]="UPSTOX_REFERENCE_ONLY_NOT_NSE_VERIFIED"
             completed[symbol]=_checkpoint_one(records,mapping,symbol,row)
+            if symbol in soft_issues:
+                del soft_issues[symbol]
+                _write_failures(folder,soft_issues)
             run_results.append({
                 "symbol":symbol,
                 "status":row["status"],
@@ -326,6 +394,10 @@ def collect(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
         requests_made=requests_made,map_sha256=digest,
         already_complete=existing_before,
         seeded=seeded,tried=len(pending),
+        soft_failures=len(soft_issues),
+        cooldown_skipped=len([
+            s for s in deferred if s in mapping and s not in completed
+        ]),
     )
     atomic_status(status_path,summary)
     os.chmod(status_path,0o600)
@@ -352,6 +424,7 @@ def main():
         "scope","mapping_symbols","completed_company_records",
         "remaining_uncollected","restored_from_previously_verified_vendor_pilot",
         "new_company_records","requested_new_companies","requests_this_run",
+        "cached_soft_failures","soft_failure_companies_skipped_during_cooldown",
         "stop_reason","fy2022_23_vendor_reference_complete",
         "fy2023_24_vendor_reference_complete","vendor_sector_present",
         "strict_fundamental_pass_changes","live_orders",
