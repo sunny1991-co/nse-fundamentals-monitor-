@@ -116,10 +116,12 @@ def create_app(settings=None):
             daily = recovery.get('daily') or {}
             actions = recovery.get('corporate_actions') or {}
             action_audit = recovery.get('corporate_action_audit') or {}
+            gap_audit = recovery.get('archive_gap_audit') or {}
             history_recovery = (
                 'Official NSE adjusted-history recovery: '+str(recovery.get('state','UNKNOWN'))
                 +' · Remaining archive days: '+str(daily.get('remaining_archive_days',daily.get('remaining_weekdays','?')))
-                +' · Unverified missing archives: '+str(daily.get('unverified_no_file_days',0))
+                +' · Unverified missing archives: '+str(gap_audit.get('unverified_expected_session_gaps',daily.get('unverified_no_file_days',0)))
+                +' · Exhausted archive retries: '+str(gap_audit.get('retry_exhausted_gaps',0))
                 +' · Corporate actions: '+str(actions.get('status','UNKNOWN'))
                 +' · Action-review symbols: '+str(action_audit.get('unsupported_symbols',0))
                 +' · Upstox: '+str(recovery.get('upstox','NOT_USED'))
