@@ -1,5 +1,59 @@
 # Project progress — 16 October 2026
 
+## Measured Upstox/NSE source comparisons and prioritized review queue — 16 October 2026
+
+The owner successfully ran the offline `upstox_reference_reconcile.py` on
+the locally collected **80 Upstox vendor-reference companies**. Actual
+local output (not synthetic results):
+- **624 metric-by-year comparisons** to verified NSE history with a
+  matching company/year source; **561 within 5%/₹0.1-crore tolerance**,
+  **36 discrepancies** flagged across **25 companies**, **11 Upstox
+  metrics missing**, **16 missing NSE metrics**.
+- Another **16 metric slots** lacked an independently verified NSE
+  financial year, so they are NOT counted as comparisons.
+- **597** numerical paired metrics = 561 + 36; tolerance concordance
+  is **561/597 ≈ 94.0%**. This is an exploratory *source agreement* measure,
+  not a 94% accuracy/stock-win forecast.
+- **79** vendors had at least one comparable NSE metric. The displayed
+  **2,949 verified original symbol-years** counts the entire local NSE
+  historical corpus, not just the 80 vendor issuers.
+- **Zero NSE-verified annual XBRL records or official NSE sector
+  classifications added; zero strict fundamentals passes**, all
+  broker order placement remains disabled. In particular, an Upstox
+  sector label must not satisfy NSE sector verification.
+
+Added `upstox_reference_review.py` to turn the original 36 discrepancy
+cells into a private, deterministic **company review queue**.
+It groups by stock symbol, FY2024–25 / FY2025–26 year, revenue/profit/assets/
+OCF, magnitude and sign conflicts. Source-review urgency tiers (NOT stock
+rankings) include sign/zero conflict, ≥20%, ≥10%, and over original tolerance;
+financial specialists like banks require separate accounting-definition
+review. Prints only **top 10** plus totals and saves full prioritized
+company table privately under
+`runtime/experiments/upstox-nse-historical-reference-v1/
+upstox-reference-batches-v1/reconciliation/company_source_review_queue.csv`.
+Both raw NSE/source file digests and vendor-mapping digest are compared to
+the original reconciliation report; the full metric-comparisons CSV is
+also SHA256-bound in the report. Changed NSE rows, vendor ISIN, saved vendor
+financial facts, duplicate comparison cells, source row counts or CSV digest
+**fail closed**. No business interpretation or data correction is automatic.
+
+Future supervised nightly Upstox batches will automatically refresh the
+read-only review queue after the local NSE-vendor reconciliation, recording
+review status separately from provider/data collection and all trading
+eligibility gates. This runs locally and never modifies original NSE
+`annual_historical_results.csv`, FY files, quarterly inputs, NSE sector,
+broker tokens, or live order settings.
+
+User action to build first **real-company** review queue from 80 existing
+references (the exact 25 stock identities must be obtained from user's
+local records, not guessed from public search):
+```bash
+cd ~/nse-fundamentals-monitor- && git pull && bash termux_backend.sh restart &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_reconcile.py &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_review.py
+```
+
 ## Offline vendor-to-official-NSE fundamental source reconciliation — 16 October 2026
 
 As of the owner's most recent confirmed phone output: **80/1,270** distinct
