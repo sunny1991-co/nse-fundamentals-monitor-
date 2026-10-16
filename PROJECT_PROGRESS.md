@@ -1,5 +1,50 @@
 # Project progress — 16 October 2026
 
+## Automatic read-only Upstox daily reference batches — 16 October 2026
+
+The user approved continuing to a **bounded automatic daily reference
+collection** after the successful 5/5 mapped NSE_EQ pilot. The Termux supervisor
+now starts a fifth isolated process:
+`termux_upstox_reference_worker.py`. It uses the already saved local private
+Analytics Token in `.env`, **never prompts again**, and waits until after
+17:00 IST to try **at most 25 NEW companies once per IST calendar day**.
+It is completely separate from NSE official-XBRL financial maintenance,
+NSE adjusted historical price maintenance and all quote/order workflows.
+The broker hierarchy remains **Groww primary for future manual-approved
+execution, Upstox data backup/reference only**.
+
+A durable SQLite claim is committed **before any network call**, preventing
+same-day repeated attempts on Android app restarts/crashes. Each company
+checkpoint is a separate private JSON file; successful previous references
+are skipped and interrupted work can continue on a *subsequent day*. The
+network provider is requested serially with conservative rate delay, and
+429/403/auth/network/5xx stops this run, with another opportunity the
+following day. Missing/wrong-schema company records have a 24-hour
+soft-error cooldown. A public vendor NSE_EQ BOD crosswalk may refresh only
+after its trusted 7-day age threshold; missing/untrusted/future metadata
+fails closed and the collector refuses altered previously recorded ISINs.
+Manual and automatic runs share an exclusive lock; no duplicated concurrent
+requests. Android must actually keep/start Termux (Termux:Boot, wake-lock
+and battery policy may matter): **a phone powered off/offline cannot fetch
+data; no unconditional 24/7 guarantee is possible**.
+
+All output is local/private:
+`runtime/upstox_reference_worker_status.json`,
+`runtime/upstox_reference_daily_jobs.sqlite`,
+and `runtime/experiments/upstox-nse-historical-reference-v1/
+upstox-reference-batches-v1/records`.
+`bash termux_backend.sh status` and `project_status.py` show this vendor
+job separately. The user activates the new supervisor child by doing
+`git pull` and `bash termux_backend.sh restart`; no extra broker login
+or subscription required for the existing Upstox Analytics Token.
+
+**No NSE-verified audited-XBRL or official-sector rows are credited from
+these vendor references.** Any bank is still subject to separate
+specialist ratios; historic constituents, cashflows and price actions
+remain distinct source quality gates. Trading strategy approval, direct
+Groww order entry, SMS Yes/No trade proposals, live orders and automated
+stop-loss are **DISABLED** (no strategy has proved positive net expectancy).
+
 ## Five-of-five Upstox source coverage confirmed; 1,270-symbol batch plan — 16 October 2026
 
 Owner's private 16 October NSE EQ/ISIN crosswalk run established:
