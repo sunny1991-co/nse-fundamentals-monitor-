@@ -71,6 +71,20 @@ class ApprovalAssistantTests(unittest.TestCase):
         self.assertEqual(expired["state"],"EXPIRED")
         self.assertIsNone(expired["quantity"])
 
+    def test_expired_signal_cannot_be_republished_as_new_approval(self):
+        pid=self.row["id"]
+        expired=self.book.propose(**dict(
+            self.params,now=self.params["now"]+301
+        ))
+        self.assertEqual(expired["id"],pid)
+        self.assertEqual(expired["state"],"EXPIRED")
+        self.assertEqual(len(self.book.list_recent()),1)
+        with self.assertRaisesRegex(ValueError,"APPROVAL_ALREADY_DECIDED"):
+            self.book.decide(
+                pid,self.row["fingerprint"],"yes",1,
+                now=self.params["now"]+302,
+            )
+
     def test_quote_range_entry_no_chase_stop_gap_and_restart_durable(self):
         pid=self.row["id"]
         t=self.params["now"]
