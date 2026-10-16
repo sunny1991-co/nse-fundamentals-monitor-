@@ -121,6 +121,8 @@ show_status() {
     cat "$RUNTIME_DIR/research_worker_status.json"
     echo
   fi
+  echo "Project progress summary:"
+  "$PYTHON_BIN" "$PROJECT_DIR/project_status.py" 2>/dev/null || echo '{"stage":"STATUS_UNAVAILABLE"}'
 }
 
 run_once() {
