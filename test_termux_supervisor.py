@@ -29,6 +29,10 @@ class TermuxSupervisorTests(unittest.TestCase):
         self.assertFalse(supervisor.acquire_wakelock(run=run, which=lambda _name: '/bin/fake'))
         run.assert_called_once()
 
+    def test_history_worker_is_separate_supervised_process(self):
+        command = supervisor.history_command()
+        self.assertTrue(command[-1].endswith('termux_history_worker.py'))
+
     def test_dashboard_requires_complete_private_enrollment(self):
         self.assertEqual(supervisor.dashboard_mode({}), 'NOT_ENROLLED')
         self.assertEqual(supervisor.dashboard_mode({'APP_SECRET_KEY':'x'}), 'CONFIG_INCOMPLETE')
