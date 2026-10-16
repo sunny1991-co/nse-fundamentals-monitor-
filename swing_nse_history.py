@@ -36,6 +36,7 @@ import requests
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 from research_monitor.history import validate_history
+from research_monitor.nse_history_calendar import expected_archive_day
 
 ROOT = data_root()
 DB = ROOT / "runtime" / "nse_eod_history.sqlite"
@@ -368,17 +369,34 @@ def fetch_one_day(session: requests.Session, day: date, symbols: set[str]) -> tu
 
 
 def pending_weekdays(db: sqlite3.Connection, start: date, end: date) -> list[date]:
+    """Expected NSE archive dates not checked yet.
+
+    The legacy function name is kept for compatibility, but reviewed special
+    weekend sessions are included and reviewed full-day holidays are excluded.
+    """
     terminal = {
         r[0]: r[1]
-        for r in db.execute("SELECT day,status FROM days WHERE day BETWEEN ? AND ?", (start.isoformat(), end.isoformat()))
+        for r in db.execute(
+            "SELECT day,status FROM days WHERE day BETWEEN ? AND ?",
+            (start.isoformat(), end.isoformat()),
+        )
     }
     out = []
     day = start
     while day <= end:
-        if day.weekday() < 5 and terminal.get(day.isoformat()) not in {"OK", "NO_FILE"}:
+        if expected_archive_day(day) and terminal.get(day.isoformat()) not in {"OK", "NO_FILE"}:
             out.append(day)
         day += timedelta(days=1)
     return out
+
+
+def unverified_no_file_days(db: sqlite3.Connection, start: date, end: date) -> list[str]:
+    """NO_FILE on a reviewed expected trading session is never accepted silently."""
+    rows = db.execute(
+        "SELECT day FROM days WHERE day BETWEEN ? AND ? AND status='NO_FILE' ORDER BY day",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    return [day for (day,) in rows if expected_archive_day(parse_day(day))]
 
 
 def collect_bars(
@@ -435,12 +453,16 @@ def collect_bars(
         ok_days += 1
         rows_added += len(rows)
     remaining = len(pending_weekdays(db, start, end))
+    unresolved_no_file = unverified_no_file_days(db, start, end)
     return dict(
         attempted_days=attempted,
         official_file_days=ok_days,
         no_file_days=no_file,
         rows_added=rows_added,
         remaining_weekdays=remaining,
+        remaining_archive_days=remaining,
+        unverified_no_file_days=len(unresolved_no_file),
+        unverified_no_file_sample=unresolved_no_file[:20],
         blocked=blocked,
     )
 
@@ -542,7 +564,7 @@ def suspicious_no_file_gap(db: sqlite3.Connection, start: date, end: date) -> bo
     run = 0
     cursor = start
     while cursor <= end:
-        if cursor.weekday() < 5:
+        if expected_archive_day(cursor):
             if rows.get(cursor.isoformat()) == "NO_FILE":
                 run += 1
                 if run >= MAX_CONSECUTIVE_NO_FILE:
@@ -556,7 +578,11 @@ def suspicious_no_file_gap(db: sqlite3.Connection, start: date, end: date) -> bo
 
 
 def terminal_day_coverage(db: sqlite3.Connection, start: date, end: date) -> bool:
-    return not pending_weekdays(db, start, end) and not suspicious_no_file_gap(db, start, end)
+    return (
+        not pending_weekdays(db, start, end)
+        and not unverified_no_file_days(db, start, end)
+        and not suspicious_no_file_gap(db, start, end)
+    )
 
 
 def action_coverage(db: sqlite3.Connection, start: date, end: date) -> bool:
@@ -708,7 +734,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", default=DEFAULT_START.isoformat())
     parser.add_argument("--end", default=(date.today() - timedelta(days=1)).isoformat())
-    parser.add_argument("--days", type=int, default=120, help="Maximum missing weekdays fetched this run")
+    parser.add_argument("--days", type=int, default=120, help="Maximum missing expected archive days fetched this run")
     parser.add_argument("--max-minutes", type=int, default=25)
     parser.add_argument("--skip-actions", action="store_true")
     args = parser.parse_args()
