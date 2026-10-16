@@ -175,6 +175,61 @@ class ApprovalAssistantTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.book.propose(**dict(self.params,capital_inr=1))
 
+    def test_eod_reconciliation_stop_first_and_gap_lower_than_stop(self):
+        pid=self.row["id"]; t=self.params["now"]
+        self.book.decide(pid,self.row["fingerprint"],"yes",3,now=t+1)
+        self.book.observe(pid,100.5,t+2,now=t+2,
+                          verified_feed=True,session_day="2026-10-16")
+        day="2026-10-19"
+        bar={"Open":90,"High":124,"Low":88,"Close":115}
+        with self.assertRaisesRegex(ValueError,"VERIFIED_COMPLETED_NSE_SOURCE"):
+            self.book.complete_eod_session(pid,day,bar,atr=2)
+        with self.assertRaisesRegex(ValueError,"ENTRY_DAY_OR_DUPLICATE"):
+            self.book.complete_eod_session(
+                pid,"2026-10-16",bar,atr=2,source_verified=True
+            )
+        final=self.book.complete_eod_session(
+            pid,day,bar,atr=2,source_verified=True
+        )
+        self.assertEqual(final["state"],"CLOSED_PAPER_ONLY")
+        self.assertEqual(final["exit_reason"],"EOD_GAP_OR_STOP_FIRST")
+        self.assertEqual(final["exit"],90*.999)
+        self.assertEqual(final["shares_sold"],3)
+        self.assertEqual(final["real_orders"],
+                         "DISABLED_NO_VERIFIED_EXECUTION_ADAPTER")
+
+    def test_eod_target2_partial_trailing_and_duplicate_session_guard(self):
+        t=self.params["now"];pid=self.row["id"]
+        self.book.decide(pid,self.row["fingerprint"],"yes",5,now=t+1)
+        self.book.observe(pid,100.5,t+2,now=t+2,
+                          verified_feed=True,session_day="2026-10-16")
+        # Entry @100.5, initial stop @95, R=5.5, first target 111.5.
+        first=self.book.complete_eod_session(
+            pid,"2026-10-19",
+            {"Open":104,"High":112,"Low":99,"Close":110},
+            atr=2,source_verified=True,
+        )
+        self.assertEqual(first["state"],"OPEN_PAPER_ONLY")
+        self.assertEqual(first["shares_remaining"],3)
+        self.assertEqual(first["shares_sold"],2)
+        self.assertGreaterEqual(first["stop_current"],100.5)
+        with self.assertRaisesRegex(ValueError,"ENTRY_DAY_OR_DUPLICATE"):
+            self.book.complete_eod_session(
+                pid,"2026-10-19",
+                {"Open":104,"High":110,"Low":102,"Close":105},
+                atr=2,source_verified=True,
+            )
+        # Second day enters long target 3R (117) with stop held above entry.
+        close=self.book.complete_eod_session(
+            pid,"2026-10-20",
+            {"Open":109,"High":119,"Low":105,"Close":117},
+            atr=2,source_verified=True,
+        )
+        self.assertEqual(close["state"],"CLOSED_PAPER_ONLY")
+        self.assertEqual(close["exit_reason"],"EOD_TARGET_3R")
+        self.assertEqual(close["shares_sold"],5)
+        self.assertEqual(close["shares_remaining"],0)
+
     def test_stale_paper_position_not_treated_as_live_protection(self):
         row=self.book.get(self.row["id"])
         self.assertEqual(row["broker_preference"],"GROWW")
