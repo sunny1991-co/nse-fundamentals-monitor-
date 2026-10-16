@@ -17,7 +17,11 @@ class ProjectStatusTests(unittest.TestCase):
             (runtime / "nse_eod_history_status.json").write_text(json.dumps({
                 "state": "BOUNDED_PROGRESS",
                 "daily": {"remaining_archive_days": 123, "unverified_no_file_days": 0},
-                "archive_gap_audit": {"unverified_expected_session_gaps": 0},
+                "archive_gap_audit": {
+                    "unverified_expected_session_gaps": 2,
+                    "retry_exhausted_gaps": 1,
+                    "sample_dates": ["2024-03-04", "2025-02-03"],
+                },
                 "corporate_action_audit": {"unsupported_symbols": 7},
                 "publish": {"published": False},
             }), encoding="utf-8")
@@ -42,6 +46,9 @@ class ProjectStatusTests(unittest.TestCase):
             status = snapshot(root)
             self.assertEqual(status["stage"], "HISTORY_CATCHUP")
             self.assertEqual(status["remaining_archive_days"], 123)
+            self.assertEqual(status["unverified_archive_gaps"], 2)
+            self.assertEqual(status["archive_gap_retry_exhausted"], 1)
+            self.assertEqual(status["archive_gap_sample_dates"], ["2024-03-04", "2025-02-03"])
             self.assertEqual(status["corporate_action_review_symbols"], 7)
             self.assertEqual(status["provisional_fast_fundamental_pass"], 0)
             self.assertEqual(status["provisional_fast_candidates"], 0)
