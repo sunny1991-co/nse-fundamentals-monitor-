@@ -325,6 +325,7 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
     detailed=[]
     attempted=0
     blocked=False
+    stop_reason=None
     try:
         for (sym,fy,url),measurements in selection.items():
             body,error=_download(session,url)
@@ -349,6 +350,15 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
             detailed.append(record)
             if error in ("NSE_XBRL_HTTP_403","NSE_XBRL_HTTP_429"):
                 blocked=True
+                stop_reason=error
+                break
+            if error and (
+                error in ("NSE_XBRL_NETWORK_ERROR","NSE_XBRL_INVALID_RESPONSE",
+                          "NSE_XBRL_BYTE_LIMIT")
+                or error.startswith("NSE_XBRL_HTTP_5")
+            ):
+                # Do not overwhelm a temporarily blocked/offline archive.
+                stop_reason=error
                 break
             if attempted < len(selection):
                 pause(PAUSE_SECONDS)
@@ -368,6 +378,7 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         "selected_max_original_nse_xbrl_urls":max_files,
         "original_nse_filing_urls_attempted":attempted,
         "nse_download_blocked":blocked,
+        "stop_reason":stop_reason,
         "metric_drilldown_verdict_counts":dict(verdict_counts),
         "sample_file_reviews":detailed,
         "new_nse_verified_years_added":0,
@@ -399,6 +410,7 @@ def main():
         "original_nse_filing_urls_attempted":
             result["original_nse_filing_urls_attempted"],
         "nse_download_blocked":result["nse_download_blocked"],
+        "stop_reason":result["stop_reason"],
         "metric_drilldown_verdict_counts":
             result["metric_drilldown_verdict_counts"],
         "source_samples":[{
