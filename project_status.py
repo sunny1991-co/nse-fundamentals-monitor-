@@ -188,6 +188,15 @@ def snapshot(root: Path | None = None) -> dict:
         / "upstox-reference-batches-v1" / "reconciliation"
         / "company_source_review_summary.json"
     )
+    vendor_forensics = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "reconciliation"
+        / "source_discrepancy_forensics_summary.json"
+    )
+    vendor_manual_catchup = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "last_manual_catchup.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -351,6 +360,20 @@ def snapshot(root: Path | None = None) -> dict:
         ) if vendor_review_queue.get("scope")==(
             "UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1"
         ) else 0,
+        "upstox_forensics_state": upstox_reference_worker.get(
+            "source_forensics_state","NOT_YET_RUN"
+        ),
+        "upstox_forensics_reviewed_metrics": int_value(
+            vendor_forensics.get("metric_discrepancies",0)
+        ) if vendor_forensics.get("scope")==(
+            "UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1"
+        ) else 0,
+        "upstox_forensics_is_trade_approval": False,
+        "upstox_manual_catchup_state": vendor_manual_catchup.get(
+            "state","NOT_YET_RUN"
+        ) if vendor_manual_catchup.get("scope")==(
+            "UPSTOX_NSE_EQ_MANUAL_BOUNDED_CATCHUP_REFERENCE_ONLY"
+        ) else "NOT_YET_RUN",
         "upstox": "BACKUP_ONLY_NSE_HISTORY_COLLECTOR_DOES_NOT_USE_UPSTOX",
         "automatic_groww_order_execution": "DISABLED_NO_VALIDATED_STRATEGY",
         "orders": "MANUAL_ONLY",
