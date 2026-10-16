@@ -172,10 +172,34 @@ restore_backup() {
 
 recover_project() {
   echo "Repairing Git-tracked code from origin/main while preserving private data and .env."
-  stop_backend
   git fetch origin main
+  stop_backend
+  git reset --hard origin/main
+  if ! "$PYTHON_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"; then
+    echo "Dependency repair failed. Attempting to restart the backend with the available environment."
+    start_backend || true
+    return 1
+  fi
+  bootstrap_data
+  install_boot
+  start_backend
+  sleep 3
+  show_status
+}
+
+full_restore() {
+  backup_file="${2:-}"
+  if [ -z "$backup_file" ]; then
+    echo "Usage: $0 full-restore /full/path/to/backup.nsebak"
+    return 2
+  fi
+  echo "Full restore: Git code + dependencies + encrypted private state + boot startup."
+  git fetch origin main
+  stop_backend
   git reset --hard origin/main
   "$PYTHON_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"
+  "$PYTHON_BIN" "$PROJECT_DIR/termux_backup.py" restore \
+    --code-root "$PROJECT_DIR" --data-root "$DATA_DIR" --input "$backup_file"
   bootstrap_data
   install_boot
   start_backend
@@ -238,12 +262,13 @@ case "${1:-status}" in
   backup) run_backup ;;
   restore-backup) restore_backup "$@" ;;
   recover) recover_project ;;
+  full-restore) full_restore "$@" ;;
   maintenance) run_maintenance ;;
   init-data) bootstrap_data ;;
   install-boot) install_boot ;;
   uninstall-boot) uninstall_boot ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|backup|restore-backup|recover|maintenance|init-data|install-boot|uninstall-boot}"
+    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|backup|restore-backup|recover|full-restore|maintenance|init-data|install-boot|uninstall-boot}"
     exit 2
     ;;
 esac
