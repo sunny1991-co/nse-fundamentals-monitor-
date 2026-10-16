@@ -7,6 +7,7 @@ compared. Missing facts remain blank; unknown reporting basis is never guessed.
 from __future__ import annotations
 
 from research_monitor.paths import data_root
+import argparse
 import re
 import math
 import time
@@ -448,7 +449,16 @@ def build_change_report(results: pd.DataFrame) -> pd.DataFrame:
     return frame.drop(columns=["Quarter_End_Date"], errors="ignore")
 
 
-def main() -> None:
+def main(max_new_xbrl: int | None = None, max_minutes: float | None = None) -> None:
+    run_limit = MAX_NEW_XBRL_PER_RUN if max_new_xbrl is None else int(max_new_xbrl)
+    if not 1 <= run_limit <= MAX_NEW_XBRL_PER_RUN:
+        raise ValueError(f"max_new_xbrl must be 1..{MAX_NEW_XBRL_PER_RUN}")
+    deadline = None
+    if max_minutes is not None:
+        max_minutes = float(max_minutes)
+        if not 1 <= max_minutes <= 170:
+            raise ValueError("max_minutes must be 1..170")
+        deadline = time.monotonic() + max_minutes * 60
     existing_results = read_csv(RESULTS_FILE)
     existing_unverified = read_csv(UNVERIFIED_FILE)
     existing_processed = read_csv(PROCESSED_FILE)
@@ -556,7 +566,14 @@ def main() -> None:
     consecutive_download_errors = 0
     consecutive_access_blocks = 0
     for url, rec in candidates:
-        if attempted >= MAX_NEW_XBRL_PER_RUN:
+        if attempted >= run_limit:
+            if collection_status == "OK" and attempted < len(candidates):
+                collection_status = "BOUNDED_ATTEMPT_LIMIT_REACHED"
+            break
+        if deadline is not None and time.monotonic() >= deadline:
+            if collection_status == "OK":
+                collection_status = "BOUNDED_TIME_LIMIT_REACHED"
+            print("Quarterly run time budget reached; preserving verified progress for next run.")
             break
         attempted += 1
         try:
@@ -627,7 +644,7 @@ def main() -> None:
                 "Revision_Date": str(first_value(rec, "revised_Date", "revisedDate") or ""),
             })
         if attempted % 50 == 0:
-            print(f"Examined {attempted}/{min(len(candidates), MAX_NEW_XBRL_PER_RUN)} new files...")
+            print(f"Examined {attempted}/{min(len(candidates), run_limit)} new files...")
         time.sleep(0.08)
 
     result_columns = [
@@ -720,6 +737,7 @@ def main() -> None:
         "Error": collection_error,
         "Indexed_URLs": len(by_url),
         "Pending_URLs": len(candidates),
+        "Remaining_Pending_URLs": max(0, len(candidates)-attempted),
         "Attempted_URLs": attempted,
         "New_Verified_URLs": len(new_rows),
         "Verified_Quarter_Rows": result_count,
@@ -735,5 +753,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limit", type=int, default=2500,
+                        help="Maximum new/reverification XBRL URLs in this run (default 2500)")
+    parser.add_argument("--max-minutes", type=float, default=40,
+                        help="Wall-clock budget for XBRL processing (default 40)")
+    args = parser.parse_args()
+    main(max_new_xbrl=args.limit, max_minutes=args.max_minutes)
 
