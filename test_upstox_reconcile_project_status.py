@@ -78,6 +78,40 @@ class ProjectVendorAuditTests(unittest.TestCase):
             self.assertEqual(report["automatic_groww_order_execution"],
                              "DISABLED_NO_VALIDATED_STRATEGY")
 
+    def test_nse_original_context_drilldown_does_not_promote_quality(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            file=(
+                root/"runtime"/"experiments"/"upstox-nse-historical-reference-v1"
+                /"upstox-reference-batches-v1"/"reconciliation"
+                /"nse_xbrl_drilldown.json"
+            )
+            file.parent.mkdir(parents=True)
+            file.write_text(json.dumps({
+                "scope":"NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1",
+                "original_nse_filing_urls_attempted":4,
+                "metric_drilldown_verdict_counts":{
+                    "FACT_CONTEXT_CONSOLIDATED_BASIS_UNSPECIFIED":2,
+                    "ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW":3,
+                },
+                "new_nse_verified_years_added":0,
+                "original_nse_values_modified":False,
+                "live_orders":"DISABLED",
+            }))
+            status=snapshot(root)
+            self.assertEqual(status["nse_original_xbrl_drilldown_attempted"],4)
+            self.assertEqual(
+                status["nse_original_xbrl_context_review_verdicts"][
+                    "ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+                ],3
+            )
+            self.assertFalse(
+                status["nse_original_xbrl_drilldown_is_trade_approval"]
+            )
+            self.assertEqual(status["annual_strict_pass"],0)
+            self.assertEqual(status["final_fundamental_shortlist"],0)
+            self.assertFalse(status["strategy_trading_enabled"])
+
     def test_wrong_report_scope_not_treated_as_source_quality(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
