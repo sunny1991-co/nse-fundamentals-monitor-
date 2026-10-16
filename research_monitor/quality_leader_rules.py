@@ -136,8 +136,11 @@ def quality_leader_features(bars, nifty_50_tri):
     d["TRI_Exact_Day_Present"]=bench_close.notna()
     d["Relative_TRI_63d_Return"]=relative63
     d["Initial_Stop_Distance_Pct"]=stop_pct
+    warmup_complete=pd.Series(
+        np.arange(len(d)) >= PARAMETERS["min_bars"]-1,index=d.index
+    )
     d["Signal"] = (
-        (len(d) >= PARAMETERS["min_bars"])
+        warmup_complete
         & d["TRI_Exact_Day_Present"]
         & (bench_close > bench_200)
         & (bench_50 > bench_200)
