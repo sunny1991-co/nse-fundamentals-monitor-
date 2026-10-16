@@ -222,7 +222,7 @@ class ApprovalAssistantTests(unittest.TestCase):
         # Second day enters long target 3R (117) with stop held above entry.
         close=self.book.complete_eod_session(
             pid,"2026-10-20",
-            {"Open":109,"High":119,"Low":105,"Close":117},
+            {"Open":109,"High":119,"Low":107,"Close":117},
             atr=2,source_verified=True,
         )
         self.assertEqual(close["state"],"CLOSED_PAPER_ONLY")
