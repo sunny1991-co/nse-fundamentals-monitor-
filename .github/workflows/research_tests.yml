@@ -12,6 +12,8 @@ on:
       - 'research_monitor/**'
       - 'test_*.py'
       - 'swing_*.py'
+      - 'termux_*.py'
+      - 'termux_*.sh'
       - 'requirements.txt'
       - '.github/workflows/research_tests.yml'
   workflow_dispatch:
