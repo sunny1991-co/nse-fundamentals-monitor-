@@ -121,6 +121,17 @@ class PlanReadinessTests(unittest.TestCase):
         self.assertFalse((self.root/'swing_candidates_manifest.json').exists())
         self.assertFalse((self.root/'swing_trade_candidates.csv').exists())
 
+    def test_missing_history_is_waiting_state_not_exception(self):
+        import swing_technical_screener as screener
+        self.plans()
+        with patch.object(screener,'ROOT',self.root), patch.object(screener,'OUTPUT',self.root/'swing_trade_candidates.csv'), patch.object(screener,'run_backtests') as run_backtests:
+            for name in ('market_ohlcv.csv','market_data_metadata.json'):
+                (self.root/name).unlink(missing_ok=True)
+            screener.main()
+            run_backtests.assert_not_called()
+        self.assertFalse((self.root/'swing_candidates_manifest.json').exists())
+        self.assertFalse((self.root/'swing_trade_candidates.csv').exists())
+
     def test_offline_pipeline_with_no_eligible_stock_produces_no_plan(self):
         import pandas as pd
         import swing_backtest as backtest
