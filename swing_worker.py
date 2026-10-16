@@ -59,8 +59,10 @@ def tick(root=ROOT, now=None):
     upstox_configured = bool(os.environ.get('UPSTOX_ANALYTICS_TOKEN'))
     groww_configured = bool(os.environ.get('GROWW_ACCESS_TOKEN'))
     status = dict(updated_at=now.isoformat(), phase=state, scope='SWING_EQUITY_ONLY',
-        live_feed='SESSION_NOT_OPEN_NO_LIVE_QUOTE' if state != 'LIVE_MONITORING'
-                  else 'NOT_CONNECTED',
+        # Unknown calendar is NOT the same as a verified closed session.
+        live_feed=('SESSION_NOT_OPEN_NO_LIVE_QUOTE'
+                   if state in {'PRE_MARKET', 'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY'}
+                   else 'NOT_CONNECTED'),
         market_data_primary='GROWW', market_data_backup='UPSTOX',
         groww_api_token_configured=groww_configured,
         upstox_analytics_token_configured=upstox_configured,
