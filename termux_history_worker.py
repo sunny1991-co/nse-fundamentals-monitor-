@@ -50,10 +50,17 @@ def main() -> int:
         return 2
 
     stopping = False
+    active_child = None
 
     def stop(_signum, _frame):
         nonlocal stopping
         stopping = True
+        child = active_child
+        if child is not None and child.poll() is None:
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
@@ -80,7 +87,7 @@ def main() -> int:
             try:
                 with log_path.open('a', encoding='utf-8', buffering=1) as log:
                     log.write(f'\n=== history cycle {started} ===\n')
-                    result = subprocess.run(
+                    active_child = subprocess.Popen(
                         [
                             sys.executable, str(CODE_ROOT/'swing_nse_history.py'),
                             '--days', str(BATCH_DAYS),
@@ -90,14 +97,29 @@ def main() -> int:
                         env=env,
                         stdout=log,
                         stderr=subprocess.STDOUT,
-                        timeout=(MAX_MINUTES + 2) * 60,
-                        check=False,
+                        start_new_session=True,
                     )
-                    code = result.returncode
-            except subprocess.TimeoutExpired:
-                code = None
-                with log_path.open('a', encoding='utf-8') as log:
-                    log.write('collector timeout; will retry next cycle\n')
+                    deadline = time.monotonic() + (MAX_MINUTES + 2) * 60
+                    while active_child.poll() is None and not stopping and time.monotonic() < deadline:
+                        time.sleep(1)
+                    if active_child.poll() is None:
+                        try:
+                            os.killpg(active_child.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            active_child.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                os.killpg(active_child.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            active_child.wait()
+                    code = active_child.returncode
+                    if not stopping and time.monotonic() >= deadline:
+                        code = None
+                        log.write('collector timeout; will retry next cycle\n')
+                    active_child = None
             except OSError as exc:
                 code = None
                 with log_path.open('a', encoding='utf-8') as log:
@@ -129,6 +151,11 @@ def main() -> int:
                 time.sleep(min(10, max(1, next_run-time.time())))
         return 0
     finally:
+        if active_child is not None and active_child.poll() is None:
+            try:
+                os.killpg(active_child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
         atomic_status(status_path, {
             'updated_at': datetime.now(timezone.utc).isoformat(),
             'state': 'STOPPED',
