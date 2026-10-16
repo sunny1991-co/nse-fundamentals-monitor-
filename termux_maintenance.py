@@ -36,19 +36,9 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'final_fundamental_shortlist.py')], 10*60),
     ("readiness",
      [sys.executable, str(CODE_ROOT/'swing_readiness.py')], 5*60),
-    # Research-only: bounded, fixed-protocol comparison using private adjusted
-    # history. Never publishes candidates, alerts, probabilities or orders.
-    ("trend_pullback_experiment",
-     [sys.executable, str(CODE_ROOT/'swing_pullback_research.py'), '--limit', '100'], 20*60),
-    # Additional frozen hypotheses, research only; no candidate/alert promotion.
-    # Bounded 40-stock daily sample to avoid exhausting the phone. Manual runs
-    # can request 100. Unverified index/earnings strategies are blocked.
-    ("seven_strategy_experiment",
-     [sys.executable, str(CODE_ROOT/'swing_seven_strategy_research.py'), '--limit', '40'], 20*60),
-    # New custom hypothesis is separate from the original seven.
-    # Keep this small on phone; historical profitability is NOT validation.
-    ("custom_dip_reclaim_experiment",
-     [sys.executable, str(CODE_ROOT/'swing_custom_strategy_research.py'), '--limit', '20'], 15*60),
+    # Frozen retrospective comparisons are manual only. Their historical
+    # cutoff is 2026-10-15 and rerunning them daily is not forward testing.
+    # Keep their private reports intact; do not promote failed strategies.
 ]
 
 
@@ -125,22 +115,6 @@ def main() -> int:
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write('\n=== maintenance '+datetime.now(timezone.utc).isoformat()+' ===\n')
         for name, command, timeout in STEPS:
-            # The repository cannot see private licensed OHLCV. Skip rather than
-            # call a synthetic unit test a real-data strategy result.
-            if name in ('trend_pullback_experiment', 'seven_strategy_experiment',
-                         'custom_dip_reclaim_experiment') and not (
-                (root/'market_ohlcv.csv').is_file()
-                and (root/'market_data_metadata.json').is_file()
-            ):
-                results.append({'step': name, 'state': 'SKIPPED_NO_PRIVATE_ADJUSTED_HISTORY',
-                                'returncode': None})
-                atomic_status(status_path, {
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                    'state': 'RUNNING', 'current_or_last_step': name,
-                    'steps': results, 'upstox': 'INTENTIONALLY_DEFERRED',
-                    'orders': 'MANUAL_ONLY',
-                })
-                continue
             started = datetime.now(timezone.utc).isoformat()
             log.write(f'\n[{name}] start {started}\n')
             log.flush()
