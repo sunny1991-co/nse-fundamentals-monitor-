@@ -71,6 +71,22 @@ Remove reboot startup with:
 ./termux_backend.sh uninstall-boot
 ```
 
+
+## Non-Upstox maintenance
+
+While Upstox is deferred, the phone can still run bounded official-source recovery
+for annual/quarterly fundamentals and sector classification. The helper stops the
+worker first so report files are not written concurrently, then restarts it.
+
+```sh
+./termux_backend.sh maintenance
+```
+
+This command does **not** use an Upstox token, does not enable SMS, and never
+places orders. It writes progress to `runtime/maintenance_status.json` and details
+to `runtime/maintenance.log`. NSE 403/429 or missing official historical evidence
+remain visible blockers; they are never converted into passes.
+
 ## Daily commands
 
 ```sh
