@@ -35,6 +35,7 @@ import requests
 
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
+from research_monitor.history import validate_history
 
 ROOT = data_root()
 DB = ROOT / "runtime" / "nse_eod_history.sqlite"
@@ -236,10 +237,22 @@ FACE_RE = re.compile(
     r"to\s+(?:rs\.?|re\.?)\s*([0-9]+(?:\.[0-9]+)?)",
     re.I,
 )
-COMPLEX_RE = re.compile(r"rights?|demerger|spin[ -]?off|scheme of arrangement|capital reduction", re.I)
+COMPLEX_RE = re.compile(
+    r"rights?|demerger|spin[ -]?off|scheme of arrangement|capital reduction|"
+    r"amalgamat|merger|slump sale",
+    re.I,
+)
+SHARE_UNIT_RE = re.compile(r"bonus|split|sub[- ]?division|consolidat|face value", re.I)
+NO_SHARE_UNIT_RE = re.compile(
+    r"\b(?:interim\s+|final\s+|special\s+)?dividend\b|"
+    r"\bbuy[ -]?back\b|\bannual general meeting\b|\bextraordinary general meeting\b|"
+    r"\bagm\b|\begm\b",
+    re.I,
+)
 
 
 def classify_action(symbol: str, ex_date: date, purpose: str) -> Action:
+    """Classify NSE actions conservatively; unknown purposes require review."""
     text = " ".join(str(purpose).split())
     if COMPLEX_RE.search(text):
         return Action(symbol, ex_date, text, "COMPLEX_UNSUPPORTED", None, False)
@@ -253,9 +266,12 @@ def classify_action(symbol: str, ex_date: date, purpose: str) -> Action:
         before, after = map(float, face.groups())
         if before > 0 and after > 0:
             return Action(symbol, ex_date, text, "SPLIT_OR_CONSOLIDATION", before / after, True)
-    # Dividends, buybacks and meetings do not change the historical share unit.
-    # They remain recorded but do not receive an OHLC split factor.
-    return Action(symbol, ex_date, text, "NO_SHARE_UNIT_ADJUSTMENT", 1.0, True)
+    if SHARE_UNIT_RE.search(text):
+        # A share-unit action was mentioned but its ratio could not be parsed.
+        return Action(symbol, ex_date, text, "SHARE_UNIT_ACTION_UNPARSED", None, False)
+    if NO_SHARE_UNIT_RE.search(text):
+        return Action(symbol, ex_date, text, "NO_SHARE_UNIT_ADJUSTMENT", 1.0, True)
+    return Action(symbol, ex_date, text, "UNRECOGNIZED_ACTION_REVIEW_REQUIRED", None, False)
 
 
 def parse_nse_date(value: str) -> date:
@@ -555,9 +571,11 @@ def read_actions(db: sqlite3.Connection, symbols: set[str], start: date, end: da
         "SELECT symbol,ex_date,purpose,kind,factor,supported FROM actions WHERE ex_date BETWEEN ? AND ?",
         (start.isoformat(), end.isoformat()),
     ).fetchall()
+    # Reclassify from the original purpose every time so stricter classifier
+    # rules apply to previously cached action windows without trusting stale flags.
     return [
-        Action(sym, parse_day(ex), purpose, kind, factor, bool(supported))
-        for sym, ex, purpose, kind, factor, supported in rows
+        classify_action(sym, parse_day(ex), purpose)
+        for sym, ex, purpose, _kind, _factor, _supported in rows
         if sym in symbols
     ]
 
@@ -599,8 +617,9 @@ def publish_adjusted(db: sqlite3.Connection, symbols: set[str], start: date, end
         "source": "Official NSE bhavcopy archives plus NSE corporate-actions API",
         "adjustment_method": (
             "Historical OHLC divided and volume multiplied by cumulative verified bonus/split/"
-            "consolidation share-unit factors before each ex-date; ordinary dividends/buybacks "
-            "do not change share units; symbols with rights/demerger/complex actions are excluded."
+            "consolidation share-unit factors before each ex-date; explicitly recognized non-share-"
+            "unit actions receive factor 1; unrecognized, unparsed, rights/demerger/complex actions "
+            "are excluded fail-closed."
         ),
         "range_start": start.isoformat(),
         "range_end": end.isoformat(),
@@ -608,6 +627,10 @@ def publish_adjusted(db: sqlite3.Connection, symbols: set[str], start: date, end
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "scope": "OFFICIAL_NSE_EOD_RESEARCH_NOT_LIVE_NOT_BROKER_DATA",
     }
+
+    # Run the same downstream validator before installing the files. A collector
+    # bug must never publish history that the backtester would later reject.
+    validate_history(payload, meta)
 
     root.mkdir(parents=True, exist_ok=True)
     temp = root / "market_ohlcv.csv.tmp"
