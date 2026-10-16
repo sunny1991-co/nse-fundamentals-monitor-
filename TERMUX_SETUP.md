@@ -60,7 +60,7 @@ missing. It never overwrites newer phone-local data.
 ## Private mobile dashboard enrollment
 
 The backend can expose the dashboard only on the phone itself at
-`http://127.0.0.1:8787`. It is not bound to Wi-Fi/mobile-network interfaces.
+`http://localhost:8787`. It is not bound to Wi-Fi/mobile-network interfaces.
 Password + Authenticator remain mandatory even in this local-only mode.
 
 Stop the backend and enroll privately in Termux (never paste the password,
@@ -75,7 +75,7 @@ python setup_auth.py --host localhost --db "$HOME/nse-fundamentals-data/runtime/
 ```
 
 After successful enrollment, status should show `dashboard: LOOPBACK_MFA_ENABLED`
-and a dashboard PID. Open `http://127.0.0.1:8787` in the same phone's browser.
+and a dashboard PID. Open `http://localhost:8787` in the same phone's browser.
 The local HTTP exception is accepted only for loopback clients; non-loopback HTTP
 requests are rejected and the server never binds to `0.0.0.0`.
 
