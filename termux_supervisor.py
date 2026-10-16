@@ -105,8 +105,31 @@ def terminate_child(child: subprocess.Popen) -> None:
 
 
 def terminate_all(children: dict[str, subprocess.Popen]) -> None:
-    for child in children.values():
-        terminate_child(child)
+    """Stop all child process groups in parallel within one shared deadline."""
+    active = [child for child in children.values() if child.poll() is None]
+    for child in active:
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.monotonic() + 15
+    for child in active:
+        remaining = max(0.1, deadline-time.monotonic())
+        try:
+            child.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            pass
+
+    for child in active:
+        if child.poll() is None:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    for child in active:
+        if child.poll() is None:
+            child.wait()
 
 
 def main() -> int:
@@ -190,14 +213,20 @@ def main() -> int:
                     })
 
                 publish()
+                last_publish = time.monotonic()
                 failed_name = None
                 while not stopping:
                     failed_name = next((name for name, child in children.items()
                                         if child.poll() is not None), None)
                     if failed_name:
                         break
-                    publish()
-                    time.sleep(10)
+                    now_tick = time.monotonic()
+                    if now_tick-last_publish >= 10:
+                        publish()
+                        last_publish = now_tick
+                    # Check stop signals/process exits quickly enough that the
+                    # outer Termux launcher does not need to force-kill us.
+                    time.sleep(1)
 
                 if stopping:
                     terminate_all(children)
