@@ -32,7 +32,7 @@ permissions:
 
 concurrency:
   group: nse-fundamentals-monitor-v4-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   monitor:
@@ -75,16 +75,19 @@ jobs:
         run: python nse_legacy_annual_recovery.py
 
       - name: Fetch five-year audited consolidated annual history
+        timeout-minutes: 60
         run: python nse_annual_history.py
 
       - name: Refresh official NSE sector classifications
-        run: python nse_sector_classification.py
+        timeout-minutes: 15
+        run: python nse_sector_classification.py --limit 500
 
       - name: Strict annual quality screen
         run: python annual_fundamental_quality.py
 
       - name: Fetch and compare quarterly fundamentals
-        run: python nse_quarterly_monitor.py
+        timeout-minutes: 50
+        run: python nse_quarterly_monitor.py --limit 2500 --max-minutes 40
 
       - name: Apply final annual-plus-quarterly gates
         run: python final_fundamental_shortlist.py
