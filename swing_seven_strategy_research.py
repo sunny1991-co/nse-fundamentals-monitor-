@@ -56,7 +56,7 @@ DEPENDENCIES = {
 def source_inputs(root):
     """Optional sources fail closed; a missing one must not block other tests."""
     result = {"benchmark": None, "earnings": None,
-              "statuses": {}, "source_hashes": {}}
+              "statuses": {}, "source_hashes": {}, "metadata_hashes": {}}
     for kind, loader in (
         ("benchmark", read_nifty50_tri),
         ("earnings", read_official_earnings),
@@ -66,13 +66,18 @@ def source_inputs(root):
             result[kind] = value
             result["statuses"][kind] = "OPERATOR_ATTESTED_NOT_INDEPENDENTLY_VERIFIED"
             result["source_hashes"][kind] = digest
+            meta_name = ("nifty50_tri_history_metadata.json" if kind == "benchmark"
+                         else "official_earnings_events_metadata.json")
+            result["metadata_hashes"][kind] = hashlib.sha256(
+                (Path(root) / meta_name).read_bytes()
+            ).hexdigest()
         except (OSError, ValueError, TypeError, KeyError, UnicodeError, json.JSONDecodeError):
             result["statuses"][kind] = "MISSING_OR_UNVERIFIED_SOURCE"
     return result
 
 
 def compare(raw, digest, limit=30, *, benchmark=None, earnings=None,
-            source_statuses=None, source_hashes=None):
+            source_statuses=None, source_hashes=None, metadata_hashes=None):
     if not 1 <= limit <= 100:
         raise ValueError("RESEARCH_SAMPLE_LIMIT_1_TO_100")
     frozen = raw[raw.Date <= pd.Timestamp(PROTOCOL["historical_exploration_end"])]
@@ -199,6 +204,7 @@ def compare(raw, digest, limit=30, *, benchmark=None, earnings=None,
         "protocol": PROTOCOL,
         "source_statuses": source_statuses or {},
         "source_hashes": source_hashes or {},
+        "metadata_hashes": metadata_hashes or {},
         "eligible_universe": len(groups),
         "sample_symbols": symbols,
         "strategy_statuses": statuses,
@@ -237,6 +243,7 @@ def main():
         earnings=optional["earnings"],
         source_statuses=optional["statuses"],
         source_hashes=optional["source_hashes"],
+        metadata_hashes=optional["metadata_hashes"],
     )
     path = root / "runtime" / "experiments" / PROTOCOL["version"] / "comparison.json"
     atomic_status(path, report)
