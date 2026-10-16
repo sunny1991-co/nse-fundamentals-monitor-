@@ -392,3 +392,99 @@ class ApprovalQueue:
                                                   row["shares_remaining"]),
             })
             return self._public(self._row(conn,pid))
+
+
+    def complete_eod_session(self,pid,session_day,ohlc,atr,*,source_verified=False):
+        """Conservative next-day completed-OHLC paper exit; never any broker IO.
+
+        The caller verifies the original completed NSE EOD source and calendar.
+        Refuse entry-day OHLC, as highs/lows before YES are not replayable.
+        """
+        if source_verified is not True:
+            raise ValueError("VERIFIED_COMPLETED_NSE_SOURCE_REQUIRED")
+        try:
+            session=datetime.strptime(session_day,"%Y-%m-%d").date()
+            op,hi,lo,cl=(
+                finite(ohlc[k]) for k in ("Open","High","Low","Close")
+            )
+            atr=finite(atr)
+        except (KeyError,TypeError,ValueError):
+            raise ValueError("EOD_BAR_OR_DATE_INVALID") from None
+        if not 0<lo<=min(op,cl) or hi<max(op,cl) or atr<=0:
+            raise ValueError("EOD_BAR_PRICES_INVALID")
+        with self.db() as db:
+            r=self._row(db,pid)
+            if r["state"]!="OPEN_PAPER_ONLY":
+                raise ValueError("NO_OPEN_PAPER_POSITION")
+            if (
+                not r["entered_session"]
+                or session_day<=r["entered_session"]
+                or (r["last_session"] and session_day<=r["last_session"])
+            ):
+                raise ValueError("ENTRY_DAY_OR_DUPLICATE_EOD_SESSION")
+            p=r["plan"]
+            shares=int(r["shares_remaining"])
+            sold=int(r["shares_sold"])
+            receipts=float(r["realized_cash"])
+            entry=float(r["entry"])
+            stop=float(r["stop_current"])
+            risk=entry-float(p["stop_loss"])
+            if not 0<risk:
+                raise ValueError("ENTRY_RISK_INVALID")
+            target1=entry+2*risk
+            target2=entry+3*risk
+            count=int(r["completed_session_count"])+1
+            partial=bool(r["t1_done"])
+            new_stop=stop
+            state="OPEN_PAPER_ONLY"
+            event="PAPER_EOD_HOLD"
+            exit_price=None
+            reason=None
+            # Worst-case within-bar ordering: touch of the stop wins even
+            # if the target also appears in the same OHLC bar.
+            if lo<=stop:
+                exit_price=min(op,stop)*.999
+                reason="EOD_GAP_OR_STOP_FIRST"
+            elif hi>=target2:
+                exit_price=target2*.999
+                reason="EOD_TARGET_3R"
+            else:
+                if not partial and hi>=target1:
+                    part=shares//2 if shares>1 else shares
+                    shares-=part
+                    sold+=part
+                    receipts+=part*target1*.999
+                    partial=True
+                    new_stop=max(stop,entry)
+                    event="PAPER_EOD_PARTIAL_2R"
+                if shares==0:
+                    exit_price=target1*.999
+                    reason="EOD_SINGLE_SHARE_2R"
+                elif count>=MAX_HOLD_SESSIONS:
+                    exit_price=cl*.999
+                    reason="EOD_TIME_100_SESSIONS"
+                elif partial:
+                    new_stop=max(new_stop,entry,cl-2*atr)
+            if exit_price is not None:
+                receipts+=shares*exit_price
+                sold+=shares
+                shares=0
+                state="CLOSED_PAPER_ONLY"
+                event="PAPER_EOD_EXIT"
+            db.execute("""UPDATE trades SET
+                state=?,shares_remaining=?,shares_sold=?,
+                realized_cash=?,t1_done=?,stop_current=?,
+                completed_session_count=?,last_session=?,
+                exit=?,exit_reason=? WHERE id=?""",(
+                state,shares,sold,receipts,int(partial),new_stop,
+                count,session_day,exit_price,reason,pid,
+            ))
+            self._event(db,pid,datetime.combine(
+                session,datetime.min.time(),timezone.utc
+            ).timestamp(),event,{
+                "session_day":session_day,
+                "paper_only":True,
+                "exit_reason":reason,
+                "not_a_real_broker_fill":True,
+            })
+            return self._public(self._row(db,pid))
