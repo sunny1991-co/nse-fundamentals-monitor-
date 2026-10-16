@@ -41,6 +41,9 @@ from upstox_reference_reconcile import (
 from upstox_reference_review import (
     SourceReviewError, create_review as create_source_review_queue,
 )
+from upstox_reference_forensics import (
+    ForensicError, create_forensics as build_source_forensics,
+)
 
 load_dotenv(CODE_ROOT / ".env", interpolate=False)
 
@@ -143,7 +146,8 @@ def _refresh_only_expired_mapping(root, now):
 def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
               collector=collect, refresh_mapping=_refresh_only_expired_mapping,
               reconciler=reconcile_vendor_reference,
-              reviewer=create_source_review_queue):
+              reviewer=create_source_review_queue,
+              forensic_builder=build_source_forensics):
     """Single safe daily attempt. Can be tested with all network dependencies mocked.
 
     Runs after 17:00 IST; persistent claim is acquired before public BOD
@@ -210,6 +214,8 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
         reconciliation_state = "NOT_RUN"
         review_state = "NOT_RUN"
         reviewed_companies = 0
+        forensic_state = "NOT_RUN"
+        forensic_review_cells = 0
         audit = {}
         try:
             audit = reconciler(root)
@@ -237,6 +243,22 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
                         reviewed_companies = review.get(
                             "companies_requiring_source_review",0
                         )
+                        # Only after source reconciliation and review queue
+                        # succeeded may we produce hypothesis-only forensics.
+                        try:
+                            forensic = forensic_builder(root)
+                            if forensic.get("scope") != (
+                                "UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1"
+                            ):
+                                forensic_state = "UNTRUSTED_FORENSIC_RESULT"
+                            else:
+                                forensic_state = "OFFLINE_FORENSICS_RECORDED"
+                                forensic_review_cells = forensic.get(
+                                    "metric_discrepancies",0
+                                )
+                        except (ForensicError,SourceReviewError,
+                                ReferenceBatchError,OSError,ValueError,TypeError):
+                            forensic_state = "OFFLINE_FORENSICS_UNAVAILABLE"
                 except (SourceReviewError,ReferenceBatchError,
                         OSError,ValueError,TypeError):
                     review_state = "OFFLINE_SOURCE_REVIEW_UNAVAILABLE"
@@ -270,6 +292,14 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
             source_review_queue_state=review_state,
             source_review_queue_companies=reviewed_companies,
             source_review_queue_is_trading_approval=False,
+            source_forensics_state=forensic_state,
+            source_forensics_discrepancy_cells=forensic_review_cells,
+            source_forensics_is_auto_fix=False,
+            source_forensics_is_trading_approval=False,
+            private_source_forensics_csv=str(
+                _source_dir(root)/"upstox-reference-batches-v1" /
+                "reconciliation"/"source_discrepancy_forensics.csv"
+            ),
             private_source_review_queue=str(
                 _source_dir(root)/"upstox-reference-batches-v1" /
                 "reconciliation"/"company_source_review_queue.csv"
