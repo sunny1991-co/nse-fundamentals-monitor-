@@ -22,7 +22,7 @@ class ApprovalAssistantTests(unittest.TestCase):
             entry_min=100,entry_max=101,stop=95,
             target_1=112,target_2=118,capital_inr=100_000,
             source_sha="a"*64,signal_price=100.5,
-            now=1792100000,ttl=300,
+            now=1792110000,ttl=300,
         )
         # This POSIX timestamp is safely after the 2026-10-16 midnight.
         self.row=self.book.propose(**self.params)
