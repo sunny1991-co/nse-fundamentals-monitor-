@@ -43,6 +43,9 @@ class ProjectStatusTests(unittest.TestCase):
             self.assertEqual(status["stage"], "HISTORY_CATCHUP")
             self.assertEqual(status["remaining_archive_days"], 123)
             self.assertEqual(status["corporate_action_review_symbols"], 7)
+            self.assertEqual(status["provisional_fast_fundamental_pass"], 0)
+            self.assertEqual(status["provisional_fast_candidates"], 0)
+            self.assertEqual(status["provisional_scope"], "NOT_RUN")
 
             history = json.loads((runtime / "nse_eod_history_status.json").read_text())
             history["state"] = "ADJUSTED_HISTORY_PUBLISHED"
