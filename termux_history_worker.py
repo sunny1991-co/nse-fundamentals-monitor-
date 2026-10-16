@@ -41,7 +41,10 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
         marker = json.loads(marker_path.read_text(encoding='utf-8'))
     except (OSError, ValueError, TypeError):
         marker = {}
-    if marker.get('sha256') == digest and marker.get('backtest_returncode') == 0:
+    if (
+        marker.get('sha256') == digest
+        and marker.get('state') == 'BACKTEST_SCREEN_PAPER_READINESS_COMPLETE'
+    ):
         return {'state': 'ALREADY_VALIDATED_FOR_CURRENT_HISTORY', 'sha256': digest}
 
     results = {}
