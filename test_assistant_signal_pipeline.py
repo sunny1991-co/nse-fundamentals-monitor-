@@ -48,6 +48,12 @@ def make_sources(root,now=NOW,eligible=True):
     root=Path(root)
     (root/"market_ohlcv.csv").write_text("LOCAL_SYNTHETIC_OHLCV_HASH_ANCHOR")
     (root/"nifty50_tri_history.csv").write_text("LOCAL_SYNTHETIC_TRI_HASH_ANCHOR")
+    (root/"market_data_metadata.json").write_text(
+        '{"source":"SYNTHETIC_TEST_ONLY","corporate_actions_adjusted":true}'
+    )
+    (root/"nifty50_tri_history_metadata.json").write_text(
+        '{"type":"OFFICIAL_NIFTY_50_TRI_TEST_ONLY"}'
+    )
     (root/"final_fundamental_shortlist.csv").write_text(
         "Symbol,Final_Fundamental_Criteria_Pass\n"
         "SYNTH,"+("True" if eligible else "False")+"\n"
@@ -188,6 +194,17 @@ class SwingAssistantSignalTests(unittest.TestCase):
         (self.root/"market_ohlcv.csv").write_text("SYNTHETIC_PRICE_CHANGED")
         blocked=match_quote_and_prepare_paper_prompt(self.root,NOW)
         self.assertEqual(blocked["owner_prompts"],[])
+        self.assertFalse(
+            (self.root/"runtime"/"assistant_trade_queue.sqlite3").exists()
+        )
+
+    def test_source_metadata_changed_after_scan_blocks_quote_approval(self):
+        make_sources(self.root)
+        self.scan()
+        update_quotes(self.root,NOW)
+        (self.root/"market_data_metadata.json").write_text('{"changed":true}')
+        result=match_quote_and_prepare_paper_prompt(self.root,NOW)
+        self.assertEqual(result["owner_prompts"],[])
         self.assertFalse(
             (self.root/"runtime"/"assistant_trade_queue.sqlite3").exists()
         )
