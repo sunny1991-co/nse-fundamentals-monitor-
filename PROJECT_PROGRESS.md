@@ -1,5 +1,69 @@
 # Project progress — 16 October 2026
 
+## 180-company live vendor-reference success and raw NSE XBRL diagnostic — 16 October 2026
+
+Owner confirmed that manual four serial 25-stock catch-up batches finished
+normally, making **180/1270** company vendor-reference records completed;
+**1090** mapped companies remain. The manual session fetched **400/400
+requests** and 100/100 new records, without altering the automated 25/day
+limit or any order/strict-screen eligibility.
+
+The subsequent owner-local offline audit found **1,420 source comparison
+slots**, including **1,258 within source tolerance** and **104 differing
+numeric metric cells across 62 companies**, **27 missing vendor metrics**,
+**31 missing original NSE numeric fields** and **20 slots without an
+independently verified original NSE year**. Of paired nonmissing numeric
+facts, 1,258/(1,258+104)=**92.4% tolerance agreement**, a source
+agreement measure, NOT predictive accuracy or trading strategy validation.
+
+The real 104 discrepancies were: **64 revenue, 28 operating cash flow,
+8 net profit, 4 assets**. Financial-year split: 64 FY2024-25 and 40
+FY2025-26. The local forensic audit found **103 unexplained source gaps**
+and **ONE possible adjacent-fiscal-year match**; these are hypotheses,
+not confirmed causes or data corrections. Extreme examples:
+- MWL FY2025-26 OCF: Upstox +24.25cr vs archive NSE -20.426cr
+- KRIDHANINF FY2024-25 OCF: Upstox +5.28cr vs archive NSE -11.0165cr
+- TBOTEK FY2025-26 OCF: Upstox -20.77cr vs archive NSE +46.44cr
+- NECLIFE FY2025-26 revenue: Upstox 9.29cr vs archive NSE 0.0cr
+- NECLIFE FY2024-25 revenue: Upstox 1.88cr vs archive NSE 1673.0743cr
+- LUPIN FY2024-25 OCF: Upstox 2999.94cr vs archive NSE 429.94cr
+These **are not verified provider errors**; original filings, XBRL tags
+and contexts are required before interpreting differences.
+
+To investigate potential extractor/statement-basis/data-lineage errors,
+added `nse_xbrl_discrepancy_audit.py` with tests. It takes the owner-local
+source-validated forensic CSV and independently source-verified archived NSE
+annual XBRL URLs, attempts **at most 4 original official NSE XML downloads
+per invocation**, rejects redirections/DOCTYPE/excessive data, verifies
+exact currency unit INR, company symbol, XML consolidated nature, context
+dimensions, exact April 1–March 31 duration/instant and *all* candidate
+XBRL accounting aliases without arbitrarily selecting the first conflicting
+fact. It tests whether the prior NSE-extracted crore value can be reproduced
+from exact-year eligible XML facts, and raises a review flag on missing tags,
+non-INR units, ambiguous numeric facts or non-verifiable context basis.
+**Crucially it does not overwrite any original NSE facts and does not
+certify the underlying audit or the vendor's statements.** A 403/429 or
+network/5xx error safely halts the bounded archival attempt. Outputs
+a private `runtime/experiments/upstox-nse-historical-reference-v1/
+upstox-reference-batches-v1/reconciliation/nse_xbrl_drilldown.json`.
+Historical missing NSE XML must remain a blocker, not be guessed or
+promoted from Upstox.
+
+Next user-local raw original NSE audit (first 4 high-priority
+filing URLs) is only one optional safe command:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_xbrl_discrepancy_audit.py --max-files 4
+```
+
+Do not run additional large manual Upstox catch-up without considering
+Upstox's applicable rate limits and original-source data quality.
+**Zero independently certified additional NSE historical years**, zero
+official NSE sector classifications, zero strict fundamental passes and
+zero validated profitable strategies from vendor reference ingestion;
+Groww orders remain DISABLED.
+
 ## Accuracy-first forensic reconciliation + optional bounded catch-up — 16 October 2026
 
 User's latest real local output:
