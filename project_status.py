@@ -67,6 +67,9 @@ def snapshot(root: Path | None = None) -> dict:
     backtest = csv_rows(root / "swing_backtest_report.csv")
     technical_pass = sum(truthy(row.get("Backtest_Pass")) for row in backtest)
     candidates = csv_rows(root / "swing_trade_candidates.csv")
+    fast_summary_rows = csv_rows(root / "fast_fundamental_screen_summary.csv")
+    fast_summary = fast_summary_rows[-1] if fast_summary_rows else {}
+    fast_candidates = csv_rows(root / "fast_swing_research_candidates.csv")
 
     history_published = bool((history.get("publish") or {}).get("published"))
     remaining = int_value(
@@ -105,6 +108,14 @@ def snapshot(root: Path | None = None) -> dict:
         "official_sector_rows": sector_ok,
         "technical_backtest_pass": technical_pass,
         "current_conditional_candidates": len(candidates),
+        "provisional_fast_fundamental_pass": int_value(
+            fast_summary.get("Fast_Fundamental_Pass_Count", 0)
+        ),
+        "provisional_fast_candidates": len(fast_candidates),
+        "provisional_scope": (
+            "LOWER_CONFIDENCE_RESEARCH_ONLY"
+            if fast_summary else "NOT_RUN"
+        ),
         "post_history_validation": post.get("state", "NOT_STARTED"),
         "paper_status": paper.get("data_status", "NOT_STARTED"),
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
