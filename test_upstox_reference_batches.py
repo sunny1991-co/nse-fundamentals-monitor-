@@ -102,6 +102,63 @@ class BoundedBatchTests(unittest.TestCase):
             )
             self.assertFalse(list(Path(d).rglob("records/*.json")))
 
+    def test_soft_vendor_404_waits_24h_and_next_issuer_can_advance(self):
+        class FirstSymbol404(FakeSession):
+            def __init__(self):
+                super().__init__()
+                self.fail_for_first=True
+            def get(self,url,**kwargs):
+                if self.fail_for_first:
+                    self.fail_for_first=False
+                    response=super().get(url,**kwargs)
+                    response.status_code=404
+                    return response
+                return super().get(url,**kwargs)
+
+        with tempfile.TemporaryDirectory() as d:
+            items=mapping()
+            first_session=FirstSymbol404()
+            first=batch.collect(
+                d,TOKEN,1,session=first_session,
+                pause=lambda _:None,mapping_loader=loader_from(items),
+                seed_existing=False
+            )
+            self.assertEqual(first["cached_soft_failures"],1)
+            self.assertEqual(first["new_company_records"],0)
+            self.assertEqual(first["requests_this_run"],1)
+            second_session=FakeSession()
+            second=batch.collect(
+                d,TOKEN,1,session=second_session,
+                pause=lambda _:None,mapping_loader=loader_from(items),
+                seed_existing=False
+            )
+            self.assertEqual(second["new_company_records"],1)
+            self.assertEqual(second["soft_failure_companies_skipped_during_cooldown"],1)
+            self.assertEqual(len(second_session.calls),4)
+            self.assertNotEqual(
+                second["batch_results"][0]["symbol"],
+                first["batch_results"][0]["symbol"]
+            )
+
+            folder=Path(d)/"runtime"/"experiments"/batch.FOLDER/batch.VERSION
+            failed_path=folder/"soft_failures.json"
+            ledger=json.loads(failed_path.read_text())
+            from datetime import datetime, timezone, timedelta
+            failing=first["batch_results"][0]["symbol"]
+            ledger["issues"][failing]["at_utc"]=(
+                datetime.now(timezone.utc)-timedelta(hours=25)
+            ).isoformat()
+            failed_path.write_text(json.dumps(ledger))
+            third=batch.collect(
+                d,TOKEN,25,session=FakeSession(),
+                pause=lambda _:None,mapping_loader=loader_from(items),
+                seed_existing=False
+            )
+            self.assertEqual(third["cached_soft_failures"],0)
+            self.assertEqual(third["remaining_uncollected"],0)
+            self.assertEqual(third["completed_company_records"],len(items))
+
+
     def test_pilot_can_seed_only_same_matching_isin(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
