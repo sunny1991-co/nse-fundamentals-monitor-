@@ -1,5 +1,40 @@
 # Project progress — 16 October 2026
 
+## Termux restart and real Upstox token status — 16 October 2026
+
+Owner's actual phone-local configuration (no secrets shared):
+- `upstox_token_setup.py` stored a READ-ONLY Analytics token locally, permissions 0600.
+  Real `market/status/NSE` GET returned OK and `CLOSING_END`;
+  known RELIANCE `market-quote/quotes` GET returned an expected schema.
+  This is **endpoint authentication evidence**, NOT verified fresh live quote.
+- `swing_broker_priority_check.py` confirmed Groww token **missing** and
+  Upstox token **present**; after session close its quote was rejected for
+  stale timestamp and invalid bid/ask. Therefore no chosen fresh provider.
+- `termux_backend.sh restart` succeeded; supervisor, swing, NSE history,
+  research and dashboard processes are RUNNING, wake lock TRUE, dashboard
+  `http://localhost:8787` loopback MFA. Worker phase after-market, no live
+  connection or automatic orders. Historical adjusted data published, 660
+  old-history research eligible symbols, 222 corporate-action review symbols.
+- **Major blockers remain:** annual strict PASS 0; official sector rows 0;
+  quarterly collection bounded attempts; final shortlist 0; validated
+  trading strategy 0; SMS provider not configured. Fast fundamental
+  provisional 478 is LOWER CONFIDENCE and NOT for trading.
+- To prevent misleading interpretation of hard-coded
+  `upstox: INTENTIONALLY_DEFERRED` from old no-Upstox NSE archive maintenance,
+  `swing_worker` now records local broker token presence separately from
+  session/quote validation. `project_status.py` reports
+  `upstox_token_status=CONFIGURED_READ_ONLY_NOT_LIVE_VERIFIED` when the
+  worker confirms local configuration, and still restricts live orders.
+  For a valid closed session status is
+  `SESSION_NOT_OPEN_NO_LIVE_QUOTE`; unknown calendars stay
+  `NOT_CONNECTED`, fail-closed.
+
+Next priority: diagnose annual/sector/quarterly strict-pass blockers rather
+than promote an unvalidated trading strategy or pay for Groww API immediately.
+Run `NSE_DATA_DIR="$HOME/nse-fundamentals-data" python diagnose_fundamental_blockers.py`
+on the local private datasets. Do not ask for the token or publish private
+OHLCV/credential files.
+
 ## Broker source priority frozen — 16 October 2026
 
 Owner requested **Groww first, Upstox second** for all future swing workflows,
