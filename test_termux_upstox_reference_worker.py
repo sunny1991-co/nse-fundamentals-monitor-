@@ -10,6 +10,7 @@ import unittest
 import termux_upstox_reference_worker as worker
 from upstox_reference_batches import ReferenceBatchError
 from upstox_reference_reconcile import ReconciliationError
+from upstox_reference_review import SourceReviewError
 from research_monitor.upstox_instrument_master import InstrumentMapUnavailable
 
 
@@ -129,6 +130,58 @@ class DailyVendorTests(unittest.TestCase):
             self.assertEqual(result["orders"],"DISABLED")
             self.assertEqual(len(calls),1)
             self.assertNotIn(TOKEN,json.dumps(result))
+
+    def test_source_review_queue_runs_after_reconciliation_without_orders(self):
+        with tempfile.TemporaryDirectory() as d:
+            reviews=[]
+            def recon(_root):
+                return {
+                    "scope":"NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1",
+                    "metric_comparisons":624,
+                    "companies_needing_vendor_vs_nse_review":25,
+                }
+            def review(root):
+                reviews.append(root)
+                return {
+                    "scope":"UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1",
+                    "companies_requiring_source_review":25,
+                    "mismatched_financial_metrics":36,
+                }
+            result=worker.run_daily(
+                d,local(),token=TOKEN,collector=Stub(),
+                refresh_mapping=Refresh(),reconciler=recon,reviewer=review
+            )
+            self.assertEqual(
+                result["source_review_queue_state"],
+                "OFFLINE_SOURCE_REVIEW_QUEUE_READY",
+            )
+            self.assertEqual(result["source_review_queue_companies"],25)
+            self.assertEqual(result["orders"],"DISABLED")
+            self.assertFalse(result["source_review_queue_is_trading_approval"])
+            self.assertEqual(len(reviews),1)
+
+    def test_corrupt_source_review_is_not_promoted_as_trading_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            def recon(_root):
+                return {
+                    "scope":"NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1",
+                    "metric_comparisons":624,
+                    "companies_needing_vendor_vs_nse_review":25,
+                }
+            def review(_root):
+                raise SourceReviewError("VERIFIED_NSE_SOURCE_CHANGED")
+            result=worker.run_daily(
+                d,local(),token=TOKEN,collector=Stub(),
+                refresh_mapping=Refresh(),reconciler=recon,reviewer=review
+            )
+            self.assertEqual(
+                result["source_review_queue_state"],
+                "OFFLINE_SOURCE_REVIEW_UNAVAILABLE",
+            )
+            self.assertEqual(result["source_review_queue_companies"],0)
+            self.assertEqual(result["state"],"COMPLETED_DAILY_REFERENCE_BATCH")
+            self.assertEqual(result["orders"],"DISABLED")
+
 
     def test_missing_verified_nse_history_does_not_break_daily_vendor_job(self):
         with tempfile.TemporaryDirectory() as directory:
