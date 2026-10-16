@@ -296,3 +296,107 @@ def match_quote_and_prepare_paper_prompt(root,now=None):
             "live_orders":0,
             "real_broker_execution_enabled":False,
         }
+
+
+
+def advance_approved_paper_positions(root,now=None):
+    """Automatically move pre-approved *paper* shares on verified quote ticks.
+
+    Does not require a still-current watchlist: an existing paper holding
+    must remain observable even when source screening is blocked. A stale
+    feed does not fabricate an exit; the position is flagged unprotected
+    in research, and real-money trading remains disabled.
+    """
+    root=Path(root)
+    now=now or datetime.now(timezone.utc)
+    runtime=root/"runtime"
+    db=runtime/"assistant_trade_queue.sqlite3"
+    if not db.is_file():
+        return {
+            "state":"NO_PAPER_APPROVAL_LEDGER",
+            "updated_positions":0,"orders":"DISABLED",
+        }
+    try:
+        worker=json.loads((runtime/"worker_status.json").read_text())
+        quotes=json.loads((runtime/"quotes.json").read_text())
+        if worker.get("phase")!="LIVE_MONITORING" or (
+            worker.get("live_feed")!="POLLING_10_SECONDS"
+        ):
+            raise ValueError("VERIFIED_LIVE_PAPER_FEED_NOT_AVAILABLE")
+        stamps=[
+            datetime.fromisoformat(worker["updated_at"]),
+            datetime.fromisoformat(quotes["fetched_at"]),
+        ]
+        if any(stamp.tzinfo is None or not 0<=(now-stamp).total_seconds()<=15
+               for stamp in stamps):
+            raise ValueError("BROKER_READ_ONLY_QUOTE_FEED_STALE")
+        observations={}
+        for q in quotes.get("quotes",[]):
+            if (
+                not isinstance(q,dict)
+                or q.get("exchange")!="NSE"
+                or not str(q.get("token","")).startswith("NSE_EQ|")
+                or q.get("validation_errors")!=[]
+                or quote_errors(
+                    q,{"max_quote_age_seconds":15,
+                       "max_spread_fraction":.005},now
+                )
+            ):
+                raise ValueError("PAPER_PRICE_VALIDATION_FAILED")
+            sym=q.get("symbol")
+            if sym in observations:
+                raise ValueError("DUPLICATE_EQUITY_PRICE_OBSERVATION")
+            timestamp=datetime.fromisoformat(str(q["feed_time"]))
+            if timestamp.tzinfo is None:
+                raise ValueError("QUOTE_TIMEZONE_NOT_PRESENT")
+            observations[sym]=(timestamp.timestamp(),float(q["bid"]),
+                               float(q["ask"]))
+        book=ApprovalQueue(db)
+        updated=[]
+        for proposal in book.list_recent(limit=50):
+            if proposal["state"] not in ("ARMED_PAPER_ONLY","OPEN_PAPER_ONLY"):
+                continue
+            quote=observations.get(proposal["plan"]["symbol"])
+            if quote is None:
+                continue
+            stamp,bid,ask=quote
+            # Simulate a worse-than-quote execution including 0.1% slippage:
+            # purchase at the ask + slippage, exit at bid - slippage.
+            modeled_price=(
+                ask*1.001 if proposal["state"]=="ARMED_PAPER_ONLY"
+                else bid*.999
+            )
+            try:
+                after=book.observe(
+                    proposal["id"],modeled_price,stamp,
+                    now=now.timestamp(),verified_feed=True,
+                    session_day=now.astimezone(IST).date().isoformat(),
+                )
+            except ValueError:
+                # An uncertain or duplicate observation cannot result in
+                # a second fill or silently close the paper position.
+                continue
+            if after["state"]!=proposal["state"]:
+                updated.append({
+                    "symbol":after["plan"]["symbol"],
+                    "id":after["id"],
+                    "from":proposal["state"],
+                    "to":after["state"],
+                    "paper_only":True,
+                })
+        return {
+            "scope":QUOTE_SCOPE,
+            "state":"PAPER_TICK_PROCESSING_COMPLETE",
+            "updated_positions":len(updated),
+            "transitions":updated,
+            "orders":"DISABLED",
+            "automated_broker_exits":"NOT_IMPLEMENTED",
+        }
+    except (OSError,ValueError,TypeError,KeyError,AttributeError):
+        return {
+            "scope":QUOTE_SCOPE,
+            "state":"PAPER_QUOTES_MISSING_OR_STALE_NO_FILL_ASSUMED",
+            "updated_positions":0,
+            "orders":"DISABLED",
+            "automated_broker_exits":"NOT_IMPLEMENTED",
+        }
