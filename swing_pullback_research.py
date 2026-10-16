@@ -13,6 +13,7 @@ from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 from swing_strategy import ema
 from swing_backtest import features, simulate, COST, SLIP, VERSION
+from research_monitor.exploratory_ranking import rank_exploratory
 
 PROTOCOL = {
     'version': 'trend-pullback-research-v1',
@@ -75,6 +76,8 @@ def compare(raw, digest, limit=20):
     groups={symbol:bars for symbol,bars in frame.groupby('Symbol') if len(bars)>=1260}
     symbols=sorted(groups,key=lambda s:hashlib.sha256(s.encode()).hexdigest())[:limit]
     rows=[]
+    pooled = {version: {"base": [], "stress": [], "traded_symbols": set()}
+              for version in (VERSION, PROTOCOL["version"])}
     for symbol in symbols:
         bars=groups[symbol]
         start=220+int((len(bars)-220)*.7)
@@ -84,6 +87,16 @@ def compare(raw, digest, limit=20):
             stress,stress_trades=simulate(d,start,len(d),cost=COST*2,slip=SLIP*2)
             completed=completed_trade_stats(base_trades)
             stress_completed=completed_trade_stats(stress_trades)
+            # Keep the original costs/slippage and exclude forced sample-end
+            # liquidations when ranking completed observations.
+            base_returns=[float(t['Return']) for t in base_trades
+                          if t.get('Reason') not in (None, 'sample_end')]
+            stress_returns=[float(t['Return']) for t in stress_trades
+                            if t.get('Reason') not in (None, 'sample_end')]
+            pooled[version]['base'].extend(base_returns)
+            pooled[version]['stress'].extend(stress_returns)
+            if base_returns:
+                pooled[version]['traded_symbols'].add(symbol)
             rows.append(dict(symbol=symbol,strategy=version,
                 start=str(d.Date.iloc[start].date()),end=str(d.Date.iloc[-1].date()),
                 signal_opportunities=int(d.Signal.iloc[start-1:len(d)-1].sum()),
@@ -99,7 +112,24 @@ def compare(raw, digest, limit=20):
     summaries={}
     for version in [VERSION,PROTOCOL['version']]:
         selected=[r for r in rows if r['strategy']==version]
-        summaries[version]=dict(stocks=len(selected),
+        combined=completed_trade_stats([
+            {'Return': ret, 'Reason': 'completed'}
+            for ret in pooled[version]['base']
+        ])
+        combined_stress=completed_trade_stats([
+            {'Return': ret, 'Reason': 'completed'}
+            for ret in pooled[version]['stress']
+        ])
+        summaries[version]=dict(
+            stocks=len(selected),
+            pooled_completed_trades=combined['count'],
+            pooled_stress_completed_trades=combined_stress['count'],
+            stocks_with_completed_trades=len(pooled[version]['traded_symbols']),
+            pooled_completed_mean_net_return=combined['mean_net_return'],
+            pooled_stress_completed_mean_net_return=combined_stress['mean_net_return'],
+            pooled_completed_profit_factor=combined['profit_factor'],
+            worst_single_stock_drawdown=max(
+                (r['max_single_stock_drawdown'] for r in selected),default=None),
             completed_trades=sum(r['completed_trades'] for r in selected),
             stocks_without_completed_trades=sum(r['completed_trades']==0 for r in selected),
             median_completed_trades=median([r['completed_trades'] for r in selected]) if selected else None,
@@ -119,6 +149,7 @@ def compare(raw, digest, limit=20):
         implementation_sha256=hashlib.sha256(source+engine+indicators).hexdigest(),
         eligible_universe=len(groups),sample_symbols=symbols,
         summary=summaries,stock_observations=rows,
+        research_selection=rank_exploratory(summaries),
         validation_status='NOT_VALIDATED',live_eligible=False,
         limitations=['Fixed bounded sample, not whole-universe performance.',
           'Current surviving universe; no point-in-time fundamentals or portfolio simulation.',
@@ -137,7 +168,9 @@ def main():
     result=compare(raw,digest,args.limit)
     path=root/'runtime'/'experiments'/PROTOCOL['version']/'comparison.json'
     atomic_status(path,result)
-    print(json.dumps({key:result[key] for key in ('scope','eligible_universe','sample_symbols','summary','validation_status','live_eligible')},indent=2))
+    print(json.dumps({key:result[key] for key in (
+        'scope','eligible_universe','sample_symbols','summary',
+        'research_selection','validation_status','live_eligible')},indent=2))
     print('Detailed research report:',path)
 
 
