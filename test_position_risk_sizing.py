@@ -32,7 +32,7 @@ def long_stock(count=1320):
 class PositionRiskTests(unittest.TestCase):
     def test_no_gap_initial_stop_includes_both_side_fees_under_budget(self):
         d=bars()
-        d.loc[221,["Open","Low","High","Close"]]=[979.,970.,1090.,980.]
+        d.loc[221,["Open","Low","High","Close"]]=[990.,970.,1090.,980.]
         report,trades=simulate_delivery(
             d,220,len(d), capital=100000, risk_fraction=.01,
         )
