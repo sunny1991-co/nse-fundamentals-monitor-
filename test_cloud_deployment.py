@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
+from cloud_recovery_codes import auth_db_path
 from cloud_start import SOURCE_FILES, configure, seed_sources, stop_children
 from research_monitor.paths import CODE_ROOT, data_root
 from test_app_security import HASH, SECRET
@@ -104,6 +105,14 @@ class CloudTests(unittest.TestCase):
             self.assertEqual(client.get('/healthz', base_url='http://wrong.test').status_code, 400)
             path.write_text(json.dumps(dict(updated_at=time.time()-30, processes_alive=True)))
             self.assertEqual(client.get('/healthz').status_code, 503)
+
+    def test_recovery_code_rotation_uses_enrolled_absolute_database(self):
+        enrolled = self.root/'runtime'/'auth.sqlite'
+        self.assertEqual(auth_db_path({'APP_AUTH_DB': str(enrolled)}), enrolled.resolve())
+        with self.assertRaises(ValueError):
+            auth_db_path({})
+        with self.assertRaises(ValueError):
+            auth_db_path({'APP_AUTH_DB': 'relative.sqlite'})
 
     def test_stop_terminates_child_processes(self):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(90)'], start_new_session=True)
