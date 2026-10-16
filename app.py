@@ -24,9 +24,17 @@ def create_app(settings=None):
             raise RuntimeError('Security configuration incomplete; app startup refused')
     if len(cfg['APP_SECRET_KEY'])<32:
         raise RuntimeError('APP_SECRET_KEY must have at least 32 random characters')
+    local_loopback = cfg.get('LOCAL_LOOPBACK_ONLY') == '1'
+    if local_loopback:
+        host = cfg['APP_HOST'].split(':', 1)[0].strip('[]').lower()
+        if host not in {'localhost', '127.0.0.1', '::1'}:
+            raise RuntimeError('LOCAL_LOOPBACK_ONLY requires localhost/loopback APP_HOST')
+        if cfg.get('TRUST_SINGLE_PROXY') == '1':
+            raise RuntimeError('Local loopback mode must not trust a proxy')
     app=Flask(__name__)
-    app.config.update(SECRET_KEY=cfg['APP_SECRET_KEY'],SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Strict',SESSION_COOKIE_NAME='__Host-nse_session',
+    app.config.update(SECRET_KEY=cfg['APP_SECRET_KEY'],SESSION_COOKIE_SECURE=not local_loopback,
+        SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Strict',
+        SESSION_COOKIE_NAME='nse_local_session' if local_loopback else '__Host-nse_session',
         MAX_CONTENT_LENGTH=4096,TRUSTED_HOSTS=[cfg['APP_HOST']])
     if cfg.get('TRUST_SINGLE_PROXY')=='1':
         # Enable only behind a known proxy that overwrites X-Forwarded-Proto.
@@ -40,7 +48,8 @@ def create_app(settings=None):
         if request.path == '/healthz' and request.method in {'GET', 'HEAD'}:
             return None
         if not request.is_secure:
-            abort(400)
+            if not local_loopback or request.remote_addr not in {'127.0.0.1', '::1'}:
+                abort(400)
         if request.method=='POST':
             supplied=request.form.get('csrf','');expected=session.get('csrf','')
             if not expected or not hmac.compare_digest(expected,supplied):
@@ -49,9 +58,10 @@ def create_app(settings=None):
     @app.after_request
     def headers(response):
         response.headers.update({'Cache-Control':'no-store','Pragma':'no-cache',
-            'Strict-Transport-Security':'max-age=31536000','X-Content-Type-Options':'nosniff',
-            'X-Frame-Options':'DENY','Referrer-Policy':'no-referrer',
+            'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'no-referrer',
             'Content-Security-Policy':"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
+        if not local_loopback:
+            response.headers['Strict-Transport-Security']='max-age=31536000'
         return response
 
     @app.get('/healthz')
