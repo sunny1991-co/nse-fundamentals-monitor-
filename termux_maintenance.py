@@ -28,8 +28,6 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
      [sys.executable, str(CODE_ROOT/'nse_quarterly_monitor.py'), '--limit', '600', '--max-minutes', '20'], 25*60),
-    ("official_eod_history",
-     [sys.executable, str(CODE_ROOT/'swing_nse_history.py'), '--days', '80', '--max-minutes', '20'], 25*60),
     ("annual_quality",
      [sys.executable, str(CODE_ROOT/'annual_fundamental_quality.py')], 10*60),
     ("final_shortlist",
