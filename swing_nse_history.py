@@ -580,6 +580,38 @@ def read_actions(db: sqlite3.Connection, symbols: set[str], start: date, end: da
     ]
 
 
+def action_audit(
+    db: sqlite3.Connection,
+    symbols: set[str],
+    start: date,
+    end: date,
+    root: Path = ROOT,
+) -> dict:
+    actions = read_actions(db, symbols, start, end)
+    unsupported = [a for a in actions if not a.supported]
+    kinds: dict[str, int] = {}
+    for action in unsupported:
+        kinds[action.kind] = kinds.get(action.kind, 0) + 1
+    rows = [
+        {
+            "Symbol": a.symbol,
+            "Ex_Date": a.ex_date.isoformat(),
+            "Kind": a.kind,
+            "Purpose": a.purpose,
+        }
+        for a in unsupported
+    ]
+    path = root / "nse_corporate_action_review.csv"
+    pd.DataFrame(rows, columns=["Symbol", "Ex_Date", "Kind", "Purpose"]).to_csv(path, index=False)
+    return {
+        "total_cached_actions": len(actions),
+        "unsupported_actions": len(unsupported),
+        "unsupported_symbols": len({a.symbol for a in unsupported}),
+        "unsupported_kinds": kinds,
+        "review_file": path.name,
+    }
+
+
 def publish_adjusted(db: sqlite3.Connection, symbols: set[str], start: date, end: date, root: Path = ROOT) -> dict:
     if not terminal_day_coverage(db, start, end):
         return {"published": False, "reason": "DAILY_ARCHIVE_RANGE_INCOMPLETE"}
@@ -696,6 +728,7 @@ def main() -> None:
         actions = {"status": "SKIPPED", "windows": 0, "rows": 0, "error": ""}
         if not args.skip_actions:
             actions = collect_actions(db, symbols, start, end)
+        audit = action_audit(db, symbols, start, end)
         publish = publish_adjusted(db, symbols, start, end)
         status = {
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -708,6 +741,7 @@ def main() -> None:
             "daily_range_complete": terminal_day_coverage(db, start, end),
             "suspicious_consecutive_no_file_gap": suspicious_no_file_gap(db, start, end),
             "corporate_action_range_complete": action_coverage(db, start, end),
+            "corporate_action_audit": audit,
             "publish": publish,
             "upstox": "NOT_USED",
             "orders": "MANUAL_ONLY",
