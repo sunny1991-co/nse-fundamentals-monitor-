@@ -39,7 +39,7 @@ STEPS = [
     # Research-only: bounded, fixed-protocol comparison using private adjusted
     # history. Never publishes candidates, alerts, probabilities or orders.
     ("trend_pullback_experiment",
-     [sys.executable, str(CODE_ROOT/'swing_pullback_research.py'), '--limit', '20'], 15*60),
+     [sys.executable, str(CODE_ROOT/'swing_pullback_research.py'), '--limit', '100'], 20*60),
 ]
 
 
