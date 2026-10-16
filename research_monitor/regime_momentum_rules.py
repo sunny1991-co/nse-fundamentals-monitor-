@@ -52,7 +52,7 @@ def make_market_context(groups):
         d = groups[symbol].reset_index(drop=True)
         close = d.Close.astype(float)
         e200 = ema(close, 200)
-        up = (close > e200).where(e200.notna(), np.nan)
+        up = (close > e200).astype(float).where(e200.notna())
         mom = close/close.shift(PARAMETERS["lookback_momentum"])-1
         pieces.append(pd.DataFrame({
             "Date": pd.to_datetime(d.Date).to_numpy(),
@@ -85,7 +85,8 @@ def regime_features(bars, symbol, breadth, momentum_ranks):
     if len(d) < 220 or symbol is None or not isinstance(symbol, str):
         return d
     dates = pd.DatetimeIndex(d.Date)
-    market = breadth.reindex(dates)
+    # Align by ROW, not by date index: raw features have RangeIndex.
+    market = breadth.reindex(dates).reset_index(drop=True)
     if len(momentum_ranks):
         idx = pd.MultiIndex.from_arrays(
             [[symbol]*len(d), dates], names=["Symbol", "Date"]
