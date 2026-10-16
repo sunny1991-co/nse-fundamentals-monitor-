@@ -696,6 +696,9 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         for r in detailed
         for d in (r.get("metric_source_inspection") or {}).values()
     )
+    reproduced_pending_issuer=verdict_counts.get(
+        "OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING",0
+    )
     issuer_identity_pending=sum(
         bool(d.get(
             "legacy_parser_may_have_selected_context_without_independent_issuer_scheme_check"
@@ -713,6 +716,8 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         "nse_download_blocked":blocked,
         "stop_reason":stop_reason,
         "metric_drilldown_verdict_counts":dict(verdict_counts),
+        "official_nse_xml_numeric_reproductions_pending_issuer":
+            reproduced_pending_issuer,
         "issuer_identity_attestation_pending_metric_cells":issuer_identity_pending,
         "issuer_identity_independently_attested":False,
         "sample_file_reviews":detailed,
@@ -753,6 +758,8 @@ def main():
         "stop_reason":result["stop_reason"],
         "metric_drilldown_verdict_counts":
             result["metric_drilldown_verdict_counts"],
+        "official_nse_xml_numeric_reproductions_pending_issuer":
+            result["official_nse_xml_numeric_reproductions_pending_issuer"],
         "issuer_identity_attestation_pending_metric_cells":
             result["issuer_identity_attestation_pending_metric_cells"],
         "source_samples":[{
