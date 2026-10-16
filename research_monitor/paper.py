@@ -85,6 +85,8 @@ def reconcile(root, raw, calendars, now):
     with closing(connect(root)) as db, db:
         stored=db.execute('SELECT id,symbol,signal_day,registered_at,plan,status,state FROM plans').fetchall()
         for identity,symbol,signal_day,registered_at,plan_text,old_status,state_text in stored:
+            if pd.Timestamp(signal_day).date() >= now.astimezone(IST).date():
+                continue  # Today's newly registered plan has no completed next session.
             if old_status in ('SKIPPED_ENTRY','MISSED_ENTRY_REGISTRATION','SOURCE_REVISION_REVIEW_REQUIRED'):
                 continue
             plan=json.loads(plan_text);prior=json.loads(state_text)
