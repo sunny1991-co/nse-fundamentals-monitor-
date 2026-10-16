@@ -35,6 +35,9 @@ from upstox_reference_batches import (
     MAX_BATCH, MAX_SOURCE_AGE_DAYS, ReferenceBatchError,
     _source_dir, collect, verified_reference_map,
 )
+from upstox_reference_reconcile import (
+    ReconciliationError, reconcile as reconcile_vendor_reference,
+)
 
 load_dotenv(CODE_ROOT / ".env", interpolate=False)
 
@@ -135,7 +138,8 @@ def _refresh_only_expired_mapping(root, now):
 
 
 def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
-              collector=collect, refresh_mapping=_refresh_only_expired_mapping):
+              collector=collect, refresh_mapping=_refresh_only_expired_mapping,
+              reconciler=reconcile_vendor_reference):
     """Single safe daily attempt. Can be tested with all network dependencies mocked.
 
     Runs after 17:00 IST; persistent claim is acquired before public BOD
@@ -196,6 +200,29 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
     try:
         refresh_mapping(root, now)
         result = collector(root, token, max_batch)
+        # Audit in a separate offline-only step. A missing independent
+        # NSE original history or corrupt vendor record must never be
+        # disguised as an audited pass, and cannot re-enable orders.
+        reconciliation_state = "NOT_RUN"
+        audit = {}
+        try:
+            audit = reconciler(root)
+            if audit.get("scope") != (
+                "NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1"
+            ):
+                reconciliation_state="UNTRUSTED_RECONCILIATION_RESULT"
+                audit={}
+            else:
+                reconciliation_state=(
+                    "SOURCE_DIFFERENCES_NEED_REVIEW"
+                    if audit.get("companies_needing_vendor_vs_nse_review",0)>0
+                    else "NO_COMPARABLE_NSE_METRICS"
+                    if audit.get("metric_comparisons",0)==0
+                    else "COMPARISON_RECORDED_REFERENCE_ONLY"
+                )
+        except (ReconciliationError,ReferenceBatchError,
+                OSError,ValueError,TypeError):
+            reconciliation_state="SOURCE_COMPARISON_UNAVAILABLE"
         fatal=result.get("stop_reason")
         state = (
             "STOPPED_ON_VENDOR_API_CONSTRAINT" if fatal
@@ -212,6 +239,18 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
             mapping_symbols=result.get("mapping_symbols"),
             requests_this_run=result.get("requests_this_run",0),
             stop_reason=fatal,
+            source_reconciliation_state=reconciliation_state,
+            source_reconciliation_comparisons=(
+                audit.get("metric_comparisons",0)
+            ),
+            source_reconciliation_companies_needing_review=(
+                audit.get("companies_needing_vendor_vs_nse_review",0)
+            ),
+            source_reconciliation_is_trading_approval=False,
+            private_reconciliation_summary=str(
+                _source_dir(root)/"upstox-reference-batches-v1" /
+                "reconciliation"/"summary.json"
+            ),
             private_batch_report=str(_source_dir(root) /
                                      "upstox-reference-batches-v1" /
                                      "last_batch.json"),
