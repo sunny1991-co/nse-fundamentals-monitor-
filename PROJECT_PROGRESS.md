@@ -1,5 +1,44 @@
 # Project progress — 16 October 2026
 
+## Termux evidence supplied by owner — 16 October 2026, around 14:06 IST
+
+The phone's pasted status reports adjusted NSE history published for 1,083 symbols
+(1,365,517 rows), covering 2020-01-01 through 2026-10-15. 660 symbols have at least
+1,260 bars; no unresolved archive-session gaps were reported. 222 symbols remain
+excluded for corporate-action review. These are owner-supplied runtime results,
+not a fresh remote inspection of the phone or independent source audit.
+
+All eight post-publication scripts exited successfully. This means the pipeline
+completed, not that its investment criteria passed: strict annual/shortlist and
+technical passes are zero. The provisional two-year screen has 478 passes but
+zero current provisional candidates. Official sector rows are zero; quarterly
+collection reports BOUNDED_ATTEMPT_LIMIT_REACHED. Upstox is deferred, SMS setup
+pending and entry alerts blocked. Supervisor/dashboard were running with wake lock.
+
+Termux now has separate history/research workers, loopback MFA dashboard,
+crash restart, optional Termux:Boot and encrypted backup/restore commands.
+Actual phone force-stop/reboot recovery and restore should not be inferred from
+code tests. Render is an optional alternate host, not a prerequisite for the
+phone's current research pipeline.
+
+## Diagnostic improvement
+
+Backtest reports previously collapsed every eligible-history rejection into
+INSUFFICIENT_OR_WEAK_EVIDENCE. Future runs record every failed fixed threshold
+and development/half-period metrics. Thresholds are unchanged. The new read-only
+`diagnose_research.py` reports existing backtest, annual, sector and quarterly
+blockers without contacting a broker or rerunning history. Older reports expose
+only partial backtest evidence; the diagnostic explicitly marks missing detail.
+
+Phone command (does not stop the backend):
+
+```sh
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python diagnose_research.py
+```
+
+The phone's detailed reports are still needed to identify its actual rejection
+counts. No source gap or zero-pass result has been declared fixed by this change.
+
 ## Latest update: cloud deployment package (not yet hosted)
 
 - Added a single-instance Render Blueprint, supervised Gunicorn + worker startup,

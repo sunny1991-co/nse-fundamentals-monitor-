@@ -5,6 +5,7 @@ per stock; it does not establish a point-in-time fundamental strategy backtest.
 Require provider metadata confirming corporate-action-adjusted daily OHLCV.
 """
 from research_monitor.paths import data_root
+from research_monitor.backtest_gates import evidence_failures
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -112,16 +113,19 @@ def main():
         half = cut+(len(d)-cut)//2
         first, _ = simulate(d,cut,half)
         second, _ = simulate(d,half,len(d))
-        passed = (dev['Completed_Trades']>=20 and dev['Mean_Return']>0
-            and hold['Completed_Trades']>=30 and hold['Mean_Return']>0
-            and hold['Profit_Factor'] is not None and hold['Profit_Factor']>=1.5
-            and hold['Max_Drawdown']<=.20 and stress['Mean_Return']>0
-            and first['Completed_Trades']>=5 and second['Completed_Trades']>=5
-            and first['Mean_Return']>0 and second['Mean_Return']>0)
+        failures = evidence_failures(dev, hold, stress, first, second)
+        passed = not failures
         reports.append(dict(Symbol=sym, Backtest_Pass=passed, Strategy=VERSION,
             Data_SHA256=digest, Start=str(d.Date.iloc[220].date()),
             Holdout_Start=str(d.Date.iloc[cut].date()), End=str(d.Date.iloc[-1].date()),
             **hold, Stress_Mean_Return=stress['Mean_Return'],
+            Development_Completed_Trades=dev['Completed_Trades'],
+            Development_Mean_Return=dev['Mean_Return'],
+            First_Half_Completed_Trades=first['Completed_Trades'],
+            First_Half_Mean_Return=first['Mean_Return'],
+            Second_Half_Completed_Trades=second['Completed_Trades'],
+            Second_Half_Mean_Return=second['Mean_Return'],
+            Failure_Reasons='|'.join(failures),
             Reason='TECHNICAL_HOLDOUT_PASS_NOT_CALIBRATED_PROBABILITY' if passed else 'INSUFFICIENT_OR_WEAK_EVIDENCE'))
         trade_rows.extend(dict(Symbol=sym,**t) for t in trades)
     pd.DataFrame(reports,columns=None if reports else ['Symbol','Backtest_Pass']).to_csv(ROOT/'swing_backtest_report.csv',index=False)
