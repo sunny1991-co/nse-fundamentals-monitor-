@@ -18,6 +18,9 @@ from research_monitor.paths import data_root, CODE_ROOT
 from research_monitor.upstox_data import UpstoxData, DataUnavailable
 from research_monitor.schedule import IST, phase, atomic_status, claim_job
 from research_monitor.nse_calendar import official_equity_calendar
+from research_monitor.assistant_signal_pipeline import (
+    match_quote_and_prepare_paper_prompt,
+)
 
 ROOT = data_root()
 
@@ -130,6 +133,16 @@ def tick(root=ROOT, now=None):
     except (OSError,ValueError,TypeError):
         pass
     atomic_status(runtime/'worker_status.json', status)
+    # Existing Upstox read-only validated NSE_EQ quotes can activate a
+    # PAPER-only owner Yes/No+qty prompt, never a broker order. No prompt
+    # when strict fundamentals, TRI, strategy source or quote is stale.
+    if state=='LIVE_MONITORING' and status.get('live_feed')=='POLLING_10_SECONDS':
+        research=match_quote_and_prepare_paper_prompt(root,now=now)
+        atomic_status(runtime/'assistant_quote_research_status.json',research)
+        status['swing_assistant_paper_prompts']=len(
+            research.get('owner_prompts',[])
+        )
+        status['assistant_real_orders']='DISABLED'
     return status
 
 def main():
