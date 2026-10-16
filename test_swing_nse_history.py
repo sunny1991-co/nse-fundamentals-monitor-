@@ -11,6 +11,7 @@ import pandas as pd
 from swing_nse_history import (
     Action,
     action_audit,
+    archive_gap_audit,
     adjust_frame,
     candidate_urls,
     classify_action,
@@ -129,6 +130,31 @@ class NseHistoryTests(unittest.TestCase):
         self.assertEqual(old.Open, 50)
         self.assertEqual(old.Volume, 2000)
         self.assertEqual(ex.Open, 52)
+
+    def test_archive_gap_audit_reports_only_expected_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = init_db(root / "history.sqlite")
+            try:
+                rows = [
+                    ("2024-03-04", "NO_FILE", "", "", 0, "x", "404", 3),  # Monday session
+                    ("2024-01-26", "NO_FILE", "", "", 0, "x", "404", 3),  # reviewed holiday
+                ]
+                db.executemany(
+                    "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error,attempts) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    rows,
+                )
+                db.commit()
+                audit = archive_gap_audit(
+                    db, date(2024, 1, 1), date(2024, 12, 31), root
+                )
+                self.assertEqual(audit["unverified_expected_session_gaps"], 1)
+                self.assertEqual(audit["retry_exhausted_gaps"], 1)
+                review = pd.read_csv(root / "nse_archive_gap_review.csv")
+                self.assertEqual(review.Date.astype(str).tolist(), ["2024-03-04"])
+            finally:
+                db.close()
 
     def test_reviewed_holiday_is_not_pending_but_special_weekend_is(self):
         with tempfile.TemporaryDirectory() as directory:
