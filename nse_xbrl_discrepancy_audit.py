@@ -538,7 +538,8 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
                 "source_url":url,
                 "metrics_in_review":sorted(measurements),
                 "fetch_state":error or "RAW_NSE_XML_RECEIVED",
-                "nse_original_source_verified_by_parser_only":True,
+                "nse_original_url_provenance_accepted":True,
+                "issuer_identity_independently_attested":False,
                 "raw_xbrl_new_audited_year_added":False,
             }
             if body is not None:
@@ -576,6 +577,13 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         for r in detailed
         for d in (r.get("metric_source_inspection") or {}).values()
     )
+    issuer_identity_pending=sum(
+        bool(d.get(
+            "legacy_parser_may_have_selected_context_without_independent_issuer_scheme_check"
+        ))
+        for r in detailed
+        for d in (r.get("metric_source_inspection") or {}).values()
+    )
     result={
         "scope":SCOPE,
         "created_at_utc":datetime.now(timezone.utc).isoformat(),
@@ -586,6 +594,8 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         "nse_download_blocked":blocked,
         "stop_reason":stop_reason,
         "metric_drilldown_verdict_counts":dict(verdict_counts),
+        "issuer_identity_attestation_pending_metric_cells":issuer_identity_pending,
+        "issuer_identity_independently_attested":False,
         "sample_file_reviews":detailed,
         "new_nse_verified_years_added":0,
         "original_nse_values_modified":False,
@@ -619,10 +629,17 @@ def main():
         "stop_reason":result["stop_reason"],
         "metric_drilldown_verdict_counts":
             result["metric_drilldown_verdict_counts"],
+        "issuer_identity_attestation_pending_metric_cells":
+            result["issuer_identity_attestation_pending_metric_cells"],
         "source_samples":[{
             "symbol":r["symbol"],"financial_year":r["financial_year"],
             "metrics_in_review":r["metrics_in_review"],
             "fetch_state":r["fetch_state"],
+            "xml_context_identifier_scheme_classes":
+                r.get("context_identifier_scheme_classes",{}),
+            "xml_claimed_cin_fact_count":r.get("xml_claimed_cin_count"),
+            "legacy_parser_issuer_identity_gap_possible":
+                r.get("legacy_parser_issuer_identity_gap_possible",False),
             "metric_source_inspection":r.get("metric_source_inspection",{}),
         } for r in result["sample_file_reviews"]],
         "original_nse_values_modified":False,
