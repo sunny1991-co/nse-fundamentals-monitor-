@@ -27,6 +27,9 @@ class TermuxMaintenanceTests(unittest.TestCase):
             self.write_csv(root/'final_fundamental_screen_summary.csv', [
                 {'Final_Shortlist_Count':'0'}
             ])
+            self.write_csv(root/'fast_fundamental_screen_summary.csv', [
+                {'Fast_Fundamental_Pass_Count':'17'}
+            ])
             self.write_csv(root/'quarterly_collection_status.csv', [
                 {'Collection_Status':'OK','Verified_Quarter_Rows':'12','Qualified_Comparison_Rows':'0'}
             ])
@@ -36,6 +39,7 @@ class TermuxMaintenanceTests(unittest.TestCase):
             result = summary(root)
             self.assertEqual(result['two_year_baseline_pass'], 1)
             self.assertEqual(result['annual_full_pass'], 0)
+            self.assertEqual(result['provisional_fast_fundamental_pass'], 17)
             self.assertEqual(result['quarterly_verified_rows'], 12)
             self.assertEqual(result['sector_verified_rows'], 1)
             self.assertEqual(result['adjusted_history'], 'MISSING')
