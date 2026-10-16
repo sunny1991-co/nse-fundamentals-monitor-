@@ -144,6 +144,8 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                         "entry_date": str(b.Date.date()), "before": before,
                         "buy_total": buy_total, "buy_turnover": qty*fill,
                         "buy_fees": fee, "sell_receipts": 0.0,
+                        "initial_stop": float(sig.Stop),
+                        "signal_date": str(sig.Date.date()),
                         "sell_turnover": 0.0, "sell_fees": 0.0,
                         "partial": False,
                     }
@@ -151,6 +153,11 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
             p = position
             reason = None
             exit_price = None
+            # Exit forensics are observations only. Never affect fills, fees,
+            # stop-first priority or historical profit calculations.
+            stop_at_bar_start = float(p["stop"])
+            had_partial_at_bar_start = bool(p["partial"])
+            entry_session = (i == p["i"])
             if b.Low <= p["stop"]:
                 exit_price = min(float(b.Open), p["stop"])*(1-slip)
                 reason = "stop"
@@ -183,6 +190,30 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                     "Net_Profit_Rs": pnl,
                     "Return": pnl/p["buy_total"],
                     "Held_Sessions": i-p["i"]+1,
+                    # Extra fields for independent *loss attribution*.
+                    # These are never consumed to choose the exit.
+                    "Signal_Date": p["signal_date"],
+                    "Initial_Stop_Rs": p["initial_stop"],
+                    "Stop_At_Exit_Rs": stop_at_bar_start,
+                    "Exit_Open_Rs": float(b.Open),
+                    "Exit_Low_Rs": float(b.Low),
+                    "Exit_High_Rs": float(b.High),
+                    "Exit_On_Entry_Session": entry_session,
+                    "Partial_Profit_Taken": bool(p["partial"]),
+                    "Partial_Previously_Taken": had_partial_at_bar_start,
+                    "Gap_Below_Stop": bool(
+                        reason == "stop" and float(b.Open) < stop_at_bar_start
+                    ),
+                    "Stop_And_Target_Both_Touched": bool(
+                        reason == "stop" and float(b.High) >= p["t1"]
+                    ),
+                    "Trailing_Stop_Active": bool(
+                        reason == "stop"
+                        and stop_at_bar_start > p["initial_stop"] + 1e-9
+                    ),
+                    "Gross_Filled_Return": (
+                        p["sell_turnover"]/p["buy_turnover"]-1
+                    ),
                 })
                 position = None
             elif p["partial"]:
