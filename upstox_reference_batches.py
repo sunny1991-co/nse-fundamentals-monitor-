@@ -16,6 +16,7 @@ so Termux interruption leaves completed reference reports intact.
 from __future__ import annotations
 
 import argparse
+import fcntl
 from collections import Counter
 import csv
 from datetime import datetime, timezone, timedelta
@@ -303,6 +304,32 @@ def _summary(root, mapping, completed, *, run_results, fatal, requests_made,
 
 def collect(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
             mapping_loader=verified_reference_map, seed_existing=True):
+    """One batch at a time across manual and supervised Termux invocations.
+
+    This prevents concurrent manual and automatic collectors from choosing
+    the same pending 25 symbols, overwriting JSON or confusing progress.
+    """
+    root=Path(root)
+    folder=_source_dir(root)/VERSION
+    folder.mkdir(parents=True,exist_ok=True,mode=0o700)
+    path=folder/"collection.lock"
+    with path.open("a+") as lock:
+        os.chmod(path,0o600)
+        try:
+            fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ReferenceBatchError("VENDOR_BATCH_ALREADY_RUNNING") from None
+        try:
+            return _collect_locked(
+                root,token,batch,session=session,pause=pause,
+                mapping_loader=mapping_loader,seed_existing=seed_existing,
+            )
+        finally:
+            fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+
+
+def _collect_locked(root, token, batch=MAX_BATCH, *, session=None, pause=time.sleep,
+                    mapping_loader=verified_reference_map, seed_existing=True):
     """At most batch *new companies* per run, read-only, checkpoint on success.
 
     HTTP 401/403/429, network and 5xx stop; other missing vendor records
