@@ -111,6 +111,11 @@ show_status() {
     cat "$RUNTIME_DIR/worker_status.json"
     echo
   fi
+  if [ -f "$RUNTIME_DIR/history_worker_status.json" ]; then
+    echo "Official NSE history worker status:"
+    cat "$RUNTIME_DIR/history_worker_status.json"
+    echo
+  fi
 }
 
 run_once() {
