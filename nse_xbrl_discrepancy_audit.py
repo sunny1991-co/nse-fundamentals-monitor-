@@ -298,7 +298,7 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             for ctx in contexts.values()
             for label in ctx["identifier_scheme_labels"]
         )),
-        "legacy_parser_issuer_identity_gap_possible":True,
+        "legacy_parser_issuer_identity_gap_possible":False,
         "metric_source_inspection":{},
     }
     for metric, official in official_values.items():
@@ -436,6 +436,10 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             "verdict":verdict,
             "automatic_numeric_correction":False,
         }
+    out["legacy_parser_issuer_identity_gap_possible"]=any(
+        r["legacy_parser_may_have_selected_context_without_independent_issuer_scheme_check"]
+        for r in out["metric_source_inspection"].values()
+    )
     return out
 
 
