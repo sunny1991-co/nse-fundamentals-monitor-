@@ -1,6 +1,23 @@
 # Project progress — 16 October 2026
 
-## Latest update: quarterly date correctness and re-verification
+## Latest source-run result (16 October 2026)
+
+The earlier cloud recovery run completed: 100 legacy XML candidates examined,
+0 accepted annual rows; stored quarterly rows increased to 1,774 and final
+shortlist stayed 0. These quarterly records were produced by the earlier
+parser, so the new v6 re-verification gate must still be satisfied before they
+can qualify. This result is separate from paper-engine unit tests.
+
+## Latest update: persistent forward paper research
+
+- Added a SQLite paper ledger with frozen plan registration timestamps, duplicate suppression and completed-session replay using the existing strategy engine.
+- Registration after the next session opens is rejected. Missing calendar days/bars wait; revised historical inputs require review. Open positions remain open at the available-data boundary.
+- Gap stop losses, partial targets, trailing stops and time exits follow the shared model. Results are normalized per-stock EOD observations, not portfolio simulation, real fills or live exit alerts.
+- Worker archives verified calendars and runs paper/readiness checks before market and after close. Existing observations can advance even if a new screen fails. Dashboard shows timestamped paper status.
+- Full local suite: **100 tests passed**. Actual run without history: `WAITING_FOR_VALID_ADJUSTED_HISTORY`, zero plans, zero real orders, forward-validation flag false.
+- Still blocked by real adjusted history, verified calendar coverage, sufficient forward observation time, user capital/risk configuration, SMS provider integration and cloud deployment. No successful real-market paper performance is claimed.
+
+## Previous update: quarterly date correctness and re-verification
 
 - Fixed a reproduced ISO-date bug: `2025-04-01` was read as January 4. ISO dates now keep their year-month-day meaning; invalid ISO dates cannot fall back to a swapped date.
 - Quarterly parser version is now 6. Stored earlier records remain available for audit but cannot contribute comparisons or final shortlist eligibility until reverified. Successful download-ledger entries alone cannot suppress a missing/current-version raw result.

@@ -6,7 +6,7 @@ Active product: equity swing research only. F&O and IPO are disabled in the UI/C
 
 Implemented: strict fundamental filters, chronological technical holdout backtest, conditional entry/stop/target plans, equity-only risk sizing, authenticated dashboard, session supervisor, Upstox read-only quote polling, deduplicated SMS transport.
 
-NOT complete/live: verified historical adjusted data ingestion, point-in-time fundamental backtest integration, forward paper execution/validation, automatic event-to-SMS orchestration, SMS delivery-receipt reconciliation. No calibrated future success probability exists. A passing technical backtest alone does not validate the full fundamental+technical strategy.
+NOT complete/live: verified historical adjusted data ingestion, point-in-time fundamental backtest integration, forward paper performance validation and portfolio-level paper execution, automatic event-to-SMS orchestration, SMS delivery-receipt reconciliation. No calibrated future success probability exists. A passing technical backtest alone does not validate the full fundamental+technical strategy.
 
 A zero shortlist means no trade: missing evidence must not be replaced with guessed sectors or relaxed gates. Alerts remain blocked pending forward validation even when quotes connect.
 
@@ -69,3 +69,34 @@ reports, backtest report and candidate file. Older pre-manifest plans must be
 regenerated. A failed screener removes previous plans. The local readiness
 report includes its check timestamp; it is not continuous cloud monitoring.
 Entry SMS stays blocked pending forward validation.
+
+## Forward paper research ledger
+
+`python swing_paper_monitor.py` registers fresh evidence-gated candidates and
+reconciles prior plans against completed daily bars. The worker invokes it
+before the market and after close, including when a fresh fundamental screen
+fails, so prior observations are not lost. It archives each verified daily
+calendar under `runtime/calendar_history.json`; missing days cannot be silently
+assumed to be holidays. Keep that file and `runtime/paper.sqlite` on persistent
+private storage.
+
+This is normalized one-unit **per-stock EOD research**, not a portfolio or live
+broker execution simulator. It reuses the backtest's fills, costs, stop-first
+assumption, gap stops, partial targets, trailing stops and time exits. An open
+position is not liquidated merely because today's available data ends.
+
+Registration must precede the next verified session opening. Late registration
+is permanently skipped rather than backfilled. Restarts cannot duplicate a
+plan or trade. Missing sessions/bars wait; revised pre-signal or already observed
+prices require review. No automatic split/bonus reconciliation is implemented.
+A fresh dataset should be imported and screened before the next session opens.
+Current-day bars are excluded, so observations lag by at least one completed
+session; these reports are not intraday exit alerts. Starting after the opening
+can miss that day's entry, deliberately.
+
+Dashboard and `runtime/paper_status.json` expose the latest check and states.
+The engine never sets `forward_validation_pass` true, sends SMS or places an
+order. Real history, calendar coverage, enough forward observations, portfolio
+risk configuration and independent review remain necessary. No user capital
+has been invented. Without adjusted history the status is
+`WAITING_FOR_VALID_ADJUSTED_HISTORY`.

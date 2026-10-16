@@ -29,7 +29,7 @@ def features(d):
         &(d.ATR>0)&((c-d.Stop)/c<=.12)&(d.Stop>0))
     return d
 
-def simulate(d, start, end, cost=COST, slip=SLIP):
+def simulate(d, start, end, cost=COST, slip=SLIP, liquidate_at_end=True, with_state=False):
     """Next-open entry; stop first if a daily bar touches both stop and target.
     50% at 2R, rest at 3R or trailing stop; trailing updates for next bar only.
     Equity includes open position marks; gaps use open price, never stop price.
@@ -63,7 +63,7 @@ def simulate(d, start, end, cost=COST, slip=SLIP):
                     sell, reason = p['t2']*(1-slip), 'target2'
                 elif i-p['i']+1 >= MAX_HOLD:
                     sell, reason = float(b.Close)*(1-slip), 'time'
-                elif i == end-1:
+                elif i == end-1 and liquidate_at_end:
                     sell, reason = float(b.Close)*(1-slip), 'sample_end'
             if sell is not None:
                 proceeds = p['qty']*sell*(1-cost)
@@ -84,6 +84,8 @@ def simulate(d, start, end, cost=COST, slip=SLIP):
         Profit_Factor=float(returns[returns>0].sum()/losses) if losses>0 else None,
         Max_Drawdown=float((1-equity/np.maximum.accumulate(equity)).max()),
         Total_Return=float(equity[-1]-1))
+    if with_state:
+        return stats, trades, dict(position=position, cash=cash, marked_equity=float(equity[-1]))
     return stats, trades
 
 def load_market():

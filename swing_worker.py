@@ -28,6 +28,17 @@ def tick(root=ROOT, now=None):
         except DataUnavailable:
             calendar={}
     state = phase(calendar, now)
+    if state != 'CALENDAR_PENDING':
+        history_path=runtime/'calendar_history.json'
+        try:
+            history=json.loads(history_path.read_text(encoding='utf-8'))
+            if not isinstance(history,dict): history={}
+        except (OSError,ValueError):
+            history={}
+        day=now.astimezone(IST).date().isoformat()
+        if history.get(day) != calendar:
+            history[day]=calendar
+            atomic_status(history_path,history)
     status = dict(updated_at=now.isoformat(), phase=state, scope='SWING_EQUITY_ONLY',
         live_feed='NOT_CONNECTED', sms='PROVIDER_SETUP_REQUIRED',
         entry_alerts='BLOCKED_PENDING_LIVE_AND_FORWARD_VALIDATION',
@@ -48,9 +59,10 @@ def tick(root=ROOT, now=None):
             status['live_feed']='VERIFIED_EQUITY_WATCHLIST_REQUIRED'
     # After-close jobs run even if the laptop starts after the close.
     # Non-trading days can refresh research, but can never open a live session.
-    if state in {'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY'}:
+    if state in {'PRE_MARKET', 'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY'}:
         day = now.astimezone(IST).date().isoformat()
-        if claim_job(runtime/'schedule.sqlite', day, 'eod_research'):
+        job='premarket_research' if state=='PRE_MARKET' else 'eod_research'
+        if claim_job(runtime/'schedule.sqlite', day, job):
             status['analysis'] = 'RUNNING'
             atomic_status(runtime/'worker_status.json', status)
             failed = None
@@ -66,9 +78,24 @@ def tick(root=ROOT, now=None):
                 except (OSError, subprocess.TimeoutExpired):
                     failed = script
                     break
-            status['analysis'] = 'BLOCKED_CHECK_ANALYSIS_LOG' if failed else 'COMPLETED'
+            # Existing paper observations must still advance if a fresh screen fails.
+            for script in ['swing_paper_monitor.py','swing_readiness.py']:
+                try:
+                    with (runtime/'analysis.log').open('a',encoding='utf-8') as log:
+                        result=subprocess.run([sys.executable,str(root/script)],cwd=root,
+                            stdout=log,stderr=log,timeout=1800,check=False)
+                    if result.returncode: failed=failed or script
+                except (OSError,subprocess.TimeoutExpired):
+                    failed=failed or script
+            status['analysis'] = 'BLOCKED_CHECK_ANALYSIS_LOG' if failed else 'COMPLETED' 
             status['failed_step'] = failed
             atomic_status(runtime/'last_analysis.json', status)
+    try:
+        paper=json.loads((runtime/'paper_status.json').read_text(encoding='utf-8'))
+        status['paper_trading']=paper.get('data_status','STATUS_UNAVAILABLE')
+        status['paper_checked_at']=paper.get('checked_at')
+    except (OSError,ValueError,TypeError):
+        pass
     atomic_status(runtime/'worker_status.json', status)
     return status
 
@@ -99,3 +126,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

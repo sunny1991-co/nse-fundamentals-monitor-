@@ -46,7 +46,7 @@ def snapshot(root, now=None):
     now = now or datetime.now(timezone.utc)
     result = dict(updated_at=now.isoformat(), live_feed='NOT_VERIFIED',
         historical_data='MISSING', fundamental_shortlist='MISSING_OR_INVALID',
-        backtest='NOT_VERIFIED', forward_paper='NOT_IMPLEMENTED',
+        backtest='NOT_VERIFIED', forward_paper='ENGINE_IMPLEMENTED_FORWARD_EVIDENCE_PENDING',
         sms='END_TO_END_NOT_VERIFIED', cloud='DEPLOYMENT_NOT_VERIFIED',
         entry_alerts='BLOCKED')
     try:
