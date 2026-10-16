@@ -121,6 +121,11 @@ show_status() {
     cat "$RUNTIME_DIR/research_worker_status.json"
     echo
   fi
+  if [ -f "$RUNTIME_DIR/upstox_reference_worker_status.json" ]; then
+    echo "Automatic Upstox NSE_EQ vendor-reference status (read-only):"
+    cat "$RUNTIME_DIR/upstox_reference_worker_status.json"
+    echo
+  fi
   echo "Project progress summary:"
   "$PYTHON_BIN" "$PROJECT_DIR/project_status.py" 2>/dev/null || echo '{"stage":"STATUS_UNAVAILABLE"}'
 }
