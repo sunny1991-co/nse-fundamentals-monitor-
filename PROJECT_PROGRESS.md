@@ -1,5 +1,70 @@
 # Project progress — 16 October 2026
 
+## Source-original issuer URI schemes identified; cautious XBRL standard handling — 16 Oct 2026
+
+User's actual on-device NSE XBRL output finally identified *which*
+identifier-scheme domains exist in the archived XBRL contexts:
+
+- **MWL FY2025-26:** `www.sebi.gov.in`, 18 contexts;
+- **TBOTEK FY2025-26:** `www.sebi.gov.in`, 53 contexts;
+- **NECLIFE FY2025-26:** `www.sebi.gov.in`, 18 contexts;
+- **KRIDHANINF FY2024-25:** `www.bseindia.com`, 12 contexts.
+
+In each of five audited metric cells, the archived NSE number corresponds
+to exact-year `INR` XBRL tag in original `FourD` context, but the
+**previous diagnostic intentionally required `NSESymbol` scheme** and
+therefore did not independently attest the fact's issuer identity.
+No unexpected other dimensions. One should **not call these
+SEBI/BSE schemes invalid XBRL**. XBRL International's 2.1 standard,
+section 4.7.3.1, explicitly permits an arbitrary identifying authority's
+scheme URI and makes no guarantee that an application can resolve it:
+https://www.xbrl.org/specification/xbrl-recommendation-2003-12-31.pdf
+NSE's public XBRL taxonomy guidance also notes interchange/shared
+compliance data structures across exchanges:
+https://www.nseindia.com/static/companies-listing/xbrl-information
+
+Enhanced `nse_xbrl_discrepancy_audit.py` to avoid the false
+**"missing tag"** inference and report safer, separate evidence:
+- Classification as **SEBI / BSE scheme**, without declaring either
+  independently verified NSE identity.
+- Non-sensitive *value-shape only* of the self-declared context
+  identifier (CIN-shaped, ISIN-shaped, numeric code-shaped,
+  symbol-like, PAN-shaped, other) with **no raw entity identifier
+  values** or provider secrets printed in logs.
+- Distinct entity identifier pair count, whether all the filing's
+  contexts use the same self-declared issuer, and whether they
+  internally match the filing's claimed symbol. These are
+  *internal consistency* tests, NOT an external company registry
+  or NSE-issued symbol↔CIN verification.
+- A contradictory filing with **multiple entity identifiers**
+  cannot get `RAW_XBRL_FACT_AGREES_WITH_ARCHIVED_NSE_VALUE`; reports
+  `DOCUMENT_CONTEXT_ENTITY_IDENTIFIERS_CONFLICT` instead.
+- `--summary` prints only four short company/year source blocks
+  (scheme class, anonymized value shape, consistency, metric verdict).
+  Detailed source review remains private in `nse_xbrl_drilldown.json`.
+- Regression tests using synthetic NSE / SEBI / BSE context schemes,
+  anonymous CIN-like identifier, conflicting issuer claims, source
+  period/unit/context and no strict trading permissions.
+
+**No** earlier `NSE_Consolidation_Verified` column reclassified,
+vendor figures promoted, audited annual original files changed,
+strict fundamental companies passed or broker orders allowed.
+The original source mismatch **104 cells in 62 companies** remains
+under review, 180/1270 vendor references are collected as per
+the latest user-confirmed local run.
+
+Next owner-local command:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_xbrl_discrepancy_audit.py --max-files 4 --summary
+```
+
+Before allowing vendor/NSE source values into any strict
+candidate criteria, corroborate **context identifier value** against an
+independent official symbol↔CIN/ISIN filing and reporting basis;
+internal repetition or shape is insufficient.
+
 ## Five original XBRL facts traced to archived `FourD` context — 16 October 2026
 
 The owner's new context-aware recheck fetched all four original NSE
