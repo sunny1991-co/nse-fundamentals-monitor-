@@ -211,6 +211,9 @@ def snapshot(root: Path | None = None) -> dict:
     swing_assistant_paper = read_json(
         runtime / "assistant_paper_execution_status.json"
     )
+    swing_assistant_eod = read_json(
+        runtime / "assistant_eod_status.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -336,6 +339,15 @@ def snapshot(root: Path | None = None) -> dict:
         "swing_assistant_paper_state":swing_assistant_paper.get(
             "state","NOT_YET_RUN"
         ),
+        "swing_assistant_eod_state":swing_assistant_eod.get(
+            "state","NOT_YET_RUN"
+        ),
+        "swing_assistant_approved_paper_eod_sessions":int_value(
+            swing_assistant_eod.get("completed_sessions_recorded",0)
+        ) if swing_assistant_eod.get("scope")==(
+            "VERIFIED_COMPLETED_NSE_EOD_PAPER_HOLDING_RECONCILIATION"
+        ) else 0,
+        "swing_assistant_real_protective_orders":False,
         "swing_assistant_approval_input":"OWNER_YES_NO_PLUS_INTEGER_QUANTITY",
         "swing_assistant_approval_effect":"PAPER_ONLY_NO_LIVE_TRADES",
         "groww_cnc_protective_exits_reconciled":False,
