@@ -227,6 +227,117 @@ class RawNSEAuditTests(unittest.TestCase):
             "CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED"
         )
 
+    def test_mca_cin_self_match_is_not_independent_nse_issuer_verification(self):
+        cin="L12345MH2000PLC123456"
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'https://www.mca.gov.in/CIN'
+        ).replace(
+            b'>SYNTHETIC</xbrli:identifier>',
+            b'>L12345MH2000PLC123456</xbrli:identifier>'
+        ).replace(
+            b'</root>',
+            b'<CorporateIdentityNumber>L12345MH2000PLC123456'
+            b'</CorporateIdentityNumber></root>'
+        )
+        report=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )
+        self.assertTrue(report["xml_exact_company_symbol_present"])
+        self.assertEqual(report["xml_claimed_cin_count"],1)
+        self.assertIn("MCA_CIN_URI",report["context_identifier_scheme_classes"])
+        detail=report["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            detail["verdict"],"ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+        )
+        self.assertEqual(
+            detail["excluded_fact_examples_not_verified"][0][
+                "document_cin_relation"
+            ],"DOCUMENT_CIN_CONTEXT_MATCH_UNVERIFIED_EXTERNAL"
+        )
+        self.assertEqual(detail["candidate_inr_exact_period_count"],0)
+        self.assertTrue(report["legacy_parser_issuer_identity_gap_possible"])
+        self.assertFalse(detail["automatic_numeric_correction"])
+
+    def test_conflicting_cin_self_claim_is_review_only(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'http://www.mca.gov.in/CIN'
+        ).replace(
+            b'</root>',
+            b'<CorporateIdentityNumber>L12345MH2000PLC123456'
+            b'</CorporateIdentityNumber></root>'
+        )
+        report=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            report["excluded_fact_examples_not_verified"][0][
+                "document_cin_relation"
+            ],"DOCUMENT_CIN_CONTEXT_CONFLICTS_WITH_XML_CLAIM"
+        )
+        self.assertEqual(report["candidate_inr_exact_period_count"],0)
+
+    def test_mca_cin_scheme_alone_does_not_make_verified_fact(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'https://www.mca.gov.in/CIN'
+        )
+        report=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            report["excluded_fact_examples_not_verified"][0][
+                "document_cin_relation"
+            ],"DOCUMENT_CIN_FACT_NOT_PRESENT"
+        )
+        self.assertEqual(report["candidate_inr_exact_period_count"],0)
+
+    def test_per_metric_archive_contexts_do_not_leak_between_cash_and_assets(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'https://www.mca.gov.in/CIN'
+        )
+        report=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100,"total_assets":200},
+            archived_context_ids={
+                "revenue":{"AY"},  # Deliberately wrong archived period
+                "total_assets":{"AY"},
+            },
+        )
+        revenue=report["metric_source_inspection"]["revenue"]
+        assets=report["metric_source_inspection"]["total_assets"]
+        self.assertEqual(
+            revenue["verdict"],"RAW_NSE_VALUE_ONLY_IN_EXCLUDED_CONTEXT_REVIEW"
+        )
+        self.assertEqual(
+            assets["verdict"],"ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+        )
+        self.assertEqual(revenue["excluded_matching_facts_in_archived_context_ids"],0)
+        self.assertEqual(assets["excluded_matching_facts_in_archived_context_ids"],1)
+        self.assertEqual(revenue["archived_selected_context_ids_count"],1)
+        self.assertEqual(assets["archived_selected_context_ids_count"],1)
+        self.assertTrue(report["legacy_parser_issuer_identity_gap_possible"])
+
+    def test_valid_issuer_scheme_is_not_reported_as_legacy_attestation_gap(self):
+        report=inspect_xml(
+            valid_xml(),symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )
+        self.assertFalse(report["legacy_parser_issuer_identity_gap_possible"])
+        self.assertEqual(
+            report["metric_source_inspection"]["revenue"]["verdict"],
+            "RAW_XBRL_FACT_AGREES_WITH_ARCHIVED_NSE_VALUE",
+        )
+
     def test_download_must_be_official_xbrl_source_without_token(self):
         sess=FakeSession(valid_xml())
         data,issue=_download(sess,BASE)
