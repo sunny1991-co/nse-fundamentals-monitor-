@@ -30,6 +30,8 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_quarterly_monitor.py'), '--limit', '600', '--max-minutes', '20'], 25*60),
     ("annual_quality",
      [sys.executable, str(CODE_ROOT/'annual_fundamental_quality.py')], 10*60),
+    ("fast_fundamental",
+     [sys.executable, str(CODE_ROOT/'fast_fundamental_screen.py')], 10*60),
     ("final_shortlist",
      [sys.executable, str(CODE_ROOT/'final_fundamental_shortlist.py')], 10*60),
     ("readiness",
@@ -55,6 +57,7 @@ def summary(root: Path) -> dict:
     except OSError:
         pass
     final = csv_first(root/'final_fundamental_screen_summary.csv')
+    fast = csv_first(root/'fast_fundamental_screen_summary.csv')
     quarterly = csv_first(root/'quarterly_collection_status.csv')
     sectors = {'ok': 0, 'other': 0}
     try:
@@ -75,6 +78,7 @@ def summary(root: Path) -> dict:
         'annual_full_pass': int(annual.get('Year_Data_Quality_Pass') or 0),
         'two_year_baseline_pass': int(annual.get('Six_Core_Fields_Complete') or 0),
         'final_shortlist': int(final.get('Final_Shortlist_Count') or 0),
+        'provisional_fast_fundamental_pass': int(fast.get('Fast_Fundamental_Pass_Count') or 0),
         'quarterly_status': quarterly.get('Collection_Status', 'MISSING'),
         'quarterly_verified_rows': int(quarterly.get('Verified_Quarter_Rows') or 0),
         'quarterly_qualified_rows': int(quarterly.get('Qualified_Comparison_Rows') or 0),
