@@ -87,6 +87,62 @@ def dashboard_env(base: dict) -> dict:
     return env
 
 
+def cleanup_stale_dashboard_processes(proc_root: Path = Path('/proc')) -> list[int]:
+    """Stop only same-user orphan gunicorn masters bound to our loopback port."""
+    killed = []
+    try:
+        own_uid = os.getuid()
+        entries = list(proc_root.iterdir())
+    except (OSError, PermissionError):
+        return killed
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != own_uid:
+                continue
+            raw = (entry/'cmdline').read_bytes()
+            cmd = raw.replace(b'\x00', b' ').decode('utf-8', errors='ignore')
+        except (OSError, PermissionError):
+            continue
+        if (
+            'gunicorn' in cmd
+            and '127.0.0.1:8787' in cmd
+            and 'app:create_app()' in cmd
+        ):
+            pid = int(entry.name)
+            if pid == os.getpid():
+                continue
+            try:
+                os.killpg(pid, signal.SIGTERM)
+                killed.append(pid)
+            except (ProcessLookupError, PermissionError):
+                continue
+    if killed:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            alive = []
+            for pid in killed:
+                try:
+                    os.kill(pid, 0)
+                    alive.append(pid)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            if not alive:
+                break
+            time.sleep(0.2)
+        for pid in killed:
+            try:
+                os.kill(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                continue
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    return killed
+
+
 def terminate_child(child: subprocess.Popen) -> None:
     if child.poll() is not None:
         return
@@ -162,6 +218,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
 
     wake_lock = acquire_wakelock()
+    stale_dashboards = cleanup_stale_dashboard_processes()
     restarts: list[float] = []
     children: dict[str, subprocess.Popen] = {}
     try:
@@ -214,6 +271,7 @@ def main() -> int:
                         'state': state,
                         'wake_lock': wake_lock,
                         'orders': 'MANUAL_ONLY',
+                        'stale_dashboards_cleaned': stale_dashboards,
                         **extra,
                     })
 
