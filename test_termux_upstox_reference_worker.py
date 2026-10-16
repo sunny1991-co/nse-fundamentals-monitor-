@@ -11,6 +11,7 @@ import termux_upstox_reference_worker as worker
 from upstox_reference_batches import ReferenceBatchError
 from upstox_reference_reconcile import ReconciliationError
 from upstox_reference_review import SourceReviewError
+from upstox_reference_forensics import ForensicError
 from research_monitor.upstox_instrument_master import InstrumentMapUnavailable
 
 
@@ -182,6 +183,68 @@ class DailyVendorTests(unittest.TestCase):
             self.assertEqual(result["state"],"COMPLETED_DAILY_REFERENCE_BATCH")
             self.assertEqual(result["orders"],"DISABLED")
 
+
+    def test_nightly_forensics_uses_source_hypotheses_without_trading(self):
+        with tempfile.TemporaryDirectory() as d:
+            called=[]
+            def recon(_root):
+                return {
+                    "scope":"NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1",
+                    "metric_comparisons":624,
+                    "companies_needing_vendor_vs_nse_review":25,
+                }
+            def review(_root):
+                return {
+                    "scope":"UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1",
+                    "companies_requiring_source_review":25,
+                }
+            def forensic(root):
+                called.append(root)
+                return {
+                    "scope":"UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1",
+                    "metric_discrepancies":36,
+                    "automatic_source_correction":False,
+                    "live_orders":"DISABLED",
+                }
+            result=worker.run_daily(
+                d, local(), token=TOKEN, collector=Stub(),
+                refresh_mapping=Refresh(), reconciler=recon, reviewer=review,
+                forensic_builder=forensic,
+            )
+            self.assertEqual(result["source_forensics_state"],
+                             "OFFLINE_FORENSICS_RECORDED")
+            self.assertEqual(result["source_forensics_discrepancy_cells"],36)
+            self.assertFalse(result["source_forensics_is_auto_fix"])
+            self.assertFalse(result["source_forensics_is_trading_approval"])
+            self.assertEqual(result["orders"],"DISABLED")
+            self.assertEqual(len(called),1)
+            self.assertNotIn(TOKEN,json.dumps(result))
+
+    def test_forensics_error_does_not_enable_orders_or_break_collection(self):
+        with tempfile.TemporaryDirectory() as d:
+            def recon(_root):
+                return {
+                    "scope":"NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1",
+                    "metric_comparisons":1,
+                    "companies_needing_vendor_vs_nse_review":1,
+                }
+            def review(_root):
+                return {
+                    "scope":"UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1",
+                    "companies_requiring_source_review":1,
+                }
+            def forensic(_root):
+                raise ForensicError("ORIGINAL_NSE_XBRL_REVISION_CHANGED")
+            report=worker.run_daily(
+                d, local(), token=TOKEN, collector=Stub(),
+                refresh_mapping=Refresh(), reconciler=recon, reviewer=review,
+                forensic_builder=forensic,
+            )
+            self.assertEqual(report["source_forensics_state"],
+                             "OFFLINE_FORENSICS_UNAVAILABLE")
+            self.assertEqual(report["source_forensics_discrepancy_cells"],0)
+            self.assertEqual(report["state"],"COMPLETED_DAILY_REFERENCE_BATCH")
+            self.assertEqual(report["orders"],"DISABLED")
 
     def test_missing_verified_nse_history_does_not_break_daily_vendor_job(self):
         with tempfile.TemporaryDirectory() as directory:
