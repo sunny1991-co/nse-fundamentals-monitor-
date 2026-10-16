@@ -117,6 +117,22 @@ BATCH_DAYS = 250
 MAX_MINUTES = 30
 
 
+def next_cycle_delay(collector: dict, code: int | None) -> tuple[int, int, bool]:
+    daily = collector.get('daily') or {}
+    remaining = int(
+        daily.get('remaining_archive_days', daily.get('remaining_weekdays', 0)) or 0
+    )
+    blocked = bool(daily.get('blocked')) or collector.get('state') == 'BLOCKED_BY_NSE_ACCESS'
+    fast_catchup = (
+        code == 0
+        and remaining > 0
+        and not blocked
+        and collector.get('state') != 'ADJUSTED_HISTORY_PUBLISHED'
+    )
+    wait_seconds = CATCHUP_INTERVAL_SECONDS if fast_catchup else INTERVAL_SECONDS
+    return wait_seconds, remaining, fast_catchup
+
+
 def main() -> int:
     root = data_root()
     runtime = root/'runtime'
@@ -233,17 +249,7 @@ def main() -> int:
                     post_publish = {'state': 'POST_PUBLISH_LOG_ERROR'}
 
             daily = collector.get('daily') or {}
-            remaining = int(
-                daily.get('remaining_archive_days', daily.get('remaining_weekdays', 0)) or 0
-            )
-            blocked = bool(daily.get('blocked')) or collector.get('state') == 'BLOCKED_BY_NSE_ACCESS'
-            fast_catchup = (
-                code == 0
-                and remaining > 0
-                and not blocked
-                and collector.get('state') != 'ADJUSTED_HISTORY_PUBLISHED'
-            )
-            wait_seconds = CATCHUP_INTERVAL_SECONDS if fast_catchup else INTERVAL_SECONDS
+            wait_seconds, remaining, fast_catchup = next_cycle_delay(collector, code)
             next_run = time.time() + wait_seconds
             publish_worker_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
