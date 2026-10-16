@@ -74,6 +74,10 @@ def history_command() -> list[str]:
     return [sys.executable, str(CODE_ROOT/'termux_history_worker.py')]
 
 
+def research_command() -> list[str]:
+    return [sys.executable, str(CODE_ROOT/'termux_research_worker.py')]
+
+
 def dashboard_env(base: dict) -> dict:
     env = dict(base)
     env['LOCAL_LOOPBACK_ONLY'] = '1'
@@ -155,6 +159,11 @@ def main() -> int:
                         cwd=CODE_ROOT, env=base_env, stdout=log,
                         stderr=subprocess.STDOUT, start_new_session=True,
                     ),
+                    'research': subprocess.Popen(
+                        research_command(),
+                        cwd=CODE_ROOT, env=base_env, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                    ),
                 }
                 command = dashboard_command(base_env)
                 if command:
@@ -170,6 +179,7 @@ def main() -> int:
                         'supervisor_pid': os.getpid(),
                         'worker_pid': children.get('worker').pid if children.get('worker') else None,
                         'history_pid': children.get('history').pid if children.get('history') else None,
+                        'research_pid': children.get('research').pid if children.get('research') else None,
                         'dashboard_pid': children.get('dashboard').pid if children.get('dashboard') else None,
                         'dashboard': mode,
                         'dashboard_url': 'http://localhost:8787' if 'dashboard' in children else None,
@@ -216,6 +226,7 @@ def main() -> int:
             'supervisor_pid': os.getpid(),
             'worker_pid': None,
             'history_pid': None,
+            'research_pid': None,
             'dashboard_pid': None,
             'dashboard': dashboard_mode(dict(os.environ)),
             'dashboard_url': None,
