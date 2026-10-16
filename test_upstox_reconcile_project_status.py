@@ -91,6 +91,7 @@ class ProjectVendorAuditTests(unittest.TestCase):
                 "scope":"NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1",
                 "original_nse_filing_urls_attempted":4,
                 "issuer_identity_attestation_pending_metric_cells":5,
+                "official_nse_xml_numeric_reproductions_pending_issuer":5,
                 "metric_drilldown_verdict_counts":{
                     "FACT_CONTEXT_CONSOLIDATED_BASIS_UNSPECIFIED":2,
                     "ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW":3,
@@ -111,6 +112,8 @@ class ProjectVendorAuditTests(unittest.TestCase):
             )
             self.assertEqual(status["nse_xbrl_issuer_identity_pending_cells"],5)
             self.assertFalse(status["nse_xbrl_issuer_identity_strict_approval"])
+            self.assertEqual(status["nse_xml_numeric_reproduced_issuer_link_pending"],5)
+            self.assertFalse(status["nse_xml_numeric_reproduction_is_audited_attestation"])
             self.assertEqual(status["annual_strict_pass"],0)
             self.assertEqual(status["final_fundamental_shortlist"],0)
             self.assertFalse(status["strategy_trading_enabled"])
