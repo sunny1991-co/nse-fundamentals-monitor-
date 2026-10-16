@@ -11,6 +11,10 @@ OUTPUT = ROOT/'swing_trade_candidates.csv'
 def main():
     OUTPUT.unlink(missing_ok=True)
     (ROOT/'swing_candidates_manifest.json').unlink(missing_ok=True)
+    required_history = (ROOT/'market_ohlcv.csv', ROOT/'market_data_metadata.json')
+    if not all(path.is_file() for path in required_history):
+        print('WAITING_FOR_VALID_ADJUSTED_HISTORY; no technical candidates published')
+        return
     run_backtests()  # Recompute: never trust a stale external pass flag.
     raw, digest = load_market()
     approved = pd.read_csv(ROOT/'final_fundamental_shortlist.csv', dtype=str)
