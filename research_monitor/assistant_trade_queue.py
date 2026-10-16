@@ -218,6 +218,15 @@ class ApprovalQueue:
                 row=self._row(conn,existing[0])
                 if row["fingerprint"]!=digest:
                     raise ValueError("SIGNAL_HAS_CONFLICTING_PRICE_PLAN")
+                if row["state"]=="WAITING_FOR_OWNER" and now>=row["expires"]:
+                    conn.execute(
+                        "UPDATE trades SET state='EXPIRED' WHERE id=?",
+                        (row["id"],)
+                    )
+                    self._event(
+                        conn,row["id"],now,"OWNER_APPROVAL_WINDOW_EXPIRED"
+                    )
+                    row=self._row(conn,row["id"])
                 return self._public(row)
             pid=secrets.token_hex(16)
             conn.execute("""INSERT INTO trades
