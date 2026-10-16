@@ -1,5 +1,42 @@
 # Project progress — 16 October 2026
 
+## Regime + Momentum private research outcome — 16 October 2026
+
+Owner ran `swing_regime_momentum_research.py --limit 100` on adjusted
+Termux historical market data. Eligible universe **660**, tested
+**100** hash-sampled stocks. All runs use theoretical 1% initial-stop
+capital risk, estimated Groww delivery charges, whole shares and the frozen
+research window. **New strategy status: REJECTED FOR TRADING;
+UNVALIDATED exploratory evidence only.**
+
+| Measure | Regime Momentum new hypothesis | VCP comparator |
+|---|---:|---:|
+| Signals | 5 | 46 |
+| Completed trades (normal) | 3 | 19 |
+| Wins / losses | 0 / 3 | 5 / 14 |
+| Mean net position return, completed | -9.6177% | -2.1160% |
+| Mean net pre-trade stock-account cash return, completed | -0.9641% | -0.2191% |
+| Net completed profit factor | 0 | 0.6842 |
+| Worst *independent-stock* marked drawdown | 1.9094% | 2.0622% |
+| Normal scenario estimated charges summed across stock-account experiments | INR 203.98 | INR 1,727.68 |
+| Double-cost completed trades / wins | 2 / 0 | 16 / 4 |
+| Double-cost mean net position return | -10.0332% | -2.7720% |
+
+This is a small and losing selected sample, *not* a definitive future
+prediction. Historical point-in-time fundamentals were **not** applied,
+historic universe composition remains survivor-biased and fees are estimates.
+No rule tuning or gate loosening is authorized from these results. Keep
+reproducible historical reports but do not schedule repeated frozen-window
+runs. No automated trade approvals, SMS entry alerts or orders.
+
+**Next priorities:** obtain verified point-in-time fundamental and
+historical universe inputs, audit history and corporate-action flags,
+pre-register a *different* prospectively tested methodology if warranted,
+then collect new post-freeze paper observations with independently
+verified real broker costs and portfolio-level risk constraints. Do
+not mistake synthetic code-test success or one positive historical
+subgroup for profitability.
+
 ## Original Regime + Momentum Confirmation v1 — research only (16 October 2026)
 
 **Frozen before running the new strategy on private NSE history.** Added
