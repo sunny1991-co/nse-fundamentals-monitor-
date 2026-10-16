@@ -482,6 +482,46 @@ def collect_bars(
     )
 
 
+def archive_gap_audit(
+    db: sqlite3.Connection,
+    start: date,
+    end: date,
+    root: Path = ROOT,
+) -> dict:
+    rows = db.execute(
+        "SELECT day,status,source_url,error,attempts FROM days "
+        "WHERE day BETWEEN ? AND ? AND status='NO_FILE' ORDER BY day",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    unresolved = []
+    for day, status, source_url, error, attempts in rows:
+        parsed = parse_day(day)
+        if not expected_archive_day(parsed):
+            continue
+        unresolved.append(
+            {
+                "Date": day,
+                "Status": status,
+                "Attempts": int(attempts or 0),
+                "Source_URL": source_url or "",
+                "Last_Error": error or "",
+            }
+        )
+    path = root / "nse_archive_gap_review.csv"
+    pd.DataFrame(
+        unresolved,
+        columns=["Date", "Status", "Attempts", "Source_URL", "Last_Error"],
+    ).to_csv(path, index=False)
+    exhausted = sum(int(row["Attempts"]) >= MAX_NO_FILE_RETRIES for row in unresolved)
+    return {
+        "unverified_expected_session_gaps": len(unresolved),
+        "retry_exhausted_gaps": exhausted,
+        "retryable_gaps": len(unresolved) - exhausted,
+        "review_file": path.name,
+        "sample_dates": [row["Date"] for row in unresolved[:20]],
+    }
+
+
 def year_windows(start: date, end: date) -> list[tuple[date, date]]:
     rows = []
     cursor = start
@@ -770,6 +810,7 @@ def main() -> None:
         if not args.skip_actions:
             actions = collect_actions(db, symbols, start, end)
         audit = action_audit(db, symbols, start, end)
+        archive_audit = archive_gap_audit(db, start, end)
         publish = publish_adjusted(db, symbols, start, end)
         status = {
             "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -783,6 +824,7 @@ def main() -> None:
             "suspicious_consecutive_no_file_gap": suspicious_no_file_gap(db, start, end),
             "corporate_action_range_complete": action_coverage(db, start, end),
             "corporate_action_audit": audit,
+            "archive_gap_audit": archive_audit,
             "publish": publish,
             "upstox": "NOT_USED",
             "orders": "MANUAL_ONLY",
