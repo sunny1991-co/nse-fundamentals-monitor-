@@ -60,18 +60,21 @@ def tick(root=ROOT, now=None):
         paper_trading='PENDING_VALIDATED_FEED', orders='MANUAL_ONLY')
     if state=='LIVE_MONITORING':
         (runtime/'quotes.json').unlink(missing_ok=True)
-        try:
-            if not provider.is_open():
-                status['live_feed']='EXCHANGE_NOT_NORMAL_OPEN'
-            else:
-                watchlist=json.loads((root/'swing_watchlist.json').read_text(encoding='utf-8'))
-                quotes=provider.quotes(watchlist,datetime.now(timezone.utc))
-                atomic_status(runtime/'quotes.json',dict(fetched_at=now.isoformat(),quotes=quotes))
-                status['live_feed']='POLLING_10_SECONDS' if all(not q['validation_errors'] for q in quotes) else 'QUOTE_VALIDATION_BLOCKED'
-        except DataUnavailable as exc:
-            status['live_feed']=str(exc)
-        except (OSError,ValueError,TypeError):
-            status['live_feed']='VERIFIED_EQUITY_WATCHLIST_REQUIRED'
+        if not os.environ.get('UPSTOX_ANALYTICS_TOKEN'):
+            status['live_feed']='UPSTOX_DEFERRED'
+        else:
+            try:
+                if not provider.is_open():
+                    status['live_feed']='EXCHANGE_NOT_NORMAL_OPEN'
+                else:
+                    watchlist=json.loads((root/'swing_watchlist.json').read_text(encoding='utf-8'))
+                    quotes=provider.quotes(watchlist,datetime.now(timezone.utc))
+                    atomic_status(runtime/'quotes.json',dict(fetched_at=now.isoformat(),quotes=quotes))
+                    status['live_feed']='POLLING_10_SECONDS' if all(not q['validation_errors'] for q in quotes) else 'QUOTE_VALIDATION_BLOCKED'
+            except DataUnavailable as exc:
+                status['live_feed']=str(exc)
+            except (OSError,ValueError,TypeError):
+                status['live_feed']='VERIFIED_EQUITY_WATCHLIST_REQUIRED'
     # After-close jobs run even if the laptop starts after the close.
     # Non-trading days can refresh research, but can never open a live session.
     if state in {'PRE_MARKET', 'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY', 'CALENDAR_PENDING'}:
