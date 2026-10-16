@@ -17,6 +17,9 @@ def phase(calendar, now):
             return 'CALENDAR_PENDING'
         if not calendar['valid_from'] <= day <= calendar['valid_to']:
             return 'CALENDAR_PENDING'
+        pending = calendar.get('special_sessions_pending') or {}
+        if day in pending:
+            return 'CALENDAR_PENDING'
         sessions = calendar['sessions']
         if day not in sessions:
             return 'NON_TRADING_DAY'
