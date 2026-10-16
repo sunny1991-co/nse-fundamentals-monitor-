@@ -1,5 +1,49 @@
 # Project progress — 16 October 2026
 
+## Upstox actual pilot success; current NSE instrument mapping fallback — 16 October 2026
+
+The owner ran `upstox_reference_pilot.py --limit 5` on their private Termux
+Upstox Analytics Token. **All four read-only GET endpoints succeeded** for
+RELIANCE (INE002A01018). Both Mar 2023 and Mar 2024 returned the four
+*vendor-reference* observations collected by this pilot (revenue, net profit,
+total assets, operating cash flow) and vendor sector `Refineries`.
+Because there was no `EQUITY_L*.csv` file found under the searched phone
+directories, that run tested **one** well-documented example, not five
+symbols. No NSE-verified audited XBRL facts or industry sector rows were
+added, and no trade/order code was used.
+
+**Fix**: `research_monitor/upstox_instrument_master.py` now downloads the
+documented public `https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz`
+over one unauthenticated HTTPS GET with strict compressed/expanded byte
+limits. It constructs a private, source-hashed CURRENT symbol-ISIN crosswalk
+using ONLY `exchange=NSE`, `segment=NSE_EQ`, `instrument_type=EQ`,
+`lot_size=1`, consistent `instrument_key` and Indian ISIN. It intersects
+both private FY2024–25 and FY2025–26 baseline symbol sets, excludes
+duplicate/conflicting symbols and ISINs, and writes only an isolated vendor
+mapping and provenance metadata under
+`runtime/experiments/upstox-nse-historical-reference-v1`.
+This is **not** an NSE-official historical mainboard-membership audit.
+
+The manual pilot has an opt-in flag `--sync-instruments` to use the newly
+downloaded crosswalk and check **five different** matched NSE EQ companies;
+a failed requested sync does *not* silently fall back to one RELIANCE.
+Authentication token values are never printed, committed or provided to the
+public BOD endpoint. Unit tests cover NSE vs BSE / SME/non-EQ filtering,
+dual-baseline intersections, duplicate/ISIN conflicts, malformed or huge
+GZIP, HTTP errors, and unchanged source baseline files.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_pilot.py --sync-instruments --limit 5
+```
+
+**Read-only exploratory research:** Upstox historic revenue/profit/assets/
+operating cash flow do NOT substitute for all six original core metrics,
+four years of independent audited consolidated XBRL, official NSE sector,
+ROE/ROCE/FCF or source-timestamp completeness. Zero strict screening changes
+and zero approved trading strategies. Continue only after real five-issuer
+coverage results and source provenance review.
+
 ## Upstox NSE-only old-fundamentals coverage pilot — 16 October 2026
 
 User raised a BSE membership concern. Official Upstox public site currently
