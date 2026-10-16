@@ -101,6 +101,8 @@ def snapshot(root: Path | None = None) -> dict:
         "history_published": history_published,
         "remaining_archive_days": remaining,
         "unverified_archive_gaps": unresolved_gaps,
+        "archive_gap_retry_exhausted": int_value(gap.get("retry_exhausted_gaps", 0)),
+        "archive_gap_sample_dates": list(gap.get("sample_dates", []))[:10],
         "corporate_action_review_symbols": action_review_symbols,
         "annual_strict_pass": full_pass,
         "final_fundamental_shortlist": final_count,
