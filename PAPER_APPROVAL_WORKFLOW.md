@@ -1,7 +1,7 @@
 # Capital and Yes/No workflow — paper rehearsal only
 
-Implemented 2026-10-16. This is a standalone terminal workflow, not live trading,
-a dashboard integration, an automatic signal watcher, or a profitable strategy.
+Implemented 2026-10-16. This is a terminal and authenticated dashboard rehearsal, not live trading,
+an automatic signal watcher, or a profitable strategy.
 It never reads API tokens, calls a broker, buys subscriptions, or places orders.
 
 ## What works
@@ -60,7 +60,11 @@ inspected historical periods are exploratory; independent forward data is needed
 Freeze candidate rules before collecting new evidence, account for actual costs,
 and preserve losing results. No strategy thresholds change in this milestone.
 
-Remaining: authenticated dashboard Yes/No and capital forms; verified market
+Dashboard manual capital and Yes/No forms are now available at `/paper` behind
+the existing MFA login and CSRF protection. They are separate from automatic
+normalized-unit forward observations.
+
+Remaining: verified market
 feed and strategy-generated proposals; shared portfolio reservations; independent
 strategy validation; broker-specific execution auth and account binding; delivery
 protective-exit support; partial fills, rejected orders, duplicate submissions,
@@ -71,3 +75,22 @@ existing position or its exits to a different broker account.
 
 The assistant can build and test this software, but cannot execute financial
 transactions for the user. This commit does not enable any such transactions.
+
+## Dashboard update
+
+After pulling the update, restart with `bash termux_backend.sh restart`.
+Open the existing dashboard at http://localhost:8787 and log in as usual.
+Follow **Automatic experiment status / capital / paper Yes-No**. The page shows
+the last recorded experiment check (not a claim the worker is currently alive),
+recent manual plans, and a form for capital, prices, version and estimated fees.
+Submit the form, review the exact plan, then choose Yes — paper only or No.
+This does not connect the manual plan to the automatic forward research ledger.
+
+To diagnose PLAN_INPUTS_CHANGED without rewriting or weakening evidence:
+
+```bash
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python diagnose_plan_inputs.py
+```
+
+Send the changed/missing filenames for investigation. Do not manually regenerate
+the manifest or remove its check: candidate generation must use matching inputs.

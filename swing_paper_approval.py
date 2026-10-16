@@ -32,7 +32,7 @@ def main():
         result = dict(mode='PAPER_REHEARSAL_ONLY', live_orders='DISABLED',
             broker_preference=BROKER_PREFERENCE, automatic_broker_failover=False,
             strategy_validation='NO_APPROVED_STRATEGY_REGISTERED',
-            dashboard_approval='NOT_CONNECTED', automatic_price_feed='NOT_CONNECTED',
+            dashboard_approval='MANUAL_PAPER_REHEARSAL_AT_/paper', automatic_price_feed='NOT_CONNECTED',
             blockers=['UNVALIDATED_STRATEGIES', 'ORDER_ADAPTERS_NOT_IMPLEMENTED',
                       'DELIVERY_PROTECTIVE_EXITS_AND_FILL_RECONCILIATION_NOT_IMPLEMENTED'])
     else:
