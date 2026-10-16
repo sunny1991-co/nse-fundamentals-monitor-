@@ -11,6 +11,9 @@ on:
       - 'nse_annual_history.py'
       - 'nse_legacy_annual_recovery.py'
       - 'nse_legacy_index_fetch.py'
+      - 'nse_legacy_xbrl_verify.py'
+      - 'research_monitor/legacy_xbrl.py'
+      - 'test_legacy_xbrl_verify.py'
       - 'nse_sector_classification.py'
       - 'diagnose_fundamental_blockers.py'
       - 'test_quarterly_collection.py'
@@ -49,22 +52,28 @@ jobs:
         run: ls -la
 
       - name: Validate Python syntax
-        run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_legacy_annual_recovery.py nse_legacy_index_fetch.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
+        run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_legacy_annual_recovery.py nse_legacy_index_fetch.py nse_legacy_xbrl_verify.py research_monitor/legacy_xbrl.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
 
       - name: Test trading and fundamental collection safety
-        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery test_legacy_index_fetch -v
+        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery test_legacy_index_fetch test_legacy_xbrl_verify -v
 
       - name: Check annual baseline files
         run: python nse_fundamentals_check.py
-
-      - name: Fetch five-year audited consolidated annual history
-        run: python nse_annual_history.py
 
       - name: Fetch official NSE legacy filing metadata when authorized
         run: python nse_legacy_index_fetch.py
 
       - name: Audit legacy FY2022-23 and FY2023-24 official-index recovery gaps
         run: python nse_legacy_annual_recovery.py
+
+      - name: Verify bounded legacy annual XML sources
+        run: python nse_legacy_xbrl_verify.py --limit 100
+
+      - name: Refresh legacy recovery coverage after source verification
+        run: python nse_legacy_annual_recovery.py
+
+      - name: Fetch five-year audited consolidated annual history
+        run: python nse_annual_history.py
 
       - name: Refresh official NSE sector classifications
         run: python nse_sector_classification.py
@@ -103,6 +112,8 @@ jobs:
             legacy_annual_recovery_manifest.csv
             legacy_annual_recovery_summary.csv
             legacy_index_fetch_status.csv
+            legacy_xbrl_verification.csv
+            legacy_xbrl_run_status.csv
             nse_legacy_financial_results_2022-23.csv
             nse_legacy_financial_results_2023-24.csv
             nse_sector_map.csv
@@ -147,4 +158,5 @@ jobs:
 
           echo "Could not publish reports after four attempts."
           exit 1
+
 

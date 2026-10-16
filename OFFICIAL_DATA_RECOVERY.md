@@ -86,3 +86,32 @@ The NSE collector must produce reliable verified 2022-23 to 2025-26
 classifications, quarterly comparison coverage, and independently adjusted
 market data/backtest evidence. A green workflow and an empty shortlist are
 operational diagnostics, not trading readiness.
+
+
+## Bounded legacy XML verification (16 October 2026)
+
+`python nse_legacy_xbrl_verify.py --limit 100` independently downloads only
+unique official HTTPS XML candidates from the existing baseline/index audit.
+It runs before integrated-filing collection, so that endpoint cannot prevent
+the separate legacy recovery step from being attempted. Duplicate revisions
+remain manual-review cases. Never-attempted URLs are prioritized over retries.
+
+Before an annual row is appended, the verifier requires matching XML company
+symbol and NSE entity identifiers; exact April 1–March 31 duration contexts;
+year-end balance-sheet contexts; explicit annual-context audited labels;
+consolidated reporting basis; INR/INR-per-share units; finite numeric values;
+and no conflicting duplicates/aliases. The currency unit, not `decimals` or
+presentation-rounding labels, determines conversion. The original response
+SHA256 and index SHA256 remain attached. Missing financial fields stay blank;
+a source-verified incomplete row is still not a full fundamental PASS.
+
+HTTP redirects are refused; 403/429 and network failures stop the batch.
+Existing history is preserved on rejection and source failures. Source files
+have a 5 MB limit. `legacy_xbrl_verification.csv` records per-URL reasons;
+`legacy_xbrl_run_status.csv` distinguishes bounded progress from completed
+coverage. A run is not proof that all legacy history has been recovered.
+
+Observed old filings can have annual-looking human-readable labels while the
+actual XBRL context covers January–March only. These are rejected rather than
+silently rewriting context dates. They need an independently verified corrected
+filing or annual financial statement; this verifier does not extract PDFs.
