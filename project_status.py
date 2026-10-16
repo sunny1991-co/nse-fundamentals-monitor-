@@ -5,10 +5,11 @@ No network calls, broker calls, SMS, or orders are made here.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 
-from research_monitor.paths import data_root
+from research_monitor.paths import data_root, CODE_ROOT
 
 
 def read_json(path: Path) -> dict:
@@ -50,6 +51,37 @@ def snapshot(root: Path | None = None) -> dict:
     hist_worker = read_json(runtime / "history_worker_status.json")
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
+    experiment = read_json(
+        runtime / "experiments" / "trend-pullback-research-v1" / "comparison.json"
+    )
+    research_state = "NOT_RUN"
+    research_leader = None
+    research_strategies = 0
+    if experiment:
+        # A previous valid-looking winner is never displayed after either data
+        # or strategy code changes. No network, broker or raw-history read.
+        metadata = read_json(root / "market_data_metadata.json")
+        digest = metadata.get("sha256")
+        try:
+            code_hash = hashlib.sha256(b"".join(
+                (CODE_ROOT / name).read_bytes() for name in (
+                    "swing_pullback_research.py",
+                    "swing_backtest.py",
+                    "swing_strategy.py",
+                )
+            )).hexdigest()
+        except OSError:
+            code_hash = None
+        if (digest and code_hash and experiment.get("data_sha256") == digest
+                and experiment.get("implementation_sha256") == code_hash
+                and experiment.get("live_eligible") is False
+                and experiment.get("validation_status") == "NOT_VALIDATED"):
+            research_state = "CURRENT_EXPLORATORY_NOT_VALIDATED"
+            selection = experiment.get("research_selection") or {}
+            research_leader = selection.get("research_leader")
+            research_strategies = len(experiment.get("summary") or {})
+        else:
+            research_state = "STALE_OR_UNVERIFIED_RESEARCH_REPORT"
 
     annual_rows = csv_rows(root / "annual_fundamental_quality_summary.csv")
     annual = next(
@@ -120,6 +152,11 @@ def snapshot(root: Path | None = None) -> dict:
         ),
         "post_history_validation": post.get("state", "NOT_STARTED"),
         "paper_status": paper.get("data_status", "NOT_STARTED"),
+        "strategy_research": research_state,
+        "exploratory_strategy_leader": research_leader,
+        "research_strategies_compared": research_strategies,
+        "verified_profitable_strategies": 0,
+        "strategy_trading_enabled": False,
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
         "sms": worker.get("sms", "PROVIDER_SETUP_REQUIRED"),
         "upstox": "INTENTIONALLY_DEFERRED",
