@@ -1,5 +1,46 @@
 # Project progress — 16 October 2026
 
+## Broker source priority frozen — 16 October 2026
+
+Owner requested **Groww first, Upstox second** for all future swing workflows,
+including the goal of human Yes/No approval before any Groww delivery trade.
+Official documentation confirms Groww paid Trading APIs support CASH data
+and order management, currently ₹499 + applicable taxes/month, with
+short-lived access tokens. Upstox Analytics Token is **read-only** and cannot
+place/modify/cancel trades; only data backup is possible on this token.
+
+Added `research_monitor/broker_priority.py` and
+`swing_broker_priority_check.py` for explicit **read-only** checks of a
+single documented NSE equity (RELIANCE) from both brokers. If both provide
+fresh normalized quotes, Groww wins. If Groww is unavailable and Upstox
+is fresh, Upstox can serve as **data backup only**. If valid fresh prices
+diverge by more than 1%, source selection is blocked. Closed-market
+stale quotes are not represented as live.
+
+Added hidden private-token `groww_token_setup.py` preserving the already
+stored Upstox token, with chmod 0600 local `.env`. Relevant synthetic
+unit tests demonstrate no credential echo, no broker POST endpoints,
+strict quote freshness, no silent trading fallback and no strategy
+approval. Results remain **NOT LIVE**; files have not yet been executed
+with actual account tokens in the owner's Termux environment. The existing
+swing worker is not yet switched to a verified provider-mapped stock
+watchlist by this one-stock reference health check.
+
+**CNC swing automation blocker:** Groww official Smart OCO currently
+documents `CASH/MIS` support, not `CASH/CNC`; a 1-week–5-month delivery
+position cannot safely rely on unsupported OCO protection. Any future
+entry/stop/exit automation must first verify CNC-valid broker protection,
+reconcile actual partial fills, define offline/overnight failure handling,
+and require per-proposal user approval and an independently validated
+strategy. Do not spend on API subscription just to rerun the seven
+negative strategies. **Zero live orders, zero approved profitable
+strategies.** See `BROKER_PRIORITY.md`.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_broker_priority_check.py
+```
+
 ## Regime + Momentum private research outcome — 16 October 2026
 
 Owner ran `swing_regime_momentum_research.py --limit 100` on adjusted
