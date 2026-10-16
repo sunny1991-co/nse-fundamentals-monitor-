@@ -193,6 +193,11 @@ def snapshot(root: Path | None = None) -> dict:
         / "upstox-reference-batches-v1" / "reconciliation"
         / "source_discrepancy_forensics_summary.json"
     )
+    nse_original_drilldown = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "reconciliation"
+        / "nse_xbrl_drilldown.json"
+    )
     vendor_manual_catchup = read_json(
         runtime / "experiments" / "upstox-nse-historical-reference-v1"
         / "upstox-reference-batches-v1" / "last_manual_catchup.json"
@@ -369,6 +374,17 @@ def snapshot(root: Path | None = None) -> dict:
             "UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1"
         ) else 0,
         "upstox_forensics_is_trade_approval": False,
+        "nse_original_xbrl_drilldown_attempted": int_value(
+            nse_original_drilldown.get("original_nse_filing_urls_attempted",0)
+        ) if nse_original_drilldown.get("scope")==(
+            "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
+        ) else 0,
+        "nse_original_xbrl_context_review_verdicts": (
+            nse_original_drilldown.get("metric_drilldown_verdict_counts",{})
+        ) if nse_original_drilldown.get("scope")==(
+            "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
+        ) else {},
+        "nse_original_xbrl_drilldown_is_trade_approval": False,
         "upstox_manual_catchup_state": vendor_manual_catchup.get(
             "state","NOT_YET_RUN"
         ) if vendor_manual_catchup.get("scope")==(
