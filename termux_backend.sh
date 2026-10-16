@@ -130,6 +130,12 @@ run_once() {
   "$PYTHON_BIN" "$PROJECT_DIR/swing_worker.py" --once
 }
 
+run_fast_fundamentals() {
+  bootstrap_data
+  "$PYTHON_BIN" "$PROJECT_DIR/fast_fundamental_screen.py"
+  "$PYTHON_BIN" "$PROJECT_DIR/project_status.py"
+}
+
 run_maintenance() {
   bootstrap_data
   was_running=0
@@ -181,12 +187,13 @@ case "${1:-status}" in
   restart) stop_backend; start_backend ;;
   status) show_status ;;
   once) run_once ;;
+  fast-fundamentals) run_fast_fundamentals ;;
   maintenance) run_maintenance ;;
   init-data) bootstrap_data ;;
   install-boot) install_boot ;;
   uninstall-boot) uninstall_boot ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|once|maintenance|init-data|install-boot|uninstall-boot}"
+    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|maintenance|init-data|install-boot|uninstall-boot}"
     exit 2
     ;;
 esac
