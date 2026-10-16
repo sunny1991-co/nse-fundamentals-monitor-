@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from urllib.parse import urlsplit
 from datetime import date, datetime, timezone
 import csv
 from decimal import Decimal, InvalidOperation
@@ -62,6 +63,44 @@ class DrilldownError(RuntimeError):
 
 def _local(tag):
     return tag.rsplit("}", 1)[-1].split(":")[-1]
+
+
+def _issuer_scheme_label(scheme):
+    """Bound only public XBRL scheme metadata; never disclose identifiers."""
+    if not isinstance(scheme,str):
+        return "UNSPECIFIED"
+    value=scheme.strip().lower()
+    if not value:
+        return "UNSPECIFIED"
+    try:
+        uri=urlsplit(value)
+        host=(uri.hostname or "").lower()
+        if uri.scheme not in ("http","https") or not host:
+            return "UNKNOWN_SCHEME_FORMAT"
+        if host=="www.nseindia.com" and uri.path.lower()=="/nsesymbol":
+            return "NSE_SYMBOL_URI"
+        if host in ("www.mca.gov.in","mca.gov.in") and uri.path.lower()=="/cin":
+            return "MCA_CIN_URI"
+        # Display domain/type only; never leak arbitrary XML scheme strings.
+        return "OTHER_URI_DOMAIN:"+host[:80]
+    except ValueError:
+        return "UNKNOWN_SCHEME_FORMAT"
+
+
+def _document_cin_claims(xml):
+    """CIN values claimed by source XML, not independently verified issuer IDs."""
+    claimed=set()
+    for node in xml.iter():
+        if _local(node.tag).lower() not in (
+            "corporateidentitynumber",
+            "corporateidentificationnumber",
+            "cin",
+        ):
+            continue
+        value=(node.text or "").strip().upper()
+        if value and len(value)<=64:
+            claimed.add(value)
+    return claimed
 
 
 def _period(node):
@@ -119,6 +158,7 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
     start_year=int(fiscal_year[:4])
     begin=date(start_year,4,1)
     end=date(start_year+1,3,31)
+    document_cins=_document_cin_claims(xml)
     contexts={}
     ids=set()
     for node in xml.iter():
@@ -168,11 +208,37 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                 else "NSE_SYMBOL_MATCHED" if nse_scheme_ids=={symbol}
                 else "IDENTIFIER_SCHEME_NOT_NSE_SYMBOL_VERIFIED"
             )
+            scheme_labels=sorted({
+                _issuer_scheme_label(scheme) for _value,scheme in entity
+            }) or ["UNSPECIFIED"]
+            # Matching CIN values within the *same XML file* is weak issuer
+            # evidence, not an independent NSE registry attestation. Thus it
+            # intentionally does NOT change identifier_status eligibility.
+            cin_ids={
+                v for v,scheme in entity
+                if _issuer_scheme_label(scheme)=="MCA_CIN_URI"
+            }
+            if cin_ids:
+                cin_relation=(
+                    "DOCUMENT_CIN_FIELD_AMBIGUOUS"
+                    if len(document_cins)>1 else
+                    "DOCUMENT_CIN_CONTEXT_MATCH_UNVERIFIED_EXTERNAL"
+                    if cin_ids==document_cins and len(document_cins)==1
+                    else "DOCUMENT_CIN_CONTEXT_CONFLICTS_WITH_XML_CLAIM"
+                    if document_cins else
+                    "DOCUMENT_CIN_FACT_NOT_PRESENT"
+                )
+            elif identifier_status=="NSE_SYMBOL_MATCHED":
+                cin_relation="NSE_SYMBOL_CONTEXT_SCHEME_PRESENT"
+            else:
+                cin_relation="NOT_A_RECOGNIZED_CIN_CONTEXT"
             contexts[cid]={
                 "start":start,"end":finish,"instant":instant,
                 "dimensions":dimensions,"basis":basis,
                 "identifiers":entity,
                 "identifier_status":identifier_status,
+                "identifier_scheme_labels":scheme_labels,
+                "document_cin_relation":cin_relation,
             }
     currencies={}
     for node in xml.iter():
@@ -212,6 +278,13 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
         "xml_exact_company_symbol_present":symbol_safe,
         "xml_context_count":len(contexts),
         "inr_currency_units_found":sum(currencies.values()),
+        "xml_claimed_cin_count":len(document_cins),
+        "context_identifier_scheme_classes":dict(Counter(
+            label
+            for ctx in contexts.values()
+            for label in ctx["identifier_scheme_labels"]
+        )),
+        "legacy_parser_issuer_identity_gap_possible":True,
         "metric_source_inspection":{},
     }
     for metric, official in official_values.items():
@@ -227,6 +300,7 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
         rejected_samples=[]
         rejected_matching_archived=[]
         rejected_matching_original=[]
+        identity_evidence_counts=Counter()
         for node in xml.iter():
             tag=_local(node.tag)
             if tag.lower() not in match_alias:
@@ -267,6 +341,7 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                 reason="CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED"
                 rejected_identifier+=1
             if reason:
+                identity_evidence_counts[ctx["document_cin_relation"]]+=1
                 if _number(official) is not None and abs(crore-_number(official))<=0.0001:
                     rejected_matching_original.append(reason)
                     if node.attrib.get("contextRef") in archived_context_ids:
@@ -279,6 +354,10 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                         "reason":reason,
                         "basis":ctx["basis"],
                         "identifier_status":ctx["identifier_status"],
+                        "identifier_scheme_classes":
+                            ctx["identifier_scheme_labels"],
+                        "document_cin_relation":
+                            ctx["document_cin_relation"],
                         "dimension_names":[d[0][:80] for d in ctx["dimensions"][:4]],
                         "in_archived_context_ids":
                             node.attrib.get("contextRef") in archived_context_ids,
@@ -335,6 +414,10 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             "excluded_matching_facts_in_archived_context_ids":
                 len(rejected_matching_archived),
             "excluded_fact_examples_not_verified":rejected_samples,
+            "excluded_context_identity_evidence_counts":
+                dict(identity_evidence_counts),
+            "legacy_parser_may_have_selected_context_without_independent_issuer_scheme_check":
+                bool(rejected_matching_archived),
             "verdict":verdict,
             "automatic_numeric_correction":False,
         }
