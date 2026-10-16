@@ -498,8 +498,32 @@ def collect_actions(
     return dict(status="OK", windows=windows, rows=total, error="")
 
 
+def suspicious_no_file_gap(db: sqlite3.Connection, start: date, end: date) -> bool:
+    rows = {
+        day: status
+        for day, status in db.execute(
+            "SELECT day,status FROM days WHERE day BETWEEN ? AND ? ORDER BY day",
+            (start.isoformat(), end.isoformat()),
+        )
+    }
+    run = 0
+    cursor = start
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            if rows.get(cursor.isoformat()) == "NO_FILE":
+                run += 1
+                if run >= MAX_CONSECUTIVE_NO_FILE:
+                    return True
+            elif rows.get(cursor.isoformat()) == "OK":
+                run = 0
+            else:
+                run = 0
+        cursor += timedelta(days=1)
+    return False
+
+
 def terminal_day_coverage(db: sqlite3.Connection, start: date, end: date) -> bool:
-    return not pending_weekdays(db, start, end)
+    return not pending_weekdays(db, start, end) and not suspicious_no_file_gap(db, start, end)
 
 
 def action_coverage(db: sqlite3.Connection, start: date, end: date) -> bool:
@@ -642,6 +666,7 @@ def main() -> None:
             "daily": bars,
             "corporate_actions": actions,
             "daily_range_complete": terminal_day_coverage(db, start, end),
+            "suspicious_consecutive_no_file_gap": suspicious_no_file_gap(db, start, end),
             "corporate_action_range_complete": action_coverage(db, start, end),
             "publish": publish,
             "upstox": "NOT_USED",
