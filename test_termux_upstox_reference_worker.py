@@ -76,9 +76,26 @@ class DailyVendorTests(unittest.TestCase):
                 d, now+timedelta(minutes=30), token=TOKEN,
                 collector=stub, refresh_mapping=refresh,
             )
-            self.assertEqual(again["state"],"ALREADY_ATTEMPTED_TODAY")
+            self.assertEqual(again["state"],"COMPLETED_DAILY_REFERENCE_BATCH")
+            self.assertEqual(again["new_company_records"],25)
             self.assertEqual(stub.count,1)
             self.assertEqual(refresh.count,1)
+
+    def test_interrupted_claim_does_not_duplicate_batch(self):
+        with tempfile.TemporaryDirectory() as d:
+            from research_monitor.schedule import claim_job
+            path=worker._jobs_path(d)
+            path.parent.mkdir(parents=True)
+            claim_job(path,"2026-10-16",worker.DAILY_JOB)
+            count=Stub()
+            result=worker.run_daily(
+                d,local(),token=TOKEN,collector=count,refresh_mapping=Refresh()
+            )
+            self.assertEqual(
+                result["state"],
+                "ALREADY_CLAIMED_OUTCOME_UNCERTAIN_NO_RETRY_TODAY"
+            )
+            self.assertEqual(count.count,0)
 
     def test_next_ist_day_resumes_after_success(self):
         with tempfile.TemporaryDirectory() as d:
@@ -133,7 +150,7 @@ class DailyVendorTests(unittest.TestCase):
                 d,local(clock="20:55"),token=TOKEN,collector=second,
                 refresh_mapping=Refresh()
             )
-            self.assertEqual(b["state"],"ALREADY_ATTEMPTED_TODAY")
+            self.assertEqual(b["state"],"STOPPED_ON_SOURCE_OR_MAPPING_GUARD")
             self.assertEqual(second.count,0)
             next_day=worker.run_daily(
                 d,local(day="2026-10-17"),token=TOKEN,collector=second,
@@ -160,7 +177,7 @@ class DailyVendorTests(unittest.TestCase):
                 d,local(clock="21:00"),token=TOKEN,
                 collector=source,refresh_mapping=Refresh(),
             )
-            self.assertEqual(b["state"],"ALREADY_ATTEMPTED_TODAY")
+            self.assertEqual(b["state"],"STOPPED_ON_VENDOR_API_CONSTRAINT")
             self.assertEqual(source.count,1)
 
     def test_mapping_sync_failure_does_not_start_company_api(self):
