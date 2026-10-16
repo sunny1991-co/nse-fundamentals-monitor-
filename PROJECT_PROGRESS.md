@@ -1,5 +1,41 @@
 # Project progress — 16 October 2026
 
+## Original Regime + Momentum Confirmation v1 — research only (16 October 2026)
+
+**Frozen before running the new strategy on private NSE history.** Added
+`research_monitor/regime_momentum_rules.py`,
+`swing_regime_momentum_research.py`, synthetic regression tests and
+`REGIME_MOMENTUM_STRATEGY.md`.
+
+This one original hypothesis combines >=55% equal-weight price breadth across
+the history-eligible universe, >=70th-percentile 126-session relative momentum
+with >10% 126-session absolute price return, rising EMA50/EMA200 trend, close
+confirmation through the *previous* 15-day high, volume/traded-value
+qualification, RSI/ATR guardrails, earlier 20/60-day volatility confirmation,
+existing <=10%-distance stop and **1% fee-inclusive no-gap capital sizing**.
+A missing breadth/rank date blocks signals. Reuses unchanged stop-first 2R/3R
+exit structure and next-session guarded entries.
+
+The private research runner compares this strategy with the already-negative
+VCP breakout **on the same deterministic 100-history-symbol sample**, with
+normal estimated Groww delivery charges and double-cost/slippage stress;
+all stock ledgers are *independent*, not a joint portfolio. Context breadth and
+rank are computed across all 1260-bar eligible symbols, which avoids using
+only the sampled 100 for those context calculations, but **does NOT solve
+historical survivor bias**, fundamentally missing point-in-time financials,
+or prior inspection of the very same historical price window. No result,
+win-rate or profitability has been claimed until private Termux runs.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_regime_momentum_research.py --limit 100
+```
+
+No candidate alerts, live trades or broker orders are connected. Existing
+rejected experiments remain rejected; the new entry is also blocked from
+promotion until clean independent evaluation, point-in-time data and genuine
+forward paper-trading prove reproducible results net of actual costs.
+
 ## Owner-tested 1% risk exposure results — 16 October 2026
 
 Real private phone run: 660 symbols with sufficient history and the same frozen
