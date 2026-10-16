@@ -6,6 +6,7 @@ compared. Missing facts remain blank; unknown reporting basis is never guessed.
 """
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 import re
 import math
 import time
@@ -19,7 +20,7 @@ import pandas as pd
 import requests
 from research_monitor.filing_dates import parse_filing_date, QUARTERLY_PARSER_VERSION
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 PAGE_SIZE = 500

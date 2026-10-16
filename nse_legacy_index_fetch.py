@@ -8,6 +8,7 @@ Do not scrape around NSE access controls: stop on 403/429.
 """
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 import csv
 import time
 from datetime import date, datetime
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-filings-financial-results"
 API_URL = "https://www.nseindia.com/api/corporates-financial-results"
 STATUS_FILE = ROOT / "legacy_index_fetch_status.csv"
@@ -152,3 +153,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

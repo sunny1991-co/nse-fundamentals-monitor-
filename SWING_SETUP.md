@@ -100,3 +100,7 @@ order. Real history, calendar coverage, enough forward observations, portfolio
 risk configuration and independent review remain necessary. No user capital
 has been invented. Without adjusted history the status is
 `WAITING_FOR_VALID_ADJUSTED_HISTORY`.
+
+## Persistent cloud data
+
+Set `NSE_DATA_DIR` to an absolute persistent directory for all research scripts. Code stays in the checkout. The Render launcher runs dashboard and worker together; see [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md). Without a verified calendar the worker runs offline checks but never assumes the market is open.

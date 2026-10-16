@@ -4,12 +4,13 @@ Current fundamentals are NOT applied retrospectively. This tests technical rules
 per stock; it does not establish a point-in-time fundamental strategy backtest.
 Require provider metadata confirming corporate-action-adjusted daily OHLCV.
 """
+from research_monitor.paths import data_root
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from swing_strategy import ema, rsi, atr_adx
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 VERSION = "breakout-v1"
 COST = 0.002  # illustrative all-in costs per side; not a broker tariff
 SLIP = 0.001

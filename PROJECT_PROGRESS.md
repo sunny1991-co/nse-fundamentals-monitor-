@@ -1,5 +1,24 @@
 # Project progress — 16 October 2026
 
+## Latest update: cloud deployment package (not yet hosted)
+
+- Added a single-instance Render Blueprint, supervised Gunicorn + worker startup,
+  shared persistent data paths across research modules, and a minimal health probe.
+- Failure of either child stops its sibling and exits for a platform restart.
+  Shutdown also terminates worker subprocesses. Source snapshots refresh at deploy;
+  private history, auth state and paper databases survive. No SMS is enabled.
+- Offline checks now run even when the exchange calendar/Upstox is unavailable.
+  The worker never infers that a market session is open from missing calendar data.
+- Added private server recovery-code rotation and an operator deployment runbook.
+- Verification: **108 unit/regression tests passed**. A real local Gunicorn + worker
+  smoke run checked startup, HTTP guards, login, session persistence and TOTP replay
+  rejection after restart, offline readiness, and sibling shutdown on worker failure.
+  These checks use temporary synthetic credentials; Render itself is not verified.
+- Still external: Render account/service creation and private enrollment, ingress
+  and off-service backup/restore acceptance, licensed adjusted history, missing
+  verified annual facts, forward observation time, risk/capital inputs, and SMS
+  provider/event orchestration. Upstox activation/live testing remains deferred.
+
 ## Latest source-run result (16 October 2026)
 
 The earlier cloud recovery run completed: 100 legacy XML candidates examined,
@@ -47,9 +66,9 @@ can qualify. This result is separate from paper-engine unit tests.
 
 Local full suite: 68 tests passed, including synthetic end-to-end history → backtest → zero eligible candidates. Existing authentication, risk, SMS and fundamental source tests also pass. Synthetic fixtures establish software behavior only; no investment performance or real SMS delivery was tested.
 
-## Current evidence and remaining work
+## Earlier evidence snapshot and remaining work
 
-Latest committed fundamental reports are dated 15 October 2026:
+The following coverage numbers are the 15 October snapshot; use the newer run result above for 16 October:
 
 | Area | Evidence | Remaining work |
 |---|---|---|
@@ -63,7 +82,7 @@ Latest committed fundamental reports are dated 15 October 2026:
 | Backtesting | Fixed-rule engine and regression tests | Run on real history; point-in-time fundamentals/universe, portfolio and forward paper validation remain incomplete |
 | Upstox | Read-only polling code | User account activation pending; token and real feed verification deferred |
 | SMS | Guarded transport code | Provider/template setup, event orchestration and delivery-receipt reconciliation |
-| Cloud | No deployment verified | Configure persistent hosting, private settings and operational monitoring |
+| Cloud | Deployment package and local process smoke test implemented | Create actual hosting, enroll private credentials, verify ingress and backup/restore |
 
 No orders are placed. No future success probability is calibrated. Having a token or passing unit tests does not make the system live-ready. Local Windows files are not automatically updated by a GitHub commit.
 

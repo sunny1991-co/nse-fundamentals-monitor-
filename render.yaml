@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: nse-swing-research
+    runtime: python
+    region: singapore
+    plan: 1c-2g
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cloud_start.py
+    healthCheckPath: /healthz
+    maxShutdownDelaySeconds: 30
+    disk:
+      name: nse-private-data
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: NSE_DATA_DIR
+        value: /var/data/nse
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: APP_PASSWORD_HASH
+        sync: false
+      - key: APP_TOTP_SECRET
+        sync: false
+      - key: SMS_ENABLED
+        value: "0"

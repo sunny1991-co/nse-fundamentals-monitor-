@@ -1,4 +1,5 @@
 """Laptop swing supervisor. No broker orders; missing dependencies stay visible."""
+from research_monitor.paths import data_root, CODE_ROOT
 import argparse
 import json
 import os
@@ -10,7 +11,7 @@ from pathlib import Path
 from research_monitor.upstox_data import UpstoxData, DataUnavailable
 from research_monitor.schedule import IST, phase, atomic_status, claim_job
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 
 def tick(root=ROOT, now=None):
     now = now or datetime.now(timezone.utc)
@@ -59,9 +60,12 @@ def tick(root=ROOT, now=None):
             status['live_feed']='VERIFIED_EQUITY_WATCHLIST_REQUIRED'
     # After-close jobs run even if the laptop starts after the close.
     # Non-trading days can refresh research, but can never open a live session.
-    if state in {'PRE_MARKET', 'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY'}:
+    if state in {'PRE_MARKET', 'AFTER_MARKET_ANALYSIS', 'NON_TRADING_DAY', 'CALENDAR_PENDING'}:
         day = now.astimezone(IST).date().isoformat()
-        job='premarket_research' if state=='PRE_MARKET' else 'eod_research'
+        job=('offline_research' if state=='CALENDAR_PENDING' else
+             'premarket_research' if state=='PRE_MARKET' else 'eod_research')
+        if os.environ.get('NSE_BOOT_ID'):
+            job += ':'+os.environ['NSE_BOOT_ID']
         if claim_job(runtime/'schedule.sqlite', day, job):
             status['analysis'] = 'RUNNING'
             atomic_status(runtime/'worker_status.json', status)
@@ -70,7 +74,7 @@ def tick(root=ROOT, now=None):
                 try:
                     with (runtime/'analysis.log').open('a', encoding='utf-8') as log:
                         log.write('\n'+now.isoformat()+' '+script+'\n'); log.flush()
-                        result = subprocess.run([sys.executable, str(root/script)], cwd=root,
+                        result = subprocess.run([sys.executable, str(CODE_ROOT/script)], cwd=root,
                             stdout=log, stderr=log, timeout=1800, check=False)
                     if result.returncode:
                         failed = script
@@ -82,7 +86,7 @@ def tick(root=ROOT, now=None):
             for script in ['swing_paper_monitor.py','swing_readiness.py']:
                 try:
                     with (runtime/'analysis.log').open('a',encoding='utf-8') as log:
-                        result=subprocess.run([sys.executable,str(root/script)],cwd=root,
+                        result=subprocess.run([sys.executable,str(CODE_ROOT/script)],cwd=root,
                             stdout=log,stderr=log,timeout=1800,check=False)
                     if result.returncode: failed=failed or script
                 except (OSError,subprocess.TimeoutExpired):

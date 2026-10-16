@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - 'app.py'
+      - 'cloud_*.py'
+      - 'gunicorn.conf.py'
+      - 'render.yaml'
       - 'monitor.py'
       - 'setup_auth.py'
       - 'research_monitor/**'
@@ -25,3 +28,4 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -v
+      - run: python cloud_smoke.py

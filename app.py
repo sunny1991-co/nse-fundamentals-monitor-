@@ -1,18 +1,21 @@
 """Private research dashboard shell. No trading or broker order routes."""
+from research_monitor.paths import data_root
 import csv
 import json
 from datetime import datetime, timezone
 import hmac
 import os
 import secrets
+import sqlite3
+import time
 from pathlib import Path
 from flask import Flask,abort,redirect,render_template_string,request,session,url_for
 from research_monitor.auth import AuthStore
 from research_monitor.readiness import candidate_rows
 
-ROOT=Path(__file__).resolve().parent
+ROOT=data_root()
 LOGIN='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Secure login</title><body><main><h1>NSE Research · सुरक्षित login</h1><p>Password और Authenticator code दोनों आवश्यक हैं।</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><p><label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label></p><p><label>Authenticator / recovery code <input name="code" autocomplete="one-time-code" required maxlength="80"></label></p><button>Login</button></form><p>{{ error }}</p></main></body></html>'''
-DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Swing Research</title><body><main><h1>Swing Research</h1><p>Equity swing only · Orders aap manually broker app mein karenge.</p><h2>System status</h2><p>{{ worker }}</p><p>Live feed, approved SMS template aur forward paper validation pending hone par entry alerts blocked rahenge.</p><h2>Fundamental screening</h2><p>Report date: {{ date }} · Strict shortlist: {{ count }}</p><h2>Data readiness (last local check)</h2><p>{{ readiness }}</p><h2>Conditional research plans</h2><p>{{ plan_status }}</p><p>Yeh executable entry alerts nahi hain. Historical win rate future probability nahi hai.</p><table><thead><tr><th>Stock</th><th>Signal date</th><th>Entry range</th><th>Stop</th><th>Targets at minimum entry</th><th>Evidence/status</th></tr></thead><tbody>{% for r in candidates %}<tr><td>{{ r.Symbol }}</td><td>{{ r.Signal_Date }}</td><td>{{ r.Entry_Min }} – {{ r.Entry_Max_No_Chase }}</td><td>{{ r.Stop_Loss }}</td><td>{{ r.Target_1_At_Min_Entry }} / {{ r.Target_2_At_Min_Entry }}</td><td>{{ r.Status }}</td></tr>{% else %}<tr><td colspan="6">Abhi verified actionable setup nahi hai.</td></tr>{% endfor %}</tbody></table><h2>Paper research</h2><p>{{ paper }}</p><p>Per-stock model observations only; no portfolio allocation or verified future win probability.</p><h2>Schedule</h2><p>Verified exchange calendar ke mutabik market session monitoring; close ke baad fundamental screening aur backtest. Holidays aur special sessions calendar se aayenge. Laptop on aur internet connected rehna chahiye.</p><p>Capital abhi configure nahi hua ho to position sizing blocked rahegi. Stop loss ke paar gap hone par loss zyada ho sakta hai.</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>''' 
+DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Swing Research</title><body><main><h1>Swing Research</h1><p>Equity swing only · Orders aap manually broker app mein karenge.</p><h2>System status</h2><p>{{ worker }}</p><p>Live feed, approved SMS template aur forward paper validation pending hone par entry alerts blocked rahenge.</p><h2>Fundamental screening</h2><p>Report date: {{ date }} · Strict shortlist: {{ count }}</p><h2>Data readiness (last local check)</h2><p>{{ readiness }}</p><h2>Conditional research plans</h2><p>{{ plan_status }}</p><p>Yeh executable entry alerts nahi hain. Historical win rate future probability nahi hai.</p><table><thead><tr><th>Stock</th><th>Signal date</th><th>Entry range</th><th>Stop</th><th>Targets at minimum entry</th><th>Evidence/status</th></tr></thead><tbody>{% for r in candidates %}<tr><td>{{ r.Symbol }}</td><td>{{ r.Signal_Date }}</td><td>{{ r.Entry_Min }} – {{ r.Entry_Max_No_Chase }}</td><td>{{ r.Stop_Loss }}</td><td>{{ r.Target_1_At_Min_Entry }} / {{ r.Target_2_At_Min_Entry }}</td><td>{{ r.Status }}</td></tr>{% else %}<tr><td colspan="6">Abhi verified actionable setup nahi hai.</td></tr>{% endfor %}</tbody></table><h2>Paper research</h2><p>{{ paper }}</p><p>Per-stock model observations only; no portfolio allocation or verified future win probability.</p><h2>Schedule</h2><p>Verified exchange calendar ke mutabik market session monitoring; close ke baad fundamental screening aur backtest. Holidays aur special sessions calendar se aayenge. Worker host ko chalu aur internet se connected rehna chahiye.</p><p>Capital abhi configure nahi hua ho to position sizing blocked rahegi. Stop loss ke paar gap hone par loss zyada ho sakta hai.</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>''' 
 
 def create_app(settings=None):
     cfg=dict(os.environ);cfg.update(settings or {})
@@ -34,6 +37,8 @@ def create_app(settings=None):
 
     @app.before_request
     def guards():
+        if request.path == '/healthz' and request.method in {'GET', 'HEAD'}:
+            return None
         if not request.is_secure:
             abort(400)
         if request.method=='POST':
@@ -48,6 +53,22 @@ def create_app(settings=None):
             'X-Frame-Options':'DENY','Referrer-Policy':'no-referrer',
             'Content-Security-Policy':"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"})
         return response
+
+    @app.get('/healthz')
+    def health():
+        # Public probe contains no account, portfolio, path or dependency details.
+        try:
+            with sqlite3.connect('file:'+str(Path(cfg['APP_AUTH_DB']).resolve())+'?mode=ro',
+                                 uri=True, timeout=1) as db:
+                db.execute('SELECT name FROM sqlite_master LIMIT 1').fetchone()
+            if cfg.get('CLOUD_SUPERVISED') == '1':
+                state = json.loads((ROOT/'runtime'/'cloud_health.json').read_text())
+                age = time.time()-state['updated_at']
+                if state.get('processes_alive') is not True or not 0 <= age <= 15:
+                    raise ValueError('Process health unavailable')
+        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+            return {'status': 'unavailable'}, 503
+        return {'status': 'ok'}, 200
 
     @app.route('/login',methods=['GET','POST'])
     def login():

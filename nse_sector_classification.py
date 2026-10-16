@@ -2,13 +2,14 @@
 """Cache official NSE equity industry classification for screened symbols."""
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import pandas as pd
 import requests
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity"
 MAP_FILE = ROOT / "nse_sector_map.csv"
@@ -160,4 +161,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

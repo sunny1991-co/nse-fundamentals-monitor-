@@ -2,12 +2,13 @@
 """Strict 4-year growth / profitability / leverage / cash-flow screen."""
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 from pathlib import Path
 from datetime import date
 import math
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 BASELINE_FILES = {"2024-25": "FY2425.csv", "2025-26": "NSE_FY2025-26_Consolidated_Fundamentals.csv"}
 HISTORY_FILE = ROOT / "annual_historical_results.csv"
 SECTOR_FILE = ROOT / "nse_sector_map.csv"
@@ -467,4 +468,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

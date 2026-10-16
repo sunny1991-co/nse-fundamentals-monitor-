@@ -2,13 +2,14 @@
 """Create the final shortlist only after strict annual and quarterly checks."""
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 from datetime import date
 from pathlib import Path
 import math
 import pandas as pd
 from research_monitor.filing_dates import QUARTERLY_PARSER_VERSION
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 ANNUAL_FILE = ROOT / "annual_fundamental_quality_report.csv"
 QUARTERLY_FILE = ROOT / "quarterly_change_report.csv"
 QUARTERLY_SOURCE_STATUS_FILE = ROOT / "quarterly_collection_status.csv"

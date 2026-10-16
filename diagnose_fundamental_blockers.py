@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Read-only audit of strict annual fundamental screening and source coverage."""
+from research_monitor.paths import data_root
 import csv
 from collections import Counter, defaultdict
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 
 def rows(filename):
     path = ROOT / filename
@@ -84,3 +85,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

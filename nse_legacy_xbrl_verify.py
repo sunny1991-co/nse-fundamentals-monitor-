@@ -1,4 +1,5 @@
 """Bounded legacy source recovery; index metadata alone never promotes facts."""
+from research_monitor.paths import data_root
 import argparse
 import csv
 import hashlib
@@ -10,7 +11,7 @@ import nse_annual_history as annual
 import nse_legacy_annual_recovery as legacy
 from research_monitor.legacy_xbrl import verify, VERSION, MAX_XML_BYTES
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 LEDGER = 'legacy_xbrl_verification.csv'
 RUN_STATUS = 'legacy_xbrl_run_status.csv'
 

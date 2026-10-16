@@ -41,3 +41,7 @@ Cloud deployment, actual historical-data backtests, enough forward paper
 observations, portfolio risk integration, SMS setup and end-to-end validation
 remain pending. A green test run is not a verified stock shortlist or investment
 performance result. Entry alerts remain blocked until their evidence gates pass.
+
+## Prepared cloud package
+
+See [CLOUD_DEPLOYMENT.md](CLOUD_DEPLOYMENT.md) and `render.yaml` for the single-service persistent Render setup. It has not been deployed. Use `python cloud_start.py` on Render, not a dashboard-only Gunicorn command.

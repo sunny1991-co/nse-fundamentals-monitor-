@@ -1,10 +1,11 @@
 """Publish only current fundamental-pass AND technical holdout-pass candidates."""
+from research_monitor.paths import data_root
 from pathlib import Path
 import pandas as pd
 from research_monitor.readiness import candidate_manifest
 from research_monitor.schedule import atomic_status
 from swing_backtest import main as run_backtests, load_market, features, VERSION, MAX_HOLD
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 OUTPUT = ROOT/'swing_trade_candidates.csv'
 
 def main():

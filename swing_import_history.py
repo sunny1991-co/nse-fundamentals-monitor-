@@ -1,11 +1,12 @@
 """Import an already adjusted, source-attested CSV without contacting a broker."""
+from research_monitor.paths import data_root
 import argparse
 import json
 from pathlib import Path
 from research_monitor.history import validate_history, coverage
 from research_monitor.schedule import atomic_status
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 
 
 def import_history(csv_path, metadata_path, root=ROOT):

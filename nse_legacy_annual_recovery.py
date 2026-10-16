@@ -7,6 +7,7 @@ verification; it does not modify the verified annual history or trading gates.
 """
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 import csv
 import hashlib
 import re
@@ -15,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 LEGACY_YEARS = {"2022-23": "2023-03-31", "2023-24": "2024-03-31"}
 BASELINE_FILES = ("FY2425.csv", "NSE_FY2025-26_Consolidated_Fundamentals.csv")
 HISTORY_FILE = ROOT / "annual_historical_results.csv"
@@ -221,3 +222,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

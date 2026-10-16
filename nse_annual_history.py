@@ -2,6 +2,7 @@
 """Fetch audited consolidated annual XBRL facts for a rolling five-year history."""
 from __future__ import annotations
 
+from research_monitor.paths import data_root
 import re
 import time
 import threading
@@ -14,7 +15,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-ROOT = Path(__file__).resolve().parent
+ROOT = data_root()
 LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
 PAGE_SIZE = 500
@@ -655,3 +656,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
