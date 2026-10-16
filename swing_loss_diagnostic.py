@@ -86,6 +86,84 @@ def _describe(trades):
     }
 
 
+def _group_metrics(trades):
+    """Non-promoting descriptive subgroup stats, excluding forced sample ends."""
+    completed = [t for t in trades if t.get("Reason") != "sample_end"]
+    if not completed:
+        return {
+            "completed_trades": 0, "winning_trades": 0, "losing_trades": 0,
+            "mean_net_return_pct": None,
+            "mean_gross_filled_return_pct": None,
+            "mean_fee_drag_percentage_points": None,
+        }
+    gross = [
+        100 * (float(t["Sell_Turnover_Rs"]) / float(t["Buy_Turnover_Rs"]) - 1)
+        for t in completed
+    ]
+    net = [100 * float(t["Return"]) for t in completed]
+    n = len(completed)
+    return {
+        "completed_trades": n,
+        "winning_trades": sum(r > 0 for r in net),
+        "losing_trades": sum(r < 0 for r in net),
+        "mean_net_return_pct": round(sum(net)/n, 3),
+        "mean_gross_filled_return_pct": round(sum(gross)/n, 3),
+        "mean_fee_drag_percentage_points": round(
+            (sum(gross)-sum(net))/n, 3
+        ),
+    }
+
+
+def _forensic_groups(trades, flagged_symbols):
+    """Attribution ONLY: no trade omission from original ranking/backtests.
+
+    Flagged symbols may have genuine exceptional market moves and are not
+    automatically errors. Sensitivity is not a valid ex-post profitability gate.
+    """
+    completed = [t for t in trades if t.get("Reason") != "sample_end"]
+    stopped = [t for t in completed if t.get("Reason") == "stop"]
+    def known(field, rows):
+        return all(field in t for t in rows)
+    groups = {
+        "all_completed": _group_metrics(completed),
+        "stop_exits": _group_metrics(stopped),
+        "target2_exits": _group_metrics(
+            [t for t in completed if t.get("Reason") == "target2"]
+        ),
+        "time_exits": _group_metrics(
+            [t for t in completed if t.get("Reason") == "time"]
+        ),
+        "extreme_jump_flagged_symbols": _group_metrics(
+            [t for t in completed if t.get("symbol") in flagged_symbols]
+        ),
+        "not_extreme_jump_flagged_symbols": _group_metrics(
+            [t for t in completed if t.get("symbol") not in flagged_symbols]
+        ),
+    }
+    for key, column, value in (
+        ("initial_stop_exits", "Trailing_Stop_Active", False),
+        ("trailing_stop_exits", "Trailing_Stop_Active", True),
+        ("gap_below_stop_exits", "Gap_Below_Stop", True),
+        ("non_gap_stop_exits", "Gap_Below_Stop", False),
+        ("stop_and_target_same_bar", "Stop_And_Target_Both_Touched", True),
+    ):
+        groups[key] = (
+            _group_metrics([t for t in stopped if bool(t[column]) is value])
+            if known(column, stopped) else None
+        )
+    groups["extreme_jump_flagged_symbol_count_in_sample"] = len(flagged_symbols)
+    groups["not_extreme_jump_flagged_symbol_count_in_sample"] = (
+        len({t["symbol"] for t in trades if "symbol" in t} - flagged_symbols)
+    )
+    groups["warning"] = (
+        "Data-quality groups are observational, not a revised winning strategy. "
+        "Verify corporate actions and true price gaps with primary exchange "
+        "sources before excluding any symbol."
+    )
+    return groups
+
+
+
 def diagnose(raw, digest, limit=100, top=5, selected=None):
     if not isinstance(limit, int) or not 1 <= limit <= 100:
         raise ValueError("LIMIT_1_TO_100_REQUIRED")
@@ -119,6 +197,7 @@ def diagnose(raw, digest, limit=100, top=5, selected=None):
                                           slip=.001, stress_multiplier=1.0)
             for t in ledger:
                 detail[name].append({"symbol": symbol, **t})
+    flagged_set = {row["symbol"] for row in flagged_symbols}
     summaries = {}
     for name in selected:
         ledger = detail[name]
@@ -146,6 +225,7 @@ def diagnose(raw, digest, limit=100, top=5, selected=None):
                 "partial_profit_taken": t.get("Partial_Profit_Taken"),
             } for t in complete], key=lambda t:(t["net_return_pct"],t["symbol"])
         )[:top]
+        desc["loss_attribution"] = _forensic_groups(ledger, flagged_set)
         summaries[name] = desc
     return {
         "scope": "LOSS_ATTRIBUTION_NO_OPTIMIZATION_OR_STRATEGY_APPROVAL",
@@ -161,6 +241,8 @@ def diagnose(raw, digest, limit=100, top=5, selected=None):
         "limitations": [
             "A >35% daily jump is not proof of a data error or corporate action.",
             "Gross filled returns include modeled slippage; fee drag is gross minus net.",
+            "Flagged-vs-nonflagged trade comparison is a sensitivity only, not grounds for retrospective strategy exclusion.",
+            "Extreme-jump flag includes full pre-cutoff symbol history; occurrence may predate the evaluation trades.",
             "Historical sample is already inspected and not independent validation.",
             "No live orders, recommendations or active strategy changes.",
         ],
@@ -211,6 +293,34 @@ def main():
                     flags.get("Stop_And_Target_Both_Touched"),
                 "trailing_stop_exits": flags.get("Trailing_Stop_Active"),
                 "partial_profit_taken": flags.get("Partial_Profit_Taken"),
+                "initial_stop_mean_net_pct": (
+                    (desc.get("loss_attribution") or {})
+                    .get("initial_stop_exits") or {}
+                ).get("mean_net_return_pct"),
+                "trailing_stop_mean_net_pct": (
+                    (desc.get("loss_attribution") or {})
+                    .get("trailing_stop_exits") or {}
+                ).get("mean_net_return_pct"),
+                "gap_stop_mean_net_pct": (
+                    (desc.get("loss_attribution") or {})
+                    .get("gap_below_stop_exits") or {}
+                ).get("mean_net_return_pct"),
+                "stop_exit_mean_net_pct": (
+                    (desc.get("loss_attribution") or {})
+                    .get("stop_exits") or {}
+                ).get("mean_net_return_pct"),
+                "extreme_jump_flagged_completed_trades": (
+                    (desc.get("loss_attribution") or {})
+                    .get("extreme_jump_flagged_symbols") or {}
+                ).get("completed_trades"),
+                "nonflagged_completed_trades": (
+                    (desc.get("loss_attribution") or {})
+                    .get("not_extreme_jump_flagged_symbols") or {}
+                ).get("completed_trades"),
+                "nonflagged_mean_net_pct": (
+                    (desc.get("loss_attribution") or {})
+                    .get("not_extreme_jump_flagged_symbols") or {}
+                ).get("mean_net_return_pct"),
                 "mean_holding_sessions": (
                     round(desc["mean_holding_sessions"], 1)
                     if desc["mean_holding_sessions"] is not None else None
