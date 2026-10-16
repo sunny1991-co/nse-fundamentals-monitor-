@@ -56,6 +56,27 @@ class SecurityTests(unittest.TestCase):
         for flag in ['Secure','HttpOnly','SameSite=Strict']:
             self.assertIn(flag,cookie)
         self.assertIn("frame-ancestors 'none'",r.headers['Content-Security-Policy'])
+    def test_loopback_http_requires_explicit_local_mode_and_loopback_client(self):
+        app=create_app(dict(APP_SECRET_KEY='test-only-cookie-secret-32-characters-long',
+            APP_PASSWORD_HASH=HASH,APP_TOTP_SECRET=SECRET,
+            APP_AUTH_DB=str(Path(self.tmp.name)/'local.sqlite'),APP_HOST='localhost',
+            LOCAL_LOOPBACK_ONLY='1'))
+        client=app.test_client()
+        r=client.get('/login',base_url='http://localhost')
+        self.assertEqual(r.status_code,200)
+        self.assertNotIn('Secure',r.headers['Set-Cookie'])
+        self.assertNotIn('Strict-Transport-Security',r.headers)
+        external=client.get('/login',base_url='http://localhost',
+                            environ_base={'REMOTE_ADDR':'192.0.2.10'})
+        self.assertEqual(external.status_code,400)
+
+    def test_loopback_mode_refuses_non_loopback_host(self):
+        with self.assertRaises(RuntimeError):
+            create_app(dict(APP_SECRET_KEY='test-only-cookie-secret-32-characters-long',
+                APP_PASSWORD_HASH=HASH,APP_TOTP_SECRET=SECRET,
+                APP_AUTH_DB=str(Path(self.tmp.name)/'bad.sqlite'),APP_HOST='0.0.0.0',
+                LOCAL_LOOPBACK_ONLY='1'))
+
     def test_startup_without_security_refused(self):
         with self.assertRaises(RuntimeError):
             create_app({})
