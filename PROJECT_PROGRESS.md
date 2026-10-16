@@ -1,5 +1,45 @@
 # Project progress — 16 October 2026
 
+## Strategy research pause and loss forensics — 16 October 2026
+
+The owner ran private adjusted NSE history with **100 historical symbols** in the
+exploratory Groww-fee scenario. All **seven** distinct price-only hypotheses
+had negative pooled completed-trade mean returns. The best retrospective
+mean was **VCP breakout -0.91% (20 completed trades)**; mean reversion was
+**-1.64% (105)**, custom dip-reclaim **-1.77% (44)**, trend-pullback
+**-2.85% (89)**, trend-following **-4.55% (62)**, momentum breakout
+**-5.38% (46)**, breakout **-7.23% (14)**. These are owner-supplied output
+figures, per trade and not portfolio returns. Regulatory/broker charges were
+estimated from the published Groww NSE delivery schedule; personal taxes,
+historical brokerage tariff changes and real fills were not verified.
+**Zero verified profitable strategies; no live orders.**
+
+Fixed retrospective experiments terminate their in-sample exploration on
+2026-10-15. The three redundant scheduled tests were removed from
+`termux_maintenance.STEPS` to avoid wasting the phone's cycles repeating
+identical historical windows. Old private experiment reports remain available,
+and **quarterly, sector, annual and readiness monitoring remains enabled**.
+Manual execution of old research scripts is still possible. Fresh sessions
+cannot be considered independently validated by retroactively changing
+parameters on the inspected window.
+
+Read-only diagnostic now captures each simulated trade's initial/exit stop,
+opening gap below stop, whether a daily OHLC bar touched both stop and
+target, trailing stop status and partial profit-taking. The stop-first
+assumption and P&L calculations are unchanged. `--brief` prints a compact
+loss-attribution report, and `--strategies` narrows diagnostic work without
+selecting a purported winner. Example:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_loss_diagnostic.py --limit 100 --top 3 --brief --strategies vcp-breakout-v1 mean-reversion-v1 custom-dip-reclaim-v1
+```
+
+All data are read offline, output is private under
+`runtime/experiments/loss-diagnostic-v1/report.json`. Do not interpret a
+large >35% single-day jump as an automatic data error; investigate exchange
+source and adjustments first. No strategy is promoted on this report.
+
 ## Research-only strategy comparison and ranking (16 October 2026)
 
 - The daily Termux research maintenance now compares the same deterministic
