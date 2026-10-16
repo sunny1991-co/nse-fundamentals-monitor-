@@ -115,10 +115,13 @@ def create_app(settings=None):
             recovery = json.loads((ROOT/'runtime'/'nse_eod_history_status.json').read_text(encoding='utf-8'))
             daily = recovery.get('daily') or {}
             actions = recovery.get('corporate_actions') or {}
+            action_audit = recovery.get('corporate_action_audit') or {}
             history_recovery = (
                 'Official NSE adjusted-history recovery: '+str(recovery.get('state','UNKNOWN'))
-                +' · Remaining weekdays: '+str(daily.get('remaining_weekdays','?'))
+                +' · Remaining archive days: '+str(daily.get('remaining_archive_days',daily.get('remaining_weekdays','?')))
+                +' · Unverified missing archives: '+str(daily.get('unverified_no_file_days',0))
                 +' · Corporate actions: '+str(actions.get('status','UNKNOWN'))
+                +' · Action-review symbols: '+str(action_audit.get('unsupported_symbols',0))
                 +' · Upstox: '+str(recovery.get('upstox','NOT_USED'))
             )
         except (OSError, ValueError, TypeError):
