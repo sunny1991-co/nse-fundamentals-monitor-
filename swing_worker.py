@@ -20,6 +20,7 @@ from research_monitor.schedule import IST, phase, atomic_status, claim_job
 from research_monitor.nse_calendar import official_equity_calendar
 from research_monitor.assistant_signal_pipeline import (
     match_quote_and_prepare_paper_prompt,
+    advance_approved_paper_positions,
 )
 
 ROOT = data_root()
@@ -142,6 +143,9 @@ def tick(root=ROOT, now=None):
         status['swing_assistant_paper_prompts']=len(
             research.get('owner_prompts',[])
         )
+        advance=advance_approved_paper_positions(root,now=now)
+        atomic_status(runtime/'assistant_paper_execution_status.json',advance)
+        status['assistant_paper_updates']=advance.get('updated_positions',0)
         status['assistant_real_orders']='DISABLED'
     return status
 
