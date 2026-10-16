@@ -64,6 +64,27 @@ class TermuxSupervisorTests(unittest.TestCase):
         command = supervisor.research_command()
         self.assertTrue(command[-1].endswith('termux_research_worker.py'))
 
+    def test_cleanup_stale_dashboard_matches_only_our_loopback_gunicorn(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory)
+            mine = proc/'101'; mine.mkdir()
+            other = proc/'202'; other.mkdir()
+            (mine/'cmdline').write_bytes(
+                b'python\x00-m\x00gunicorn\x00--bind\x00127.0.0.1:8787\x00app:create_app()\x00'
+            )
+            (other/'cmdline').write_bytes(
+                b'python\x00-m\x00gunicorn\x00--bind\x00127.0.0.1:9999\x00app:create_app()\x00'
+            )
+            fake_stat = type('S', (), {'st_uid': supervisor.os.getuid()})()
+            with patch.object(Path, 'stat', return_value=fake_stat), \
+                 patch.object(supervisor.os, 'killpg') as killpg, \
+                 patch.object(supervisor.os, 'kill', side_effect=ProcessLookupError):
+                killed = supervisor.cleanup_stale_dashboard_processes(proc)
+            self.assertEqual(killed, [101])
+            killpg.assert_called_once_with(101, supervisor.signal.SIGTERM)
+
     def test_dashboard_requires_complete_private_enrollment(self):
         self.assertEqual(supervisor.dashboard_mode({}), 'NOT_ENROLLED')
         self.assertEqual(supervisor.dashboard_mode({'APP_SECRET_KEY':'x'}), 'CONFIG_INCOMPLETE')
