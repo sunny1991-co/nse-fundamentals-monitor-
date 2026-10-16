@@ -9,6 +9,7 @@ import unittest
 
 import termux_upstox_reference_worker as worker
 from upstox_reference_batches import ReferenceBatchError
+from upstox_reference_reconcile import ReconciliationError
 from research_monitor.upstox_instrument_master import InstrumentMapUnavailable
 
 
@@ -96,6 +97,53 @@ class DailyVendorTests(unittest.TestCase):
                 "ALREADY_CLAIMED_OUTCOME_UNCERTAIN_NO_RETRY_TODAY"
             )
             self.assertEqual(count.count,0)
+
+    def test_offline_reconciliation_disagreement_is_not_trading_approval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            calls=[]
+            def audit(root):
+                calls.append(root)
+                return {
+                    "scope":"NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1",
+                    "metric_comparisons":17,
+                    "companies_needing_vendor_vs_nse_review":2,
+                    "nse_verified_years_added":0,
+                    "fundamental_strict_pass_changes":0,
+                    "groww_orders":"DISABLED",
+                }
+            result=worker.run_daily(
+                directory,local(),token=TOKEN,collector=Stub(),
+                refresh_mapping=Refresh(),reconciler=audit
+            )
+            self.assertEqual(
+                result["source_reconciliation_state"],
+                "SOURCE_DIFFERENCES_NEED_REVIEW",
+            )
+            self.assertEqual(result["source_reconciliation_comparisons"],17)
+            self.assertEqual(
+                result["source_reconciliation_companies_needing_review"],2
+            )
+            self.assertFalse(
+                result["source_reconciliation_is_trading_approval"]
+            )
+            self.assertEqual(result["orders"],"DISABLED")
+            self.assertEqual(len(calls),1)
+            self.assertNotIn(TOKEN,json.dumps(result))
+
+    def test_missing_verified_nse_history_does_not_break_daily_vendor_job(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def missing(_root):
+                raise ReconciliationError("NSE_HISTORY_PROVENANCE_FIELDS_MISSING")
+            result=worker.run_daily(
+                directory,local(),token=TOKEN,collector=Stub(),
+                refresh_mapping=Refresh(),reconciler=missing
+            )
+            self.assertEqual(result["state"],"COMPLETED_DAILY_REFERENCE_BATCH")
+            self.assertEqual(
+                result["source_reconciliation_state"],
+                "SOURCE_COMPARISON_UNAVAILABLE"
+            )
+            self.assertFalse(result["trading_strategy_approved"])
 
     def test_next_ist_day_resumes_after_success(self):
         with tempfile.TemporaryDirectory() as d:
