@@ -5,7 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from termux_history_worker import publish_worker_status, run_post_publish_validation
+from termux_history_worker import (
+    CATCHUP_INTERVAL_SECONDS,
+    INTERVAL_SECONDS,
+    next_cycle_delay,
+    publish_worker_status,
+    run_post_publish_validation,
+)
 
 
 class TermuxHistoryWorkerTests(unittest.TestCase):
@@ -17,6 +23,31 @@ class TermuxHistoryWorkerTests(unittest.TestCase):
                 publish_worker_status(path, {'state': 'STOPPED'}, owner_only=True)
             )
             self.assertEqual(json.loads(path.read_text())['state'], 'COLLECTING')
+
+    def test_fast_catchup_used_only_for_healthy_incomplete_history(self):
+        delay, remaining, fast = next_cycle_delay(
+            {'state': 'BOUNDED_PROGRESS', 'daily': {'remaining_archive_days': 900, 'blocked': False}},
+            0,
+        )
+        self.assertEqual(delay, CATCHUP_INTERVAL_SECONDS)
+        self.assertEqual(remaining, 900)
+        self.assertTrue(fast)
+
+        delay, remaining, fast = next_cycle_delay(
+            {'state': 'BLOCKED_BY_NSE_ACCESS', 'daily': {'remaining_archive_days': 900, 'blocked': True}},
+            0,
+        )
+        self.assertEqual(delay, INTERVAL_SECONDS)
+        self.assertEqual(remaining, 900)
+        self.assertFalse(fast)
+
+        delay, remaining, fast = next_cycle_delay(
+            {'state': 'ADJUSTED_HISTORY_PUBLISHED', 'daily': {'remaining_archive_days': 0, 'blocked': False}},
+            0,
+        )
+        self.assertEqual(delay, INTERVAL_SECONDS)
+        self.assertEqual(remaining, 0)
+        self.assertFalse(fast)
 
     def test_post_publish_backtest_runs_once_per_history_sha(self):
         with tempfile.TemporaryDirectory() as directory:
