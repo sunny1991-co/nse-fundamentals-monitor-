@@ -114,7 +114,7 @@ def _group_metrics(trades):
     }
 
 
-def _forensic_groups(trades, flagged_symbols):
+def _forensic_groups(trades, flagged_symbols, sample_symbols):
     """Attribution ONLY: no trade omission from original ranking/backtests.
 
     Flagged symbols may have genuine exceptional market moves and are not
@@ -151,9 +151,12 @@ def _forensic_groups(trades, flagged_symbols):
             _group_metrics([t for t in stopped if bool(t[column]) is value])
             if known(column, stopped) else None
         )
-    groups["extreme_jump_flagged_symbol_count_in_sample"] = len(flagged_symbols)
+    sample_set = set(sample_symbols)
+    groups["extreme_jump_flagged_symbol_count_in_sample"] = len(
+        flagged_symbols & sample_set
+    )
     groups["not_extreme_jump_flagged_symbol_count_in_sample"] = (
-        len({t["symbol"] for t in trades if "symbol" in t} - flagged_symbols)
+        len(sample_set - flagged_symbols)
     )
     groups["warning"] = (
         "Data-quality groups are observational, not a revised winning strategy. "
@@ -225,7 +228,7 @@ def diagnose(raw, digest, limit=100, top=5, selected=None):
                 "partial_profit_taken": t.get("Partial_Profit_Taken"),
             } for t in complete], key=lambda t:(t["net_return_pct"],t["symbol"])
         )[:top]
-        desc["loss_attribution"] = _forensic_groups(ledger, flagged_set)
+        desc["loss_attribution"] = _forensic_groups(ledger, flagged_set, symbols)
         summaries[name] = desc
     return {
         "scope": "LOSS_ATTRIBUTION_NO_OPTIMIZATION_OR_STRATEGY_APPROVAL",
