@@ -22,12 +22,14 @@ class TermuxHistoryWorkerTests(unittest.TestCase):
                 first = run_post_publish_validation(root, {}, io.StringIO())
                 second = run_post_publish_validation(root, {}, io.StringIO())
 
-            self.assertEqual(first['state'], 'BACKTEST_AND_READINESS_COMPLETE')
+            self.assertEqual(first['state'], 'BACKTEST_SCREEN_PAPER_READINESS_COMPLETE')
             self.assertEqual(second['state'], 'ALREADY_VALIDATED_FOR_CURRENT_HISTORY')
-            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_count, 8)
             marker = json.loads((root/'runtime'/'history_backtest_done.json').read_text())
             self.assertEqual(marker['sha256'], 'abc123')
             self.assertEqual(marker['backtest_returncode'], 0)
+            self.assertEqual(marker['technical_screen_returncode'], 0)
+            self.assertEqual(marker['paper_returncode'], 0)
             self.assertEqual(marker['readiness_returncode'], 0)
 
     def test_new_history_sha_triggers_new_backtest(self):
