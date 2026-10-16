@@ -156,6 +156,21 @@ def _csv_bytes(payload: bytes, zipped: bool) -> bytes:
         return zf.read(names[0])
 
 
+def _parse_archive_date(value: str) -> date | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in (
+        "%Y-%m-%d", "%d-%b-%Y", "%d-%B-%Y", "%d-%m-%Y",
+        "%d-%b-%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
 def _first_column(frame: pd.DataFrame, aliases: Iterable[str]) -> str | None:
     lookup = {str(c).strip().upper(): c for c in frame.columns}
     for alias in aliases:
@@ -192,8 +207,8 @@ def parse_bhavcopy(payload: bytes, day: date, source_kind: str, symbols: set[str
         return []
 
     if cols["date"] is not None:
-        parsed = pd.to_datetime(frame[cols["date"]], errors="coerce", dayfirst=True)
-        if parsed.isna().any() or any(x.date() != day for x in parsed):
+        parsed = frame[cols["date"]].map(_parse_archive_date)
+        if parsed.isna().any() or any(x != day for x in parsed):
             raise ValueError("BHAVCOPY_DATE_MISMATCH")
 
     out: list[tuple] = []
