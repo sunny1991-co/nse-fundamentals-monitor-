@@ -266,6 +266,8 @@ def action_from_row(row: dict) -> Action | None:
 def adjust_frame(frame: pd.DataFrame, actions: list[Action]) -> pd.DataFrame:
     result = frame.copy()
     result["Date"] = pd.to_datetime(result["Date"], format="%Y-%m-%d", errors="raise")
+    for column in ("Open", "High", "Low", "Close", "Volume"):
+        result[column] = pd.to_numeric(result[column], errors="raise").astype(float)
     for action in sorted(actions, key=lambda a: a.ex_date):
         if not action.supported or action.factor is None:
             continue
