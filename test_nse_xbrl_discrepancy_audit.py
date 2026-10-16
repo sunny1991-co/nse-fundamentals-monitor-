@@ -425,7 +425,16 @@ class RawNSEAuditTests(unittest.TestCase):
         self.assertEqual(
             data["unverified_distinct_context_issuer_identifiers_count"],2
         )
-        self.assertFalse(data["issuer_registration_scheme_is_not_independent_identity_proof"] is False)
+        self.assertTrue(
+            data["issuer_registration_scheme_is_not_independent_identity_proof"]
+        )
+        self.assertEqual(
+            data["metric_source_inspection"]["revenue"]["verdict"],
+            "DOCUMENT_CONTEXT_ENTITY_IDENTIFIERS_CONFLICT"
+        )
+        self.assertFalse(
+            data["metric_source_inspection"]["revenue"]["automatic_numeric_correction"]
+        )
 
     def test_download_must_be_official_xbrl_source_without_token(self):
         sess=FakeSession(valid_xml())
