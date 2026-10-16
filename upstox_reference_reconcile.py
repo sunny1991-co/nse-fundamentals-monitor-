@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 from upstox_reference_batches import (
+    ReferenceBatchError,
     _existing_records, _stored_paths, verified_reference_map,
 )
 
@@ -332,7 +333,7 @@ def main():
     parser.parse_args()
     try:
         report=reconcile(data_root())
-    except (ReconciliationError,ValueError,OSError) as exc:
+    except (ReconciliationError,ReferenceBatchError,ValueError,OSError):
         # Fail closed, no broker response or private token is interpolated.
         raise SystemExit("RECONCILIATION_BLOCKED_CHECK_LOCAL_SOURCE_EVIDENCE") from None
     print(json.dumps({
