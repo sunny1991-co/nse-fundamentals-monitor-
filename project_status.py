@@ -172,6 +172,13 @@ def snapshot(root: Path | None = None) -> dict:
     action = history.get("corporate_action_audit") or {}
     worker = read_json(runtime / "worker_status.json")
     hist_worker = read_json(runtime / "history_worker_status.json")
+    upstox_reference_worker = read_json(
+        runtime / "upstox_reference_worker_status.json"
+    )
+    vendor_reference_batch = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "last_batch.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -298,6 +305,19 @@ def snapshot(root: Path | None = None) -> dict:
             if worker.get("upstox_analytics_token_configured") is True
             else "NOT_CONFIGURED_OR_WORKER_NOT_UPDATED"
         ),
+        "upstox_vendor_reference_daily_worker": upstox_reference_worker.get(
+            "state", "NOT_STARTED"
+        ),
+        "upstox_vendor_reference_mapped_symbols": int_value(
+            vendor_reference_batch.get("mapping_symbols", 0)
+        ),
+        "upstox_vendor_reference_completed": int_value(
+            vendor_reference_batch.get("completed_company_records", 0)
+        ),
+        "upstox_vendor_reference_remaining": int_value(
+            vendor_reference_batch.get("remaining_uncollected", 0)
+        ),
+        "upstox_vendor_reference_not_audited": True,
         "upstox": "BACKUP_ONLY_NSE_HISTORY_COLLECTOR_DOES_NOT_USE_UPSTOX",
         "automatic_groww_order_execution": "DISABLED_NO_VALIDATED_STRATEGY",
         "orders": "MANUAL_ONLY",
