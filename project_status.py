@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from research_monitor.paths import data_root, CODE_ROOT
+from research_monitor.forward_status import summary as forward_summary
 
 
 def read_json(path: Path) -> dict:
@@ -274,6 +275,7 @@ def snapshot(root: Path | None = None) -> dict:
         ),
         "post_history_validation": post.get("state", "NOT_STARTED"),
         "paper_status": paper.get("data_status", "NOT_STARTED"),
+        "automatic_forward_paper": forward_summary(root),
         "strategy_research": research_state,
         "exploratory_strategy_leader": research_leader,
         "research_strategies_compared": research_strategies,

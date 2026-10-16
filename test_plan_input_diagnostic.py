@@ -13,6 +13,7 @@ class PlanInputDiagnosticTests(unittest.TestCase):
                 (root/name).write_text('header\n')
             path=root/'swing_candidates_manifest.json'
             path.write_text(json.dumps(candidate_manifest(root)))
+            self.assertEqual(diagnose(root)['next_step'],'NO_REFRESH_NEEDED_WAIT_FOR_SCHEDULED_ANALYSIS')
             original=path.read_bytes()
             (root/'final_fundamental_shortlist.csv').write_text('changed\n')
             report=diagnose(root)

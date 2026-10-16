@@ -21,10 +21,13 @@ def diagnose(root):
                 changed.append(name)
         except OSError:
             missing.append(name)
-    return dict(state=candidate_rows(root)[1], changed_files=changed,
+    state = candidate_rows(root)[1]
+    return dict(state=state, changed_files=changed,
         missing_files=missing, generated_at=manifest.get('generated_at'),
         writes_performed=0,
-        next_step='Regenerate candidates from matching verified inputs; do not edit the manifest to bypass validation.')
+        next_step=('NO_REFRESH_NEEDED_WAIT_FOR_SCHEDULED_ANALYSIS'
+                   if state == 'CONDITIONAL_RESEARCH_ONLY' and not changed and not missing
+                   else 'Regenerate candidates from matching verified inputs; do not edit the manifest to bypass validation.'))
 
 
 if __name__ == '__main__':
