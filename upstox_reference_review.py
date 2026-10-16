@@ -172,6 +172,11 @@ def create_review(root):
     if len(records) != recon.get("vendor_company_records_checked"):
         raise SourceReviewError("VENDOR_COMPANY_COUNT_CHANGED_RERUN_RECONCILIATION")
     comparison_file=recon_dir/"metric_comparisons.csv"
+    if (
+        not comparison_file.is_file()
+        or _sha(comparison_file) != recon.get("metric_comparisons_csv_sha256")
+    ):
+        raise SourceReviewError("COMPARISON_INPUT_CHANGED_RERUN_RECONCILIATION")
     mismatches=_load_comparisons(comparison_file,recon,records)
     by_company=defaultdict(list)
     year_counts=Counter()
