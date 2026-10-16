@@ -1,5 +1,45 @@
 # Project progress — 16 October 2026
 
+## Fixed 1% stop-risk research — October 16, 2026
+
+The owner's private phone output showed heavy initial-stop exits on the inspected
+100-stock sample: VCP **13 initial-stop exits averaging -9.358%** versus
+2 trailing-stop exits averaging +15.701%; mean reversion **76 initial**
+averaging -8.067% versus 14 trailing averaging +9.244%; custom dip-reclaim
+**33 initial** averaging -6.863% versus 5 trailing averaging +8.822%.
+These are **conditional exit subsets**, not evidence that trailing-stop rules
+cause profits. Owner output also showed nonflagged means remain negative:
+VCP -0.384% across 19 completed, mean reversion -1.108% across 99,
+custom -1.772% across 44. Fees were about 0.30 percentage points per
+completed trade. Forensic groups and flagged historical jumps do not justify
+retrospective exclusions or relaxed stops.
+
+Added an **opt-in** `risk_fraction` to the independent single-stock
+`simulate_delivery` model (unchanged default). For a fixed 1% scenario it
+uses integer shares, the initial stop, estimated exit slippage, and *buy and
+sell fees* to limit **projected, no-gap** loss to 1% of cash before the trade.
+It does not alter strategy signals, stop prices, trailing rules or order
+handling. **An actual overnight gap, market halt or real fill can exceed 1%**.
+Untradeably small positions are skipped rather than bypassing fees/risk.
+
+The new `swing_risk_sizing_research.py` compares the unchanged all-cash
+execution with fixed 1% position risk and doubled costs/slippage for
+VCP, mean-reversion and custom-dip on identical symbol/date windows.
+Those three were selected *after* previous performance was inspected;
+comparison is only about exposure, not validating their expected returns.
+Runs are manual, never automatic or live, and per-stock INR 100k simulated
+ledgers do **not** form a shared diversified portfolio. Code and input
+hashes are retained.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_risk_sizing_research.py --limit 100
+```
+
+GitHub synthetic tests do not measure the user's real stock returns.
+No strategy approval, candidate promotion or live order permission is added.
+Independent forward tests and actual broker contract notes remain necessary.
+
 ## Strategy research pause and loss forensics — 16 October 2026
 
 The owner ran private adjusted NSE history with **100 historical symbols** in the
