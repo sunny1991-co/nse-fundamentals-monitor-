@@ -1,5 +1,71 @@
 # Project progress — 16 October 2026
 
+## Four live original-NSE XBRL downloads exposed context-quality blockers — 16 October 2026
+
+User's on-device raw XML drilldown was **successful on all four official
+NSE archive URLs** (no 403, 429, network error) and reported:
+
+- **MWL FY2025–26 OCF:** exact raw XBRL fact of **−20.426cr** reproduces
+  the archived NSE value, but its context has **no explicit consolidated
+  basis**. Upstox vendor reads +24.25cr; this is NOT a provider
+  error determination.
+- **NECLIFE FY2025–26 revenue:** exact raw XBRL fact of **0cr**
+  reproduces the archived NSE zero, but its context has **no explicit
+  consolidated basis**. Vendor reads +9.29cr; zero revenue must NOT
+  be considered validated consolidated financial fact without reviewing
+  source context, relevant taxonomy and issuer report.
+- **KRIDHANINF FY2024–25:** Revenue and OCF facts existed in an
+  exact-period fact candidate, but were excluded by **the combined
+  non-basis-dimension OR context identifier filter**. The initial
+  diagnostic did not distinguish these two causes; no accounting
+  provenance conclusion was possible.
+- **TBOTEK FY2025–26:** OCF fact similarly excluded by the combined
+  context dimension/identifier guard. Cause must be distinguished
+  before labeling original NSE extraction an error.
+
+Total of five metric drilldowns: 2 ambiguous context basis, 3 had
+no eligible exact-period INR fact under the initial stricter guard.
+A previous verified annual parser may use less demanding identifier
+checks and select different contexts; this possibility must be measured
+and audited before changing the **read-only historical records**.
+No original NSE annual CSV values, no Upstox vendor snapshots, no
+trading shortlist or orders changed.
+
+Improved `nse_xbrl_discrepancy_audit.py` now adds:
+- Compare original archive's **Annual_Context_IDs/Instant_Context_IDs**
+  against raw XBRL fact `contextRef`; surface the **archived NSE number
+  found in an excluded context**, rather than confusing that with an
+  entirely missing XBRL fact;
+- Differentiate other XBRL dimensions, NSESymbol identifier mismatches,
+  unverified company identifier schemes (such as CIN), standalone/
+  conflicting context basis and unverified monetary units; report a
+  small capped sample of candidate tag, context ID and dimension name,
+  without assuming a context is consolidated;
+- Require real resolved QName namespace URI for `iso4217:INR`, reject
+  forged `foo:INR` or ratio units. Refuse documents with ambiguous
+  namespace redefinitions;
+- Keep a hard cap of four official XML downloads, stop on source HTTP
+  403/429, 5xx and network issues; fail closed on unclear monetary facts.
+  Synthetic regression tests cover dimension/archived-context match,
+  forged unit QName, CIN identifier, conflicting aliases and same-period
+  fact selection.
+- Expose raw XBRL audit verdict counts separately in `project_status.py`,
+  explicitly **not** altering audited NSE verification, historical
+  quality score, eligible stock picks or Groww execution.
+
+No claim that the three excluded facts were wrong or that the two
+reproduced raw values represent trustworthy final consolidated numbers.
+Next user run:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_xbrl_discrepancy_audit.py --max-files 4
+```
+
+The original report is refreshed in
+`runtime/experiments/upstox-nse-historical-reference-v1/
+upstox-reference-batches-v1/reconciliation/nse_xbrl_drilldown.json`.
+
 ## 180-company live vendor-reference success and raw NSE XBRL diagnostic — 16 October 2026
 
 Owner confirmed that manual four serial 25-stock catch-up batches finished
