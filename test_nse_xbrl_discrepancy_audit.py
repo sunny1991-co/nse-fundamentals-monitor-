@@ -338,6 +338,95 @@ class RawNSEAuditTests(unittest.TestCase):
             "RAW_XBRL_FACT_AGREES_WITH_ARCHIVED_NSE_VALUE",
         )
 
+    def test_sebi_scheme_is_not_error_but_value_shape_remains_unverified(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'https://www.sebi.gov.in'
+        )
+        outcome=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )
+        self.assertEqual(
+            outcome["context_identifier_scheme_classes"],
+            {"SEBI_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF":2}
+        )
+        self.assertEqual(
+            outcome["context_identifier_value_shape_classes"],
+            {"SYMBOL_OR_TEXT_SHAPED_UNVERIFIED":2}
+        )
+        self.assertTrue(outcome["all_xbrl_contexts_use_same_self_declared_issuer"])
+        self.assertEqual(
+            outcome["unverified_distinct_context_issuer_identifiers_count"],1
+        )
+        self.assertEqual(outcome["context_identifiers_equal_filing_symbol_count"],2)
+        self.assertTrue(
+            outcome["issuer_registration_scheme_is_not_independent_identity_proof"]
+        )
+        info=outcome["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            info["verdict"],"ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+        )
+        self.assertTrue(info["excluded_fact_examples_not_verified"][0][
+            "issuer_identifier_equals_filing_symbol"
+        ])
+        self.assertFalse(info["automatic_numeric_correction"])
+
+    def test_bse_scheme_and_cin_shaped_identifier_not_confirmed_as_cin(self):
+        cin=b"L12345MH2000PLC123456"
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'https://www.bseindia.com'
+        ).replace(
+            b'>SYNTHETIC</xbrli:identifier>',
+            b'>'+cin+b'</xbrli:identifier>'
+        )
+        data=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )
+        self.assertEqual(data["context_identifier_scheme_classes"],{
+            "BSE_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF":2
+        })
+        self.assertEqual(data["context_identifier_value_shape_classes"],{
+            "CIN_SHAPED_UNVERIFIED":2
+        })
+        self.assertTrue(data["all_xbrl_contexts_use_same_self_declared_issuer"])
+        detail=data["metric_source_inspection"]["revenue"]
+        self.assertFalse(detail["excluded_fact_examples_not_verified"][0][
+            "issuer_identifier_equals_filing_symbol"
+        ])
+        self.assertEqual(detail["candidate_inr_exact_period_count"],0)
+        self.assertEqual(detail["verdict"],
+                         "ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW")
+
+    def test_mixed_context_entities_warn_not_verified_even_on_symbol_match(self):
+        sample=valid_xml().replace(
+            b'<xbrli:instant>2026-03-31</xbrli:instant>',
+            b'<xbrli:instant>2026-03-31</xbrli:instant>',
+        ).replace(
+            b'>SYNTHETIC</xbrli:identifier>',
+            b'>SYNTHETIC</xbrli:identifier>',
+            1
+        )
+        # One context self-identifies a different company; keep the
+        # original revenue fact but report context-issuer conflict.
+        sample=sample.replace(
+            b'>SYNTHETIC</xbrli:identifier>',
+            b'>OTHERENTITY</xbrli:identifier>',1
+        )
+        data=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+        )
+        self.assertFalse(data["all_xbrl_contexts_use_same_self_declared_issuer"])
+        self.assertEqual(
+            data["unverified_distinct_context_issuer_identifiers_count"],2
+        )
+        self.assertFalse(data["issuer_registration_scheme_is_not_independent_identity_proof"] is False)
+
     def test_download_must_be_official_xbrl_source_without_token(self):
         sess=FakeSession(valid_xml())
         data,issue=_download(sess,BASE)
