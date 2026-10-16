@@ -233,6 +233,32 @@ class BoundedBatchTests(unittest.TestCase):
                 batch.collect(d,TOKEN,5,session=FakeSession(),
                               seed_existing=False)
 
+    def test_parallel_manual_and_auto_batch_cannot_both_write(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as d:
+            folder=Path(d)/"runtime"/"experiments"/batch.FOLDER/batch.VERSION
+            folder.mkdir(parents=True)
+            path=folder/"collection.lock"
+            session=FakeSession()
+            with path.open("a+") as other:
+                fcntl.flock(other.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+                with self.assertRaisesRegex(
+                    batch.ReferenceBatchError,"VENDOR_BATCH_ALREADY_RUNNING"
+                ):
+                    batch.collect(
+                        d,TOKEN,1,session=session,pause=lambda _:None,
+                        mapping_loader=loader_from(mapping()),
+                        seed_existing=False,
+                    )
+                fcntl.flock(other.fileno(),fcntl.LOCK_UN)
+            self.assertEqual(session.calls,[])
+            worked=batch.collect(
+                d,TOKEN,1,session=FakeSession(),pause=lambda _:None,
+                mapping_loader=loader_from(mapping()),seed_existing=False,
+            )
+            self.assertEqual(worked["new_company_records"],1)
+
+
     def test_reference_map_timestamp_and_provenance_fail_closed(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
