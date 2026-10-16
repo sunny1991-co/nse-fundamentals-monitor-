@@ -23,6 +23,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 import time
@@ -81,10 +82,34 @@ def _issuer_scheme_label(scheme):
             return "NSE_SYMBOL_URI"
         if host in ("www.mca.gov.in","mca.gov.in") and uri.path.lower()=="/cin":
             return "MCA_CIN_URI"
+        if host in ("www.sebi.gov.in","sebi.gov.in"):
+            return "SEBI_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF"
+        if host in ("www.bseindia.com","bseindia.com"):
+            return "BSE_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF"
         # Display domain/type only; never leak arbitrary XML scheme strings.
         return "OTHER_URI_DOMAIN:"+host[:80]
     except ValueError:
         return "UNKNOWN_SCHEME_FORMAT"
+
+
+def _identifier_format_hint(value):
+    """Report *shape only*, never expose the identifier or claim validity."""
+    if not isinstance(value,str):
+        return "EMPTY_OR_UNSUPPORTED"
+    value=value.strip().upper()
+    if not value or len(value)>96:
+        return "EMPTY_OR_UNSUPPORTED"
+    if re.fullmatch(r"[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}",value):
+        return "CIN_SHAPED_UNVERIFIED"
+    if re.fullmatch(r"IN[A-Z0-9]{10}",value):
+        return "ISIN_SHAPED_UNVERIFIED"
+    if re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]",value):
+        return "PAN_SHAPED_UNVERIFIED"
+    if re.fullmatch(r"[0-9]{5,8}",value):
+        return "NUMERIC_EXCHANGE_CODE_SHAPED_UNVERIFIED"
+    if re.fullmatch(r"[A-Z][A-Z0-9_.&-]{0,39}",value):
+        return "SYMBOL_OR_TEXT_SHAPED_UNVERIFIED"
+    return "OTHER_UNVERIFIED"
 
 
 def _document_cin_claims(xml):
@@ -225,6 +250,11 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             scheme_labels=sorted({
                 _issuer_scheme_label(scheme) for _value,scheme in entity
             }) or ["UNSPECIFIED"]
+            value_shape_labels=sorted({
+                _identifier_format_hint(identifier)
+                for identifier,_scheme in entity
+            }) or ["EMPTY_OR_UNSUPPORTED"]
+            id_equal_symbol=(len(entity)==1 and entity[0][0]==symbol)
             # Matching CIN values within the *same XML file* is weak issuer
             # evidence, not an independent NSE registry attestation. Thus it
             # intentionally does NOT change identifier_status eligibility.
@@ -252,6 +282,8 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                 "identifiers":entity,
                 "identifier_status":identifier_status,
                 "identifier_scheme_labels":scheme_labels,
+                "identifier_value_shapes_not_verified":value_shape_labels,
+                "identifier_equals_document_symbol":id_equal_symbol,
                 "document_cin_relation":cin_relation,
             }
     currencies={}
@@ -286,6 +318,14 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             xml_symbols.add(node.text.strip().upper())
     basis_safe=(fact_bases=={"consolidated"})
     symbol_safe=(xml_symbols=={symbol})
+    issuer_tuples={tuple(ctx["identifiers"]) for ctx in contexts.values()}
+    unique_entity_identifiers={
+        item for ctx in contexts.values() for item in ctx["identifiers"]
+    }
+    common_context_issuer=(
+        len(issuer_tuples)==1 and len(unique_entity_identifiers)==1
+        and len(contexts)>0
+    )
     out={
         "raw_xbrl_sha256":hashlib.sha256(body).hexdigest(),
         "xml_global_consolidated_basis_present":basis_safe,
@@ -293,6 +333,20 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
         "xml_context_count":len(contexts),
         "inr_currency_units_found":sum(currencies.values()),
         "xml_claimed_cin_count":len(document_cins),
+        "unverified_distinct_context_issuer_identifiers_count":
+            len(unique_entity_identifiers),
+        "all_xbrl_contexts_use_same_self_declared_issuer":
+            common_context_issuer,
+        "context_identifier_value_shape_classes":dict(Counter(
+            shape
+            for ctx in contexts.values()
+            for shape in ctx["identifier_value_shapes_not_verified"]
+        )),
+        "context_identifiers_equal_filing_symbol_count":sum(
+            ctx["identifier_equals_document_symbol"]
+            for ctx in contexts.values()
+        ),
+        "issuer_registration_scheme_is_not_independent_identity_proof":True,
         "context_identifier_scheme_classes":dict(Counter(
             label
             for ctx in contexts.values()
@@ -371,6 +425,12 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                         "identifier_status":ctx["identifier_status"],
                         "identifier_scheme_classes":
                             ctx["identifier_scheme_labels"],
+                        "issuer_identifier_value_shape_not_verified":
+                            ctx["identifier_value_shapes_not_verified"],
+                        "issuer_identifier_equals_filing_symbol":
+                            ctx["identifier_equals_document_symbol"],
+                        "same_self_declared_issuer_across_all_contexts":
+                            common_context_issuer,
                         "document_cin_relation":
                             ctx["document_cin_relation"],
                         "dimension_names":[d[0][:80] for d in ctx["dimensions"][:4]],
@@ -637,7 +697,13 @@ def main():
             "fetch_state":r["fetch_state"],
             "xml_context_identifier_scheme_classes":
                 r.get("context_identifier_scheme_classes",{}),
+            "xml_context_identifier_value_shape_classes":
+                r.get("context_identifier_value_shape_classes",{}),
             "xml_claimed_cin_fact_count":r.get("xml_claimed_cin_count"),
+            "xbrl_contexts_use_same_self_declared_issuer":
+                r.get("all_xbrl_contexts_use_same_self_declared_issuer"),
+            "xml_distinct_context_issuer_identifier_count":
+                r.get("unverified_distinct_context_issuer_identifiers_count"),
             "legacy_parser_issuer_identity_gap_possible":
                 r.get("legacy_parser_issuer_identity_gap_possible",False),
             "metric_source_inspection":r.get("metric_source_inspection",{}),
