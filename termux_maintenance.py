@@ -40,6 +40,11 @@ STEPS = [
     # history. Never publishes candidates, alerts, probabilities or orders.
     ("trend_pullback_experiment",
      [sys.executable, str(CODE_ROOT/'swing_pullback_research.py'), '--limit', '100'], 20*60),
+    # Additional frozen hypotheses, research only; no candidate/alert promotion.
+    # Bounded 40-stock daily sample to avoid exhausting the phone. Manual runs
+    # can request 100. Unverified index/earnings strategies are blocked.
+    ("seven_strategy_experiment",
+     [sys.executable, str(CODE_ROOT/'swing_seven_strategy_research.py'), '--limit', '40'], 20*60),
 ]
 
 
@@ -118,7 +123,7 @@ def main() -> int:
         for name, command, timeout in STEPS:
             # The repository cannot see private licensed OHLCV. Skip rather than
             # call a synthetic unit test a real-data strategy result.
-            if name == 'trend_pullback_experiment' and not (
+            if name in ('trend_pullback_experiment', 'seven_strategy_experiment') and not (
                 (root/'market_ohlcv.csv').is_file()
                 and (root/'market_data_metadata.json').is_file()
             ):
