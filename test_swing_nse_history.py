@@ -73,6 +73,18 @@ class NseHistoryTests(unittest.TestCase):
         self.assertFalse(rights.supported)
         self.assertEqual(rights.kind, "COMPLEX_UNSUPPORTED")
 
+        dividend = classify_action("ABC", date(2024, 4, 10), "Interim Dividend - Rs 5 Per Share")
+        self.assertTrue(dividend.supported)
+        self.assertEqual(dividend.factor, 1.0)
+
+        unknown = classify_action("ABC", date(2024, 5, 10), "Other Corporate Purpose")
+        self.assertFalse(unknown.supported)
+        self.assertEqual(unknown.kind, "UNRECOGNIZED_ACTION_REVIEW_REQUIRED")
+
+        malformed_bonus = classify_action("ABC", date(2024, 6, 10), "Issue of Bonus Shares")
+        self.assertFalse(malformed_bonus.supported)
+        self.assertEqual(malformed_bonus.kind, "SHARE_UNIT_ACTION_UNPARSED")
+
     def test_adjustment_changes_only_bars_before_ex_date(self):
         frame = pd.DataFrame(
             [
