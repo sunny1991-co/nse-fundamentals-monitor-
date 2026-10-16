@@ -17,8 +17,10 @@ from swing_nse_history import (
     init_db,
     intervals_cover,
     parse_bhavcopy,
+    pending_weekdays,
     suspicious_no_file_gap,
     terminal_day_coverage,
+    unverified_no_file_days,
 )
 
 
@@ -127,6 +129,42 @@ class NseHistoryTests(unittest.TestCase):
         self.assertEqual(old.Open, 50)
         self.assertEqual(old.Volume, 2000)
         self.assertEqual(ex.Open, 52)
+
+    def test_reviewed_holiday_is_not_pending_but_special_weekend_is(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = init_db(Path(directory) / "history.sqlite")
+            try:
+                # 26-Jan-2024 is a reviewed full-day NSE holiday.
+                self.assertEqual(
+                    pending_weekdays(db, date(2024, 1, 26), date(2024, 1, 26)),
+                    [],
+                )
+                # 02-Mar-2024 was an official special Saturday live session.
+                self.assertEqual(
+                    pending_weekdays(db, date(2024, 3, 2), date(2024, 3, 2)),
+                    [date(2024, 3, 2)],
+                )
+            finally:
+                db.close()
+
+    def test_no_file_on_expected_session_blocks_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = init_db(Path(directory) / "history.sqlite")
+            try:
+                d = date(2024, 3, 4)  # normal Monday session
+                db.execute(
+                    "INSERT INTO days(day,status,source_url,source_sha256,rows,checked_at,error) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    (d.isoformat(), "NO_FILE", "", "", 0, "2026-10-16T00:00:00+00:00", "404"),
+                )
+                db.commit()
+                self.assertEqual(unverified_no_file_days(db, d, d), [d.isoformat()])
+                self.assertFalse(terminal_day_coverage(db, d, d))
+                # Already checked NO_FILE is not hammered repeatedly; it remains
+                # a visible audit blocker instead.
+                self.assertEqual(pending_weekdays(db, d, d), [])
+            finally:
+                db.close()
 
     def test_interval_coverage_requires_no_gap(self):
         self.assertTrue(
