@@ -65,7 +65,7 @@ class LossForensicsTests(unittest.TestCase):
             1030.,1020.,1055.,1050.
         ]
         d.loc[222, ["Open","Low","High","Close"]]=[
-            1010.,1002.,1055.,1020.
+            1035.,1025.,1055.,1033.
         ]
         # Row 221 touches T1 and not stop, moves stop to entry
         # via partial exit / trailing adjustment. Day 222 hits new stop.
