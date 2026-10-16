@@ -17,6 +17,7 @@ load_dotenv(_CODE_DIR/'.env', interpolate=False)
 from research_monitor.paths import data_root, CODE_ROOT
 from research_monitor.upstox_data import UpstoxData, DataUnavailable
 from research_monitor.schedule import IST, phase, atomic_status, claim_job
+from research_monitor.nse_calendar import official_equity_calendar
 
 ROOT = data_root()
 
@@ -36,6 +37,12 @@ def tick(root=ROOT, now=None):
         except DataUnavailable:
             calendar={}
     state = phase(calendar, now)
+    if state == 'CALENDAR_PENDING' and not os.environ.get('UPSTOX_ANALYTICS_TOKEN'):
+        # Broker-independent fallback: only reviewed official NSE calendar
+        # snapshots are accepted. Unsupported years remain fail-closed.
+        calendar = official_equity_calendar(now.astimezone(IST).year)
+        atomic_status(root/'exchange_sessions.json', calendar)
+        state = phase(calendar, now)
     if state != 'CALENDAR_PENDING':
         history_path=runtime/'calendar_history.json'
         try:
