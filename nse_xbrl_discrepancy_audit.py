@@ -147,12 +147,26 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
     except (ET.ParseError,ValueError):
         raise DrilldownError("XBRL_XML_INVALID") from None
     if archived_context_ids is None:
-        archived_context_ids=set()
-    else:
-        archived_context_ids={
-            str(item) for item in archived_context_ids
-            if isinstance(item,str) and len(item)<=128
+        archived_context_by_metric={}
+    elif isinstance(archived_context_ids,dict):
+        archived_context_by_metric={
+            metric:{
+                str(item) for item in ids
+                if isinstance(item,str) and 0<len(item)<=128
+            }
+            for metric, ids in archived_context_ids.items()
+            if metric in ALIASES and isinstance(ids,(set,list,tuple))
         }
+    elif isinstance(archived_context_ids,(set,list,tuple)):
+        # Existing test/API support only. For multi-metric audit runs the
+        # calling drilldown passes a distinct archived context per metric.
+        common={
+            str(item) for item in archived_context_ids
+            if isinstance(item,str) and 0<len(item)<=128
+        }
+        archived_context_by_metric={m:common for m in official_values}
+    else:
+        raise DrilldownError("INVALID_ARCHIVED_CONTEXT_ID_INPUT")
     if fiscal_year not in ("2024-25","2025-26"):
         raise DrilldownError("FISCAL_YEAR_NOT_SUPPORTED")
     start_year=int(fiscal_year[:4])
@@ -290,6 +304,7 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
     for metric, official in official_values.items():
         if metric not in ALIASES:
             raise DrilldownError("UNRECOGNIZED_METRIC")
+        archived_context_ids=archived_context_by_metric.get(metric,set())
         match_alias={a.lower() for a in ALIASES[metric]}
         instant_metric=(metric=="total_assets")
         candidates=[]
@@ -492,17 +507,17 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
             continue
         group=selection.setdefault(key,{
             "values":{},
-            "archived_context_ids":set(),
+            "archived_context_ids_by_metric":{},
         })
         group["values"][metric]=_number(official[METRICS[metric][1]])
         context_field=(
             "Instant_Context_IDs" if metric=="total_assets"
             else "Annual_Context_IDs"
         )
-        group["archived_context_ids"].update(
+        group["archived_context_ids_by_metric"][metric]={
             x for x in str(official.get(context_field) or "").split("|")
             if x and len(x)<=128
-        )
+        }
     own=session is None
     session=session or requests.Session()
     detailed=[]
@@ -527,7 +542,9 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
                     parsed=inspect_xml(
                         body,symbol=sym,fiscal_year=fy,
                         official_values=measurements,
-                        archived_context_ids=group["archived_context_ids"],
+                        archived_context_ids=group[
+                            "archived_context_ids_by_metric"
+                        ],
                     )
                     record.update(parsed)
                 except DrilldownError as exc:
