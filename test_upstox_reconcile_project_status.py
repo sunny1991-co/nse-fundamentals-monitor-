@@ -45,6 +45,39 @@ class ProjectVendorAuditTests(unittest.TestCase):
                 "DISABLED_NO_VALIDATED_STRATEGY"
             )
 
+    def test_forensic_and_manual_catchup_status_never_unlock_orders(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            base=(root/"runtime"/"experiments"/
+                  "upstox-nse-historical-reference-v1"/
+                  "upstox-reference-batches-v1")
+            recon=base/"reconciliation"/"source_discrepancy_forensics_summary.json"
+            recon.parent.mkdir(parents=True,exist_ok=True)
+            recon.write_text(json.dumps({
+                "scope":"UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1",
+                "metric_discrepancies":36,
+                "companies_needing_review":25,
+                "automatic_source_correction":False,
+                "live_orders":"DISABLED",
+            }))
+            (base/"last_manual_catchup.json").write_text(json.dumps({
+                "scope":"UPSTOX_NSE_EQ_MANUAL_BOUNDED_CATCHUP_REFERENCE_ONLY",
+                "new_company_records":100,
+                "state":"BOUNDED_CATCHUP_COMPLETE",
+                "strict_fundamental_pass_changes":0,
+                "orders":"DISABLED",
+            }))
+            report=snapshot(root)
+            self.assertEqual(report["upstox_forensics_reviewed_metrics"],36)
+            self.assertEqual(report["upstox_manual_catchup_state"],
+                             "BOUNDED_CATCHUP_COMPLETE")
+            self.assertFalse(report["upstox_forensics_is_trade_approval"])
+            self.assertEqual(report["annual_strict_pass"],0)
+            self.assertEqual(report["verified_profitable_strategies"],0)
+            self.assertFalse(report["strategy_trading_enabled"])
+            self.assertEqual(report["automatic_groww_order_execution"],
+                             "DISABLED_NO_VALIDATED_STRATEGY")
+
     def test_wrong_report_scope_not_treated_as_source_quality(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
