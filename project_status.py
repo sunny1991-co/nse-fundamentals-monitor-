@@ -283,7 +283,21 @@ def snapshot(root: Path | None = None) -> dict:
         **custom_strategy_snapshot(root, runtime),
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
         "sms": worker.get("sms", "PROVIDER_SETUP_REQUIRED"),
-        "upstox": "INTENTIONALLY_DEFERRED",
+        # Offline status from the supervised worker only. Configured != valid
+        # permission, current quote, or eligible-to-trade strategy.
+        "broker_market_data_priority": ["GROWW", "UPSTOX"],
+        "groww_token_status": (
+            "CONFIGURED_NOT_LIVE_VERIFIED"
+            if worker.get("groww_api_token_configured") is True
+            else "NOT_CONFIGURED_OR_WORKER_NOT_UPDATED"
+        ),
+        "upstox_token_status": (
+            "CONFIGURED_READ_ONLY_NOT_LIVE_VERIFIED"
+            if worker.get("upstox_analytics_token_configured") is True
+            else "NOT_CONFIGURED_OR_WORKER_NOT_UPDATED"
+        ),
+        "upstox": "BACKUP_ONLY_NSE_HISTORY_COLLECTOR_DOES_NOT_USE_UPSTOX",
+        "automatic_groww_order_execution": "DISABLED_NO_VALIDATED_STRATEGY",
         "orders": "MANUAL_ONLY",
     }
 
