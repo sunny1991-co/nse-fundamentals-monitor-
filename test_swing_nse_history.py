@@ -173,6 +173,24 @@ class NseHistoryTests(unittest.TestCase):
             finally:
                 db.close()
 
+    def test_revised_nse_holidays_clear_known_archive_gaps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = init_db(Path(directory) / "history.sqlite")
+            try:
+                # 28-Jun-2023 traded; the Bakri Id holiday was revised to 29-Jun.
+                self.assertEqual(
+                    pending_weekdays(db, date(2023, 6, 28), date(2023, 6, 28)),
+                    [date(2023, 6, 28)],
+                )
+                for holiday in (
+                    date(2023, 6, 29),
+                    date(2024, 5, 20),
+                    date(2024, 11, 20),
+                ):
+                    self.assertEqual(pending_weekdays(db, holiday, holiday), [])
+            finally:
+                db.close()
+
     def test_no_file_on_expected_session_blocks_completion(self):
         with tempfile.TemporaryDirectory() as directory:
             db = init_db(Path(directory) / "history.sqlite")
