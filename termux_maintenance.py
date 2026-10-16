@@ -45,6 +45,10 @@ STEPS = [
     # can request 100. Unverified index/earnings strategies are blocked.
     ("seven_strategy_experiment",
      [sys.executable, str(CODE_ROOT/'swing_seven_strategy_research.py'), '--limit', '40'], 20*60),
+    # New custom hypothesis is separate from the original seven.
+    # Keep this small on phone; historical profitability is NOT validation.
+    ("custom_dip_reclaim_experiment",
+     [sys.executable, str(CODE_ROOT/'swing_custom_strategy_research.py'), '--limit', '20'], 15*60),
 ]
 
 
@@ -123,7 +127,8 @@ def main() -> int:
         for name, command, timeout in STEPS:
             # The repository cannot see private licensed OHLCV. Skip rather than
             # call a synthetic unit test a real-data strategy result.
-            if name in ('trend_pullback_experiment', 'seven_strategy_experiment') and not (
+            if name in ('trend_pullback_experiment', 'seven_strategy_experiment',
+                         'custom_dip_reclaim_experiment') and not (
                 (root/'market_ohlcv.csv').is_file()
                 and (root/'market_data_metadata.json').is_file()
             ):
