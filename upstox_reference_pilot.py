@@ -9,8 +9,12 @@ sector-screen PASS. No candidate, alert, broker orders or portfolio writes.
     NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_pilot.py --limit 5
 
 Looks for EQUITY_L*.csv under NSE_DATA_DIR and Android's Download directory.
-If no mapping CSV is found, uses one explicitly documented NSE-listed example,
-RELIANCE / INE002A01018 (not an investment recommendation).
+With --sync-instruments, downloads the PUBLIC Upstox NSE BOD instrument master
+(HTTPS GET, no token), builds a current NSE_EQ + EQ-only ISIN reference map
+cross-checked against BOTH local annual baseline symbol sets, then tests five
+distinct matched issuers. This current vendor map is NOT historical NSE
+constituent/mainboard evidence or audited XBRL proof.
+Without a mapping, uses the documented NSE RELIANCE example only.
 """
 from __future__ import annotations
 
@@ -31,6 +35,9 @@ import requests
 
 from research_monitor.paths import CODE_ROOT, data_root
 from research_monitor.schedule import atomic_status
+from research_monitor.upstox_instrument_master import (
+    InstrumentMapUnavailable, sync as sync_instrument_mapping,
+)
 
 load_dotenv(CODE_ROOT / ".env", interpolate=False)
 
@@ -90,6 +97,7 @@ def choose_symbols(root, limit, mapping=None):
     if isinstance(limit, bool) or not isinstance(limit,int) or not 1 <= limit <= 5:
         raise ValueError("PILOT_MAX_5")
     chosen = {}
+    conflicts = set()
     paths = [Path(mapping)] if mapping is not None else linked_symbols(root)
     eligible = baseline_intersection(root)
     source_path = ""
@@ -114,9 +122,12 @@ def choose_symbols(root, limit, mapping=None):
                 continue
             if eligible and symbol not in eligible:
                 continue
+            if symbol in conflicts:
+                continue
             if symbol in chosen and chosen[symbol] != isin:
-                # Fail closed on duplicate/mismatched ISINs.
+                # Do not allow a later third row to resurrect a conflict.
                 chosen.pop(symbol,None)
+                conflicts.add(symbol)
                 continue
             chosen[symbol] = isin
         if chosen:
@@ -124,8 +135,13 @@ def choose_symbols(root, limit, mapping=None):
     if chosen:
         symbols = sorted(chosen, key=lambda s: hashlib.sha256(
             s.encode("utf-8")).hexdigest())[:limit]
+        provenance = (
+            "UPSTOX_CURRENT_NSE_EQ_BOD_VENDOR_MAP_NOT_MAINBOARD_ATTESTED"
+            if source_path == "upstox_nse_eq_isin_map.csv" else
+            "LOCAL_NSE_EQ_CSV_SOURCE_NOT_INDEPENDENTLY_AUTHENTICATED"
+        )
         return [(s,chosen[s]) for s in symbols], (
-            "LOCAL_NSE_EQ_CSV_SOURCE_NOT_INDEPENDENTLY_AUTHENTICATED:"+source_path
+            provenance+":"+source_path
         )
     if mapping is not None:
         return [], "EXPLICIT_MAPPING_EMPTY_OR_NOT_VERIFIED"
@@ -323,21 +339,53 @@ def run(root, token, limit=5, *, mapping=None, session=None, pause=time.sleep):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit",type=int,default=5)
-    parser.add_argument("--mapping",help="Optional official NSE EQ list CSV with SYMBOL, ISIN and SERIES")
+    parser.add_argument("--mapping",help="Optional user-provided NSE EQ symbol/ISIN CSV")
+    parser.add_argument(
+        "--sync-instruments",action="store_true",
+        help="Download public Upstox NSE BOD master, use matched NSE_EQ + EQ ISINs"
+    )
     args=parser.parse_args()
     if not 1<=args.limit<=5:
         parser.error("--limit must be between 1 and 5")
+    if args.mapping and args.sync_instruments:
+        parser.error("Use either --mapping OR --sync-instruments")
     root=data_root()
     token=os.environ.get("UPSTOX_ANALYTICS_TOKEN","")
     if not token:
         raise SystemExit("UPSTOX_ANALYTICS_TOKEN_NOT_CONFIGURED_IN_LOCAL_ENV")
-    report=run(root,token,args.limit,mapping=args.mapping)
+    mapping=args.mapping
+    instrument_summary=None
+    if args.sync_instruments:
+        try:
+            instrument_summary=sync_instrument_mapping(root)
+        except InstrumentMapUnavailable as exc:
+            # Fail closed: do not convert a failed 5-stock sync into another
+            # one-RELIANCE apparent success.
+            raise SystemExit(str(exc)) from None
+        mapping=instrument_summary["mapping_path"]
+    report=run(root,token,args.limit,mapping=mapping)
+    if instrument_summary is not None:
+        report["current_vendor_instrument_mapping"]={
+            k:instrument_summary[k] for k in (
+                "overlapping_baseline_symbols",
+                "nse_segment_eq_rows",
+                "verified_by_vendor_crosswalk",
+                "unmatched_baseline_intersection",
+                "conflicting_symbols","conflicting_isins",
+                "source_sha256",
+                "verified_mainboard_history",
+                "nse_xbrl_verified",
+            )
+        }
     folder=root/"runtime"/"experiments"/VERSION
     folder.mkdir(parents=True,exist_ok=True)
     atomic_status(folder/"report.json",report)
     print(json.dumps({
         "scope":report["scope"],
         "mapping_status":report["mapping_status"],
+        "current_vendor_instrument_mapping":report.get(
+            "current_vendor_instrument_mapping"
+        ),
         "tested_symbols":report["tested_symbols"],
         "requests_success":report["requests_success"],
         "stopped_for_api_block":report["stopped_for_api_block"],
