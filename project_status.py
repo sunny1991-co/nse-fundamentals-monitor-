@@ -202,6 +202,15 @@ def snapshot(root: Path | None = None) -> dict:
         runtime / "experiments" / "upstox-nse-historical-reference-v1"
         / "upstox-reference-batches-v1" / "last_manual_catchup.json"
     )
+    swing_assistant_scan = read_json(
+        runtime / "assistant_scan_status.json"
+    )
+    swing_assistant_quote = read_json(
+        runtime / "assistant_quote_research_status.json"
+    )
+    swing_assistant_paper = read_json(
+        runtime / "assistant_paper_execution_status.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -311,6 +320,25 @@ def snapshot(root: Path | None = None) -> dict:
         "research_strategies_compared": research_strategies,
         "verified_profitable_strategies": 0,
         "strategy_trading_enabled": False,
+        "explainable_swing_assistant_strategy":
+            "quality-leader-contraction-breakout-v1",
+        "swing_assistant_scan_state":swing_assistant_scan.get(
+            "state","NOT_YET_RUN"
+        ),
+        "swing_assistant_research_watchlist": int_value(
+            swing_assistant_scan.get("watchlist_count",0)
+        ) if swing_assistant_scan.get("scope")==(
+            "EXPLAINABLE_EOD_SWING_ASSISTANT_PAPER_RESEARCH_V1"
+        ) else 0,
+        "swing_assistant_quote_research_state":swing_assistant_quote.get(
+            "state","NOT_YET_RUN"
+        ),
+        "swing_assistant_paper_state":swing_assistant_paper.get(
+            "state","NOT_YET_RUN"
+        ),
+        "swing_assistant_approval_input":"OWNER_YES_NO_PLUS_INTEGER_QUANTITY",
+        "swing_assistant_approval_effect":"PAPER_ONLY_NO_LIVE_TRADES",
+        "groww_cnc_protective_exits_reconciled":False,
         **seven_strategy_snapshot(root, runtime),
         **custom_strategy_snapshot(root, runtime),
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
