@@ -136,6 +136,53 @@ run_fast_fundamentals() {
   "$PYTHON_BIN" "$PROJECT_DIR/project_status.py"
 }
 
+run_backup() {
+  bootstrap_data
+  was_running=0
+  if is_running || pid_running "$LEGACY_PID_FILE"; then
+    was_running=1
+    stop_backend
+  fi
+  if "$PYTHON_BIN" "$PROJECT_DIR/termux_backup.py" backup \
+      --code-root "$PROJECT_DIR" --data-root "$DATA_DIR"; then
+    code=0
+  else
+    code=$?
+  fi
+  if [ "$was_running" -eq 1 ]; then
+    start_backend
+  fi
+  return "$code"
+}
+
+restore_backup() {
+  backup_file="${2:-}"
+  if [ -z "$backup_file" ]; then
+    echo "Usage: $0 restore-backup /full/path/to/backup.nsebak"
+    return 2
+  fi
+  stop_backend
+  "$PYTHON_BIN" "$PROJECT_DIR/termux_backup.py" restore \
+    --code-root "$PROJECT_DIR" --data-root "$DATA_DIR" --input "$backup_file"
+  bootstrap_data
+  install_boot
+  start_backend
+  show_status
+}
+
+recover_project() {
+  echo "Repairing Git-tracked code from origin/main while preserving private data and .env."
+  stop_backend
+  git fetch origin main
+  git reset --hard origin/main
+  "$PYTHON_BIN" -m pip install -r "$PROJECT_DIR/requirements.txt"
+  bootstrap_data
+  install_boot
+  start_backend
+  sleep 3
+  show_status
+}
+
 run_maintenance() {
   bootstrap_data
   was_running=0
@@ -188,12 +235,15 @@ case "${1:-status}" in
   status) show_status ;;
   once) run_once ;;
   fast-fundamentals) run_fast_fundamentals ;;
+  backup) run_backup ;;
+  restore-backup) restore_backup "$@" ;;
+  recover) recover_project ;;
   maintenance) run_maintenance ;;
   init-data) bootstrap_data ;;
   install-boot) install_boot ;;
   uninstall-boot) uninstall_boot ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|maintenance|init-data|install-boot|uninstall-boot}"
+    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|backup|restore-backup|recover|maintenance|init-data|install-boot|uninstall-boot}"
     exit 2
     ;;
 esac
