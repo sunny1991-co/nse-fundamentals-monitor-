@@ -25,6 +25,23 @@ from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
 
+def publish_worker_status(path: Path, value: dict, owner_only: bool = False) -> bool:
+    """Publish status without allowing an older worker to overwrite a newer one."""
+    pid = os.getpid()
+    if owner_only:
+        try:
+            current = json.loads(path.read_text(encoding='utf-8'))
+            current_pid = current.get('pid')
+            if current_pid not in (None, pid):
+                return False
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    payload = dict(value)
+    payload['pid'] = pid
+    atomic_status(path, payload)
+    return True
+
+
 def run_post_publish_validation(root: Path, env: dict, log) -> dict:
     """Run the fixed-rule backtest once per newly published history SHA."""
     metadata_path = root/'market_data_metadata.json'
@@ -136,10 +153,9 @@ def main() -> int:
     env.pop('UPSTOX_ANALYTICS_TOKEN', None)
     env['SMS_ENABLED'] = '0'
 
-    atomic_status(status_path, {
+    publish_worker_status(status_path, {
         'updated_at': datetime.now(timezone.utc).isoformat(),
         'state': 'STARTING',
-        'pid': os.getpid(),
         'upstox': 'NOT_USED',
         'orders': 'MANUAL_ONLY',
     })
@@ -152,10 +168,9 @@ def main() -> int:
 
         while not stopping:
             started = datetime.now(timezone.utc).isoformat()
-            atomic_status(status_path, {
+            publish_worker_status(status_path, {
                 'updated_at': started,
                 'state': 'COLLECTING',
-                'pid': os.getpid(),
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
             })
@@ -218,10 +233,9 @@ def main() -> int:
                     post_publish = {'state': 'POST_PUBLISH_LOG_ERROR'}
 
             next_run = time.time() + INTERVAL_SECONDS
-            atomic_status(status_path, {
+            publish_worker_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'SLEEPING',
-                'pid': os.getpid(),
                 'collector_returncode': code,
                 'collector_state': collector.get('state', 'STATUS_UNAVAILABLE'),
                 'remaining_weekdays': int(
@@ -242,12 +256,12 @@ def main() -> int:
                 os.killpg(active_child.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-        atomic_status(status_path, {
+        publish_worker_status(status_path, {
             'updated_at': datetime.now(timezone.utc).isoformat(),
             'state': 'STOPPED',
             'upstox': 'NOT_USED',
             'orders': 'MANUAL_ONLY',
-        })
+        }, owner_only=True)
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         lock.close()
 
