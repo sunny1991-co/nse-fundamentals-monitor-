@@ -362,6 +362,11 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
         match_alias={a.lower() for a in ALIASES[metric]}
         instant_metric=(metric=="total_assets")
         candidates=[]
+        # XBRL 2.1 permits issuer-defined <identifier scheme> URIs.
+        # A SEBI/BSE scheme is not an invalid source fact; it only leaves
+        # independent issuer attribution unproven. Keep these raw facts in
+        # a separate evidence bucket, never in the strictly eligible set.
+        source_repro_candidates=[]
         rejected_wrong_unit=0
         rejected_other_dimension=0
         rejected_identifier=0
@@ -409,6 +414,17 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             elif ctx["identifier_status"]!="NSE_SYMBOL_MATCHED":
                 reason="CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED"
                 rejected_identifier+=1
+            if reason=="CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED":
+                source_repro_candidates.append({
+                    "tag":tag,
+                    "context_id":node.attrib.get("contextRef"),
+                    "crore":crore,
+                    "basis":ctx["basis"],
+                    "issuer_scheme_classes":
+                        ctx["identifier_scheme_labels"],
+                    "in_archived_context":
+                        node.attrib.get("contextRef") in archived_context_ids,
+                })
             if reason:
                 identity_evidence_counts[ctx["document_cin_relation"]]+=1
                 if _number(official) is not None and abs(crore-_number(official))<=0.0001:
@@ -448,12 +464,43 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
         distinct={row["crore"] for row in candidates}
         matches=[r for r in candidates if _number(official) is not None
                  and abs(r["crore"]-_number(official))<=0.0001]
+        other_scheme_distinct={r["crore"] for r in source_repro_candidates}
+        provenance_schemes={
+            cls for row in source_repro_candidates
+            for cls in row["issuer_scheme_classes"]
+        }
+        recognized_origin_only=bool(provenance_schemes) and all(
+            label in (
+                "SEBI_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF",
+                "BSE_SCHEME_URI_NOT_INDEPENDENT_ISSUER_PROOF",
+            )
+            for label in provenance_schemes
+        )
+        raw_reference_reproduced=bool(
+            not candidates
+            and source_repro_candidates
+            and common_context_issuer
+            and recognized_origin_only
+            and basis_safe and symbol_safe
+            and len(other_scheme_distinct)==1
+            and _number(official) is not None
+            and abs(next(iter(other_scheme_distinct))-_number(official))<=0.0001
+            and any(row["in_archived_context"] for row in source_repro_candidates)
+        )
         uncertain_basis=any(r["context_basis"]!="CONSOLIDATED"
                             for r in candidates)
         if not basis_safe or not symbol_safe:
             verdict="DOCUMENT_REPORTING_BASIS_OR_SYMBOL_NOT_PROVEN"
         elif len(unique_entity_identifiers)>1:
             verdict="DOCUMENT_CONTEXT_ENTITY_IDENTIFIERS_CONFLICT"
+        elif raw_reference_reproduced:
+            # Numerically reproduced from the OFFICIAL NSE-hosted raw XML,
+            # but the SEBI/BSE context scheme does NOT independently prove
+            # which legal issuer the context identifies. Never count this
+            # as verified audited-consolidated or provider accuracy.
+            verdict="OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING"
+        elif not candidates and len(other_scheme_distinct)>1:
+            verdict="OTHER_SCHEME_CONFLICTING_XBRL_FACTS_REQUIRE_REVIEW"
         elif not candidates and rejected_matching_archived:
             verdict="ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
         elif not candidates and rejected_matching_original:
@@ -476,6 +523,16 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
             "candidate_distinct_crore_values":sorted(distinct)[:16],
             "candidate_tags":sorted({r["tag"] for r in candidates}),
             "raw_nse_value_found_among_candidates":bool(matches),
+            "official_xml_reference_inr_exact_period_count":
+                len(source_repro_candidates),
+            "official_xml_reference_distinct_crore_values":
+                sorted(other_scheme_distinct)[:16],
+            "official_xml_reference_context_from_archived_selector":
+                any(r["in_archived_context"] for r in source_repro_candidates),
+            "official_xml_value_reproduced_pending_issuer_link":
+                raw_reference_reproduced,
+            "issuer_identity_independently_verified":False,
+            "strict_audited_consolidated_fact_attested_by_this_audit":False,
             "unverified_context_basis_count":sum(
                 r["context_basis"]!="CONSOLIDATED" for r in candidates
             ),
