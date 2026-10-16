@@ -179,6 +179,10 @@ def snapshot(root: Path | None = None) -> dict:
         runtime / "experiments" / "upstox-nse-historical-reference-v1"
         / "upstox-reference-batches-v1" / "last_batch.json"
     )
+    vendor_quality = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "reconciliation" / "summary.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -318,6 +322,17 @@ def snapshot(root: Path | None = None) -> dict:
             vendor_reference_batch.get("remaining_uncollected", 0)
         ),
         "upstox_vendor_reference_not_audited": True,
+        "upstox_vs_verified_nse_comparisons": int_value(
+            vendor_quality.get("metric_comparisons", 0)
+        ) if vendor_quality.get("scope")==(
+            "NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1"
+        ) else 0,
+        "upstox_vs_nse_companies_needing_source_review": int_value(
+            vendor_quality.get("companies_needing_vendor_vs_nse_review", 0)
+        ) if vendor_quality.get("scope")==(
+            "NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1"
+        ) else 0,
+        "upstox_reconciliation_is_offline_reference_only": True,
         "upstox": "BACKUP_ONLY_NSE_HISTORY_COLLECTOR_DOES_NOT_USE_UPSTOX",
         "automatic_groww_order_execution": "DISABLED_NO_VALIDATED_STRATEGY",
         "orders": "MANUAL_ONLY",
