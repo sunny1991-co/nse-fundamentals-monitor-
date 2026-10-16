@@ -109,6 +109,7 @@ def _refresh_only_expired_mapping(root, now):
     map is known to be older than seven days; any ISIN changes in already
     checkpointed companies still trigger a manual audit on collection.
     """
+    root=Path(root)
     try:
         return verified_reference_map(root, now=now)
     except ReferenceBatchError as exc:
