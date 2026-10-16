@@ -134,9 +134,10 @@ def target_symbols(root: Path = ROOT) -> set[str]:
 def candidate_urls(day: date) -> list[tuple[str, str]]:
     ddmmyyyy = day.strftime("%d%m%Y")
     yyyymmdd = day.strftime("%Y%m%d")
+    mon = day.strftime("%b").upper()
     legacy = (
-        f"https://nsearchives.nseindia.com/content/historical/EQUITIES/"
-        f"{day:%Y}/{day:%b}".upper() + f"/cm{day:%d%b%Y}bhav.csv.zip".upper()
+        "https://nsearchives.nseindia.com/content/historical/EQUITIES/"
+        f"{day:%Y}/{mon}/cm{day:%d}{mon}{day:%Y}bhav.csv.zip"
     )
     full = f"https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{ddmmyyyy}.csv"
     udiff = f"https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip"
