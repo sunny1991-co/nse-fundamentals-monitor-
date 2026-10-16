@@ -108,6 +108,59 @@ def seven_strategy_snapshot(root: Path, runtime: Path) -> dict:
 
 
 
+
+def custom_strategy_snapshot(root: Path, runtime: Path) -> dict:
+    """Local status only; stale custom research cannot imply profitable trading."""
+    result = {
+        "custom_strategy_research": "NOT_RUN",
+        "custom_strategy_name": "custom-dip-reclaim-v1",
+        "custom_strategy_completed_trades": None,
+        "custom_strategy_mean_completed_net_return": None,
+        "custom_strategy_research_leader": None,
+        "custom_strategy_live_eligible": False,
+    }
+    report = read_json(
+        runtime / "experiments" / "custom-dip-reclaim-research-v1" / "comparison.json"
+    )
+    if not report:
+        return result
+    result["custom_strategy_research"] = "STALE_OR_UNVERIFIED_RESEARCH_REPORT"
+    digest = read_json(root / "market_data_metadata.json").get("sha256")
+    paths = (
+        "swing_custom_strategy_research.py", "swing_backtest.py",
+        "swing_strategy.py", "swing_pullback_research.py",
+        "research_monitor/exploratory_ranking.py",
+    )
+    try:
+        current_code_hash = hashlib.sha256(b"".join(
+            (CODE_ROOT / name).read_bytes() for name in paths
+        )).hexdigest()
+    except OSError:
+        return result
+    if not (
+        digest and report.get("data_sha256") == digest
+        and report.get("implementation_sha256") == current_code_hash
+        and report.get("scope") == "CUSTOM_STRATEGY_EXPLORATORY_NOT_VALIDATED"
+        and report.get("validation_status") == "NOT_VALIDATED"
+        and report.get("live_eligible") is False
+        and report.get("orders") == "DISABLED"
+        and report.get("verified_profitable_strategies") == 0
+    ):
+        return result
+    values = (report.get("summary") or {}).get("custom-dip-reclaim-v1") or {}
+    selection = report.get("research_selection") or {}
+    result.update(
+        custom_strategy_research="CURRENT_EXPLORATORY_NOT_VALIDATED",
+        custom_strategy_completed_trades=values.get("pooled_completed_trades"),
+        custom_strategy_mean_completed_net_return=values.get(
+            "pooled_completed_mean_net_return"
+        ),
+        custom_strategy_research_leader=selection.get("research_leader"),
+    )
+    return result
+
+
+
 def snapshot(root: Path | None = None) -> dict:
     root = Path(root or data_root())
     runtime = root / "runtime"
@@ -227,6 +280,7 @@ def snapshot(root: Path | None = None) -> dict:
         "verified_profitable_strategies": 0,
         "strategy_trading_enabled": False,
         **seven_strategy_snapshot(root, runtime),
+        **custom_strategy_snapshot(root, runtime),
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
         "sms": worker.get("sms", "PROVIDER_SETUP_REQUIRED"),
         "upstox": "INTENTIONALLY_DEFERRED",
