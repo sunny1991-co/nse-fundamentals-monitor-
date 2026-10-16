@@ -22,14 +22,31 @@ def features(d):
     c, v = d.Close, d.Volume
     d['ATR'], d['ADX'] = atr_adx(d)
     d['RSI'] = rsi(c)
+    d['Stop'] = np.minimum(d.Low.rolling(10).min(), c-2*d.ATR)
+    d['Signal'] = signal_conditions(d).all(axis=1)
+    return d
+
+
+def signal_conditions(d):
+    """The original breakout-v1 conjunction, exposed for diagnostic attribution."""
+    c, v = d.Close, d.Volume
     e20, e50, e200 = ema(c,20), ema(c,50), ema(c,200)
     macd = ema(c,12)-ema(c,26)
-    d['Stop'] = np.minimum(d.Low.rolling(10).min(), c-2*d.ATR)
-    d['Signal'] = ((c>e20)&(e20>e50)&(e50>e200)&d.RSI.between(50,72)
-        &(macd>ema(macd,9))&(d.ADX>=20)&(c>d.High.shift().rolling(20).max())
-        &(v>=1.3*v.rolling(20).mean())&((c*v).rolling(20).mean()>=5e7)
-        &(d.ATR>0)&((c-d.Stop)/c<=.12)&(d.Stop>0))
-    return d
+    return pd.DataFrame({
+        'CLOSE_ABOVE_EMA20': c > e20,
+        'EMA20_ABOVE_EMA50': e20 > e50,
+        'EMA50_ABOVE_EMA200': e50 > e200,
+        'RSI_50_TO_72': d.RSI.between(50,72),
+        'MACD_ABOVE_SIGNAL': macd > ema(macd,9),
+        'ADX_AT_LEAST_20': d.ADX >= 20,
+        'CLOSE_ABOVE_PRIOR_20_DAY_HIGH': c > d.High.shift().rolling(20).max(),
+        'VOLUME_AT_LEAST_1_3X': v >= 1.3*v.rolling(20).mean(),
+        'MEAN_DAILY_TURNOVER_AT_LEAST_5_CRORE': (c*v).rolling(20).mean() >= 5e7,
+        'ATR_POSITIVE': d.ATR > 0,
+        'STOP_DISTANCE_AT_MOST_12_PERCENT': (c-d.Stop)/c <= .12,
+        'STOP_POSITIVE': d.Stop > 0,
+    }, index=d.index).fillna(False)
+
 
 def simulate(d, start, end, cost=COST, slip=SLIP, liquidate_at_end=True, with_state=False):
     """Next-open entry; stop first if a daily bar touches both stop and target.

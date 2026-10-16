@@ -1,5 +1,31 @@
 # Project progress — 16 October 2026
 
+## Filter-level signal investigation
+
+Owner supplied signal audit: 660 history-eligible stocks, 273,570 holdout-day
+observations, 357 signals and at most 238 eligible next-open entries ignoring
+occupied positions. 475 stocks have no signals; 518 have no eligible entries;
+142 have only 1–9. No stock can meet the fixed 30-completed-trade threshold on
+this dataset with the current rules. This does not prove future unprofitability.
+
+Added per-filter independent pass counts and a sequential rejection breakdown to
+`swing_signal_audit.py`, plus missing indicator and zero-volume counts. Signal
+conditions are shared with the backtest, not an alternative strategy. Synthetic
+regression checks confirm exact equivalence with the old boolean expression,
+past indicators unchanged by future bars, basic RSI edge cases, and ATR gaps.
+169 local tests passed. No calculation error has been demonstrated by these tests;
+actual phone filter counts are still needed. Criteria and trading behavior stay
+unchanged. Compact read-only command:
+
+```sh
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_signal_audit.py --filters-only
+```
+
+Since the existing holdout is now being inspected for strategy design, it cannot
+serve as untouched validation for any future revised strategy. A new strategy
+requires independent evaluation and forward observations, not threshold tuning
+until the same historical stocks pass.
+
 ## Signal-entry audit and industry-source investigation
 
 Owner diagnostics confirm all 660 history-eligible symbols have fewer than 30
