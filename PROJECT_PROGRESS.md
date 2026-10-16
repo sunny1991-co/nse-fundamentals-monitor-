@@ -1,5 +1,73 @@
 # Project progress — 16 October 2026
 
+## Accuracy-first forensic reconciliation + optional bounded catch-up — 16 October 2026
+
+User's latest real local output:
+- 80 Upstox NSE_EQ vendor reference companies checked.
+- 624 original-source/financial-year metric slots: 561 within
+  tolerance, 36 source discrepancies across 25 issuers, 11 missing
+  vendor values and 16 missing NSE original values; another 16 slots
+  had no independently source-verified NSE fiscal year.
+- Disagreements by metrics: **23 revenue, 9 operating cash flow, 4 net
+  profit, and 0 total assets**.
+- High-priority review labels, **not bad-stock or trading rankings**:
+  KRIDHANINF (147.928%, possible sign/zero conflict), NECLIFE (100%,
+  sign/zero conflict), LUPIN (85.668%), 63MOONS (80.168%).
+  No finding is a proven source error until the actual XBRL tags,
+  statement units/definitions and vendor methodology are inspected.
+- Original FY2024–25 and FY2025–26 files, provider token, official
+  sector classifications and all trading decisions remain unchanged.
+
+Built `upstox_reference_forensics.py` for an **offline per-cell forensic
+comparison** of the prior source-hashed, original-NSE-verified reconciliation.
+It rechecks both source file hashes, prior comparison SHA256, matching ISIN
+and saved Upstox values, exact original NSE XBRL URL and published date, and
+exact numeric arithmetic. For each discrepancy it records NSE/Upstox crore
+values, year, sector label (reference only), metric, gap, original NSE
+filing URL and unverified possible explanations. Only **hypotheses**:
+revenue versus original NSE total income, net profit versus original NSE
+PBT, adjacent financial year, sign inversion, or factor-of-10/100; otherwise
+flags **UNEXPLAINED_REQUIRES_ORIGINAL_FILING_REVIEW**. No inferred
+explanation can adjust NSE XBRL, vendor facts, source verification or
+trade status. Outputs are private at `runtime/experiments/
+upstox-nse-historical-reference-v1/upstox-reference-batches-v1/
+reconciliation/source_discrepancy_forensics.csv`.
+The same offline triage now runs after each successful daily
+reconciliation and source review queue, but has no access to order APIs.
+
+Added optional `upstox_reference_catchup.py` for **owner-invoked,
+bounded, read-only catch-up**: at most **100 new company attempts**, in
+four serial independent batches of at most 25 with a 10-second rest between
+batches, using the existing checkpoint and per-batch exclusive lock.
+A 401/403/429, 5xx, network failure, bad mapping, no-success batch,
+or contradictory trading status **stops the session**. This manual feature
+**does not increase the existing automated 25/day hard cap**.
+Upstox's documented standard API rate limits are 50/sec, 500/min and
+2000/30m (see official developer rate-limiting documentation); do not
+assume the Fundamentals category has an independently guaranteed quota,
+and treat actual 429 responses as authoritative. The manual option is
+to help finish existing 1,270 current NSE_EQ company references faster
+*without* automated aggressive concurrency or changing trading rules.
+
+Owner's next Termux commands (single line, offline audit first then up
+to 100 additional companies only if choosing fast manual catch-up):
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull && bash termux_backend.sh restart && NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_reconcile.py && NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_review.py && NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_forensics.py --top 10
+```
+
+Optional **separate** manually initiated data catch-up:
+```bash
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_catchup.py --companies 100
+```
+
+The mandatory next truth gate is **original audited consolidated NSE
+financial statements for fiscal years 2022–23 and 2023–24**, official NSE
+sector classifications, complete company-specific accounting definitions,
+corporate action data QA and profitable cost-inclusive forward out-of-sample
+strategy validation. None have been silently waived. Read-only research
+and paper-trading framework continue. Live orders remain DISABLED.
+
 ## Measured Upstox/NSE source comparisons and prioritized review queue — 16 October 2026
 
 The owner successfully ran the offline `upstox_reference_reconcile.py` on
