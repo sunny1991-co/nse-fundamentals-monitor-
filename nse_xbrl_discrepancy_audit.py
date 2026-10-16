@@ -452,6 +452,8 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values,
                             for r in candidates)
         if not basis_safe or not symbol_safe:
             verdict="DOCUMENT_REPORTING_BASIS_OR_SYMBOL_NOT_PROVEN"
+        elif len(unique_entity_identifiers)>1:
+            verdict="DOCUMENT_CONTEXT_ENTITY_IDENTIFIERS_CONFLICT"
         elif not candidates and rejected_matching_archived:
             verdict="ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
         elif not candidates and rejected_matching_original:
@@ -674,6 +676,11 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-files",type=int,default=4)
+    parser.add_argument(
+        "--summary",action="store_true",
+        help="Only print scheme/value-shape/issuer consistency and verdict; "
+             "the complete private JSON remains available locally",
+    )
     args=parser.parse_args()
     try:
         result=drilldown(data_root(),max_files=args.max_files)
@@ -712,6 +719,26 @@ def main():
         "strict_fundamental_pass_changes":0,
         "live_orders":"DISABLED",
     }
+    if args.summary:
+        display["source_samples"]=[{
+            "symbol":row["symbol"],
+            "financial_year":row["financial_year"],
+            "fetch_state":row["fetch_state"],
+            "xml_context_identifier_scheme_classes":
+                row.get("xml_context_identifier_scheme_classes",{}),
+            "xml_context_identifier_value_shape_classes":
+                row.get("xml_context_identifier_value_shape_classes",{}),
+            "xml_distinct_context_issuer_identifier_count":
+                row.get("xml_distinct_context_issuer_identifier_count"),
+            "xbrl_contexts_use_same_self_declared_issuer":
+                row.get("xbrl_contexts_use_same_self_declared_issuer"),
+            "metric_verdicts":{
+                metric:metric_data.get("verdict")
+                for metric,metric_data in (
+                    row.get("metric_source_inspection") or {}
+                ).items()
+            },
+        } for row in display["source_samples"]]
     print(json.dumps(display,indent=2))
     print(
         "Private original filing drilldown:",
