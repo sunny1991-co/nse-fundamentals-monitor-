@@ -1,5 +1,33 @@
 # Project progress — 16 October 2026
 
+## Research-only strategy comparison and ranking (16 October 2026)
+
+- The daily Termux research maintenance now compares the same deterministic
+  100-stock sample of **breakout-v1** and **trend-pullback-research-v1**, if
+  private validated adjusted OHLCV is present. No GitHub runner has that
+  private CSV and GitHub unit tests do **not** establish real-market returns.
+- Completed-trade net results now exclude forced end-of-sample liquidations;
+  original figures including those forced exits remain separately labeled.
+  Normal and doubled costs/slippage and source/implementation hashes are kept.
+- New `research_monitor/exploratory_ranking.py` describes a research leader
+  only if **at least 30 pooled completed trades in each cost run**, **at least
+  10 symbols with completed trades**, positive completed net means including
+  double-cost stress, profit factor >=1.5, and worst per-stock drawdown <=20%.
+  Its ranking metric is completed net mean under doubled costs. Even if these
+  screening gates pass, any leader is marked **EXPLORATORY** and **NOT
+  VALIDATED**. Pooled overlapping trades are not portfolio returns.
+- `project_status.py` reports the exploratory leader only when both current
+  input metadata hash and implementation SHA match the local experiment report.
+  Stale results are blocked. Verified profitable strategies remain **0**
+  and **no automatic trading, candidate promotion, SMS or order execution**
+  is introduced.
+- GitHub Actions unit/regression/cloud smoke checks pass for this logic using
+  synthetic examples. A real 100-stock run on the private Termux OHLCV, real
+  profitability result, independent fresh evaluation, point-in-time fundamental
+  screening, and forward paper observations have **not** been independently
+  confirmed. The user's earlier 20-stock local result (11 completed pullback
+  trades) is insufficient for proof.
+
 ## Separate trend-pullback experiment — not enabled for trading
 
 Added `swing_pullback_research.py` with frozen, explicit research-v1 rules:
