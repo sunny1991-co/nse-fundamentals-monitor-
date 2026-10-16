@@ -1,5 +1,32 @@
 # Project progress — 16 October 2026
 
+## Signal-entry audit and industry-source investigation
+
+Owner diagnostics confirm all 660 history-eligible symbols have fewer than 30
+completed holdout trades; 423 more lack 1,260 bars. Nonpositive mean returns can
+include no-trade samples and must not be described as 614 losing strategies.
+Added `swing_signal_audit.py`: reads validated local OHLCV, counts prior-bar
+signals and next-open entry rejections in the unchanged 30% holdout. Counts every
+potential entry irrespective of existing positions, so eligible counts are upper
+bounds, never completed trades. It makes no network calls or writes and does not
+run the five backtest simulations. Phone execution is still needed for real counts.
+
+```sh
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_signal_audit.py
+```
+
+The exact entry rule uses the next open plus 0.1% illustrative slippage, accepts
+only prices between signal close and 1% above it, and rejects stop distance above
+12%. No change to these rules or pass thresholds has been made.
+
+Official alternative source tested on 16 October 2026:
+https://nsearchives.nseindia.com/content/indices/ind_niftytotalmarket_list.csv
+returned HTTP 200 and 755 rows with Company Name, Industry, Symbol, Series and
+ISIN Code. This offers partial classification for an index subset, not the full
+four-level classification of all target companies. It has NOT been substituted
+for the strict sector gate; broad labels could miss specialist-sector exceptions.
+Full local regression suite including signal-audit tests: 164 tests passed.
+
 ## Termux evidence supplied by owner — 16 October 2026, around 14:06 IST
 
 The phone's pasted status reports adjusted NSE history published for 1,083 symbols
