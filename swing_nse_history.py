@@ -53,6 +53,7 @@ DEFAULT_START = date(2020, 1, 1)
 MAX_DAYS_PER_RUN = 300
 MAX_MINUTES = 40
 MAX_CONSECUTIVE_NO_FILE = 5
+MAX_NO_FILE_RETRIES = 3
 
 PRICE_COLUMNS = ["Symbol", "Date", "Open", "High", "Low", "Close", "Volume"]
 
@@ -91,7 +92,8 @@ def init_db(path: Path = DB) -> sqlite3.Connection:
         );
         CREATE TABLE IF NOT EXISTS days(
           day TEXT PRIMARY KEY, status TEXT NOT NULL, source_url TEXT, source_sha256 TEXT,
-          rows INTEGER NOT NULL DEFAULT 0, checked_at TEXT NOT NULL, error TEXT
+          rows INTEGER NOT NULL DEFAULT 0, checked_at TEXT NOT NULL, error TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS actions(
           symbol TEXT NOT NULL, ex_date TEXT NOT NULL, purpose TEXT NOT NULL,
@@ -106,6 +108,10 @@ def init_db(path: Path = DB) -> sqlite3.Connection:
         );
         """
     )
+    day_columns = {row[1] for row in db.execute("PRAGMA table_info(days)")}
+    if "attempts" not in day_columns:
+        db.execute("ALTER TABLE days ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+        db.commit()
     return db
 
 
@@ -369,23 +375,26 @@ def fetch_one_day(session: requests.Session, day: date, symbols: set[str]) -> tu
 
 
 def pending_weekdays(db: sqlite3.Connection, start: date, end: date) -> list[date]:
-    """Expected NSE archive dates not checked yet.
+    """Expected NSE archive dates still needing collection or bounded retry.
 
-    The legacy function name is kept for compatibility, but reviewed special
-    weekend sessions are included and reviewed full-day holidays are excluded.
+    Reviewed special weekend sessions are included, reviewed full-day holidays
+    are excluded, and expected-session NO_FILE results receive only a bounded
+    number of retries before remaining as an explicit audit blocker.
     """
     terminal = {
-        r[0]: r[1]
+        r[0]: (r[1], int(r[2] or 0))
         for r in db.execute(
-            "SELECT day,status FROM days WHERE day BETWEEN ? AND ?",
+            "SELECT day,status,attempts FROM days WHERE day BETWEEN ? AND ?",
             (start.isoformat(), end.isoformat()),
         )
     }
     out = []
     day = start
     while day <= end:
-        if expected_archive_day(day) and terminal.get(day.isoformat()) not in {"OK", "NO_FILE"}:
-            out.append(day)
+        if expected_archive_day(day):
+            status, attempts = terminal.get(day.isoformat(), (None, 0))
+            if status != "OK" and not (status == "NO_FILE" and attempts >= MAX_NO_FILE_RETRIES):
+                out.append(day)
         day += timedelta(days=1)
     return out
 
@@ -421,9 +430,11 @@ def collect_bars(
         attempted += 1
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         if status == "BLOCKED":
+            prior = db.execute("SELECT attempts FROM days WHERE day=?", (day.isoformat(),)).fetchone()
+            attempts = int(prior[0] or 0) + 1 if prior else 1
             db.execute(
-                "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error) VALUES(?,?,?,?,?,?,?)",
-                (day.isoformat(), "ERROR", url, digest, 0, stamp, error),
+                "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error,attempts) VALUES(?,?,?,?,?,?,?,?)",
+                (day.isoformat(), "ERROR", url, digest, 0, stamp, error, attempts),
             )
             db.commit()
             blocked = True
@@ -431,9 +442,11 @@ def collect_bars(
         if status == "NO_FILE":
             no_file += 1
             consecutive_no_file += 1
+            prior = db.execute("SELECT attempts FROM days WHERE day=?", (day.isoformat(),)).fetchone()
+            attempts = int(prior[0] or 0) + 1 if prior else 1
             db.execute(
-                "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error) VALUES(?,?,?,?,?,?,?)",
-                (day.isoformat(), status, url, digest, 0, stamp, error),
+                "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error,attempts) VALUES(?,?,?,?,?,?,?,?)",
+                (day.isoformat(), status, url, digest, 0, stamp, error, attempts),
             )
             db.commit()
             if consecutive_no_file >= MAX_CONSECUTIVE_NO_FILE:
@@ -445,9 +458,11 @@ def collect_bars(
                 "INSERT OR REPLACE INTO bars(symbol,day,open,high,low,close,volume,source_url,source_sha256) VALUES(?,?,?,?,?,?,?,?,?)",
                 (symbol, d, opn, high, low, close, volume, url, digest),
             )
+        prior = db.execute("SELECT attempts FROM days WHERE day=?", (day.isoformat(),)).fetchone()
+        attempts = int(prior[0] or 0) + 1 if prior else 1
         db.execute(
-            "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error) VALUES(?,?,?,?,?,?,?)",
-            (day.isoformat(), "OK", url, digest, len(rows), stamp, ""),
+            "INSERT OR REPLACE INTO days(day,status,source_url,source_sha256,rows,checked_at,error,attempts) VALUES(?,?,?,?,?,?,?,?)",
+            (day.isoformat(), "OK", url, digest, len(rows), stamp, "", attempts),
         )
         db.commit()
         ok_days += 1
