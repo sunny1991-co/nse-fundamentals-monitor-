@@ -16,7 +16,40 @@ Preserve your existing private `.env` and auth database when updating project fi
 
 Worker polls every 10 seconds while the verified session is open; this is periodic quote monitoring, not tick-by-tick streaming. It checks exchange status separately. Holidays/special hours come from Upstox timings, not a hardcoded Monday-Friday assumption. No token/calendar: CALENDAR_PENDING, no live signal. On a valid non-trading day or after close it runs existing annual/shortlist/technical analysis once; restarting cannot duplicate that job. EOD data must be independently refreshed before research can succeed. Failures are visible in `runtime/analysis.log`; no repeated CPU-heavy retry loop. Current historical loader excludes the current calendar day, so after-close results use prior completed dates until that ingestion policy is updated.
 
-Set `UPSTOX_ANALYTICS_TOKEN` privately in `.env` after account activation. Never paste it in chats or GitHub. `swing_watchlist.json` is an array of independently verified `NSE_EQ|ISIN` instrument keys, max 500; do not infer keys from stock names. Quotes with missing instruments, stale timestamps, invalid prices or wide spreads are not eligible.
+Set `UPSTOX_ANALYTICS_TOKEN` privately in `.env` after account activation. Never paste it in chats or GitHub.
+
+**Safer Termux token setup (16 October 2026):**
+
+```sh
+cd ~/nse-fundamentals-monitor- && git pull
+python upstox_token_setup.py
+```
+
+The script asks for the token using a **hidden terminal prompt** (paste locally,
+press Enter), keeps existing `.env` settings, sets file mode `0600` and
+never prints or commits the secret. It only performs **GET** calls to Upstox
+`market/status/NSE` and the known Reliance NSE_EQ instrument's quote.
+A market that is closed can still pass basic authentication and quote checks;
+this does **not** prove fresh live streaming. `--check` only tests the
+existing token, and `--offline` saves it without network calls. For a
+short-lived OAuth **access token** use `--kind standard`; do not assume it
+lasts 1 year. The Upstox **Analytics Token** is read-only and officially
+valid for one year. It does not require a static IP for the market-data GET
+APIs. Confirm the token is a real Analytics Token before using the default
+`--kind analytics` label.
+
+After successful setup, the existing supervisor needs a restart to read
+the updated environment:
+
+```sh
+bash termux_backend.sh restart
+```
+
+Watchlist, fundamentals, historical data quality, live quote freshness, forward
+paper testing, actual Groww charges, risk/capital limits and SMS approvals
+remain **separate blockers**. No active trade strategy or order execution is
+enabled by credential setup alone.
+ `swing_watchlist.json` is an array of independently verified `NSE_EQ|ISIN` instrument keys, max 500; do not infer keys from stock names. Quotes with missing instruments, stale timestamps, invalid prices or wide spreads are not eligible.
 
 ## SMS
 
