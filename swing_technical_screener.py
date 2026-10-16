@@ -1,4 +1,5 @@
 """Publish only current fundamental-pass AND technical holdout-pass candidates."""
+import argparse
 from research_monitor.paths import data_root
 from pathlib import Path
 import pandas as pd
@@ -8,15 +9,37 @@ from swing_backtest import main as run_backtests, load_market, features, VERSION
 ROOT = data_root()
 OUTPUT = ROOT/'swing_trade_candidates.csv'
 
-def main():
+def current_backtest_matches(raw, digest):
+    path = ROOT/'swing_backtest_report.csv'
+    if not path.is_file() or path.stat().st_size == 0:
+        return False
+    try:
+        report = pd.read_csv(path, dtype=str, keep_default_na=False)
+    except (OSError, pd.errors.EmptyDataError, pd.errors.ParserError):
+        return False
+    if report.empty or 'Symbol' not in report or 'Backtest_Pass' not in report:
+        return False
+    expected = set(raw.Symbol.astype(str))
+    if set(report.Symbol.astype(str)) != expected or report.Symbol.duplicated().any():
+        return False
+    for _, row in report.iterrows():
+        if str(row.get('Reason','')) == 'LESS_THAN_1260_BARS':
+            continue
+        if row.get('Data_SHA256') != digest or row.get('Strategy') != VERSION:
+            return False
+    return True
+
+def main(reuse_current_backtest=False):
     OUTPUT.unlink(missing_ok=True)
     (ROOT/'swing_candidates_manifest.json').unlink(missing_ok=True)
     required_history = (ROOT/'market_ohlcv.csv', ROOT/'market_data_metadata.json')
     if not all(path.is_file() for path in required_history):
         print('WAITING_FOR_VALID_ADJUSTED_HISTORY; no technical candidates published')
         return
-    run_backtests()  # Recompute: never trust a stale external pass flag.
     raw, digest = load_market()
+    if not (reuse_current_backtest and current_backtest_matches(raw, digest)):
+        run_backtests()  # Recompute unless an internally generated matching report is proven current.
+        raw, digest = load_market()
     approved = pd.read_csv(ROOT/'final_fundamental_shortlist.csv', dtype=str)
     if not {'Symbol','Final_Fundamental_Criteria_Pass'}.issubset(approved):
         raise ValueError('Verified final fundamental flags required')
@@ -55,5 +78,8 @@ def main():
     print(f'{len(rows)} evidence-gated candidates; no future win probability claimed')
 
 if __name__=='__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--reuse-current-backtest', action='store_true')
+    args = parser.parse_args()
+    main(reuse_current_backtest=args.reuse_current_backtest)
 
