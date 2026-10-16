@@ -1,5 +1,99 @@
 # Project progress — 16 October 2026
 
+## New explainable equity-swing assistant and owner YES/NO+quantity paper workflow — 16 October 2026
+
+Owner's requested future UX: software automatically chooses strong
+fundamental+technical stock, waits for valid entry band, asks the owner
+only **YES/NO and quantity** before placing any new trade, then manages
+stop/target/trailing/exit without further routine decisions. We built
+the complete **research and PAPER rehearsal** portion of this pattern on
+GitHub with an intentionally hard boundary against live orders.
+
+### What is implemented
+
+- **Quality Leader Contraction Breakout v1** frozen deterministic technical
+  hypothesis: strict NSE audited consolidated current fundamental
+  shortlist, exact-date official NIFTY 50 TRI rising regime, 63-session
+  stock-vs-TRI leadership, rising EMA20/50/200, previous 30-session
+  breakout, volume >=1.2× prior mean, volatility contraction, RSI
+  54–74, ATR 1.2–7%, prior daily turnover >=₹5 crore. Only
+  **long NSE EQ** and **next-session** no-chase entries. Causal
+  research features; no future-data information in signal.
+- Entry proposal includes initial stop 2–10%, 2R and 3R targets,
+  maximum 100 NSE completed sessions (approximately up to 5 months),
+  <=1% *modeled* account stop risk and <=25% position concentration.
+  These are not guaranteed gap-loss limits.
+- New cost-inclusive frozen retrospective research runner reuses
+  existing estimated Groww DELIVERY/CNC charges (incl DP, taxes),
+  next-open/stop-first model, and doubled fee+slippage stress.
+  Previously inspected sample does **not** establish independent
+  profitability. Real validation still zero.
+- Strict daily watchlist only from completed adjustment-attested
+  OHLCV, independently submitted source-attested official NIFTY 50 TRI
+  and **current strict NSE audited fundamental pass**. Vendor Upstox
+  data cannot substitute for official financial records; missing
+  benchmark or screened records yields **no trading proposals**.
+- Read-only market worker matching verified NSE_EQ quotes at entry
+  range automatically creates unique, SHA-bound **PAPER** proposals.
+  Neither a user typing a symbol into the web UI nor an unverified
+  price can create an actionable live trade.
+- Owner-facing MFA/CSRF `/assistant` interface asks only
+  **YES/NO plus explicit whole-share quantity**; defaults are never
+  silently supplied. Approval expires after 5 minutes, cannot be
+  replayed, and approval counts **zero** real orders.
+- Approved paper positions progress through simulated entry,
+  gap-aware stop-first, partial 2R target, final 3R target,
+  completed-candle 2×ATR trailing and 100-session time exit.
+  EOD process insists on all intervening verified calendar sessions
+  and adjusted NSE OHLCV; it never pretends the stop filled during
+  network downtime or replays highs/lows before original owner YES.
+- Integrated in existing supervised Termux maintenance, quote
+  worker and status dashboard, without using trading-capable tokens
+  or any broker order endpoint.
+- Hard-coded research capital ₹1,00,000 is **only a paper size
+  illustration**, not Groww account cash or a personalized position.
+  Quantity entered by user may only be <= paper risk-capped maximum.
+- Synthetic regression tests cover causal data/benchmark,
+  quote/metadata provenance changes, source gaps, stale quotes,
+  replay and invalid quantity, MFA+CSRF, EOD stop-first and
+  100-session time exit. Recent GitHub Actions passed for committed
+  code; unit tests are NOT real-NSE strategy profitability evidence.
+
+### Live Groww remains disabled
+
+Official Groww Trading API can support order placement, status, trade
+fills, and smart orders, but account entitlement must be verified.
+Official documentation supports **CASH+CNC GTT**. It explicitly
+describes **CASH OCO as MIS**, so an OCO suitable for a 1–5-month
+**CNC delivery** equity holding is **not proven**. We will not
+place the real BUY until broker-side stop/target protection for
+CNC, partial fills, exchange order statuses, account balance,
+kill switch, failures/restarts and support for modifying stops
+are proven in a test/live-permissioned environment:
+https://groww.in/trade-api/docs/curl/orders
+https://groww.in/trade-api/docs/curl/smart-orders
+
+Other real-money blockers remain: **zero validated profitable
+strategies**, zero current strict fundamental passes, no independent
+forward paper track record, no confirmed brokerage execution
+permissions, no actively validated SMS/push approval delivery, and
+undocumented phone/Android host availability. None were waived.
+
+### Files and activation
+
+See `SWING_AI_APPROVAL_SYSTEM.md` for all code, limitations and
+acceptance criteria. Installed mobile UI is
+`http://localhost:8787/assistant` after MFA login.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull && bash termux_backend.sh restart
+```
+
+This is the only code activation step required on the phone.
+It **does not** enable a live order or bypass missing fundamentals.
+Daily scan remains empty until strict source-qualified companies
+exist. Approval always denotes a hypothetical paper position.
+
 ## Fixed GitHub XBRL false-exclusion diagnostic for SEBI/BSE issuer schemes — 16 Oct 2026
 
 The owner requested **fix directly on GitHub without further Termux commands**.
