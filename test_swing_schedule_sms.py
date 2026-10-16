@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock
 import requests
 from research_monitor.schedule import phase, claim_job
+from research_monitor.nse_calendar import official_equity_calendar
 from research_monitor.sms import deliver
 from research_monitor.alerts import prepare_alert
 
@@ -18,6 +19,29 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(phase({},datetime.now(timezone.utc)),'CALENDAR_PENDING')
         self.assertEqual(phase(self.calendar,datetime.fromisoformat('2026-10-16T10:00:00+05:30')),'NON_TRADING_DAY')
         self.assertEqual(phase(self.calendar,datetime.fromisoformat('2026-11-01T10:00:00+05:30')),'CALENDAR_PENDING')
+    def test_reviewed_official_nse_calendar_without_broker(self):
+        calendar = official_equity_calendar(2026)
+        self.assertTrue(calendar['verified'])
+        self.assertEqual(
+            phase(calendar, datetime.fromisoformat('2026-10-16T10:00:00+05:30')),
+            'LIVE_MONITORING',
+        )
+        self.assertEqual(
+            phase(calendar, datetime.fromisoformat('2026-10-20T10:00:00+05:30')),
+            'NON_TRADING_DAY',
+        )
+
+    def test_special_session_pending_and_unknown_year_fail_closed(self):
+        calendar = official_equity_calendar(2026)
+        self.assertEqual(
+            phase(calendar, datetime.fromisoformat('2026-11-08T18:00:00+05:30')),
+            'CALENDAR_PENDING',
+        )
+        self.assertEqual(
+            phase(official_equity_calendar(2027), datetime.fromisoformat('2027-01-04T10:00:00+05:30')),
+            'CALENDAR_PENDING',
+        )
+
     def test_restart_does_not_repeat_analysis(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'jobs.sqlite'
