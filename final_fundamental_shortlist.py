@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 import math
 import pandas as pd
+from research_monitor.filing_dates import QUARTERLY_PARSER_VERSION
 
 ROOT = Path(__file__).resolve().parent
 ANNUAL_FILE = ROOT / "annual_fundamental_quality_report.csv"
@@ -71,6 +72,8 @@ def quarterly_source_readiness(path: Path) -> tuple[bool, str]:
     stamp = parse_day(last.get("Run_Date", ""))
     if stamp is None or not 0 <= (date.today() - stamp).days <= 1:
         return False, "QUARTERLY_SOURCE_STATUS_STALE"
+    if str(last.get("Parser_Version", "")) != QUARTERLY_PARSER_VERSION:
+        return False, "QUARTERLY_PARSER_REVERIFICATION_REQUIRED"
     return True, "OK"
 
 
@@ -87,6 +90,10 @@ def latest_three_quarters(rows: pd.DataFrame) -> list[pd.Series]:
 def main():
     annual = read_csv(ANNUAL_FILE)
     quarterly = read_csv(QUARTERLY_FILE)
+    if "Parser_Version" in quarterly.columns:
+        quarterly = quarterly[quarterly["Parser_Version"].astype(str).eq(QUARTERLY_PARSER_VERSION)].copy()
+    else:
+        quarterly = quarterly.iloc[0:0].copy()
     source_ready, source_reason = quarterly_source_readiness(QUARTERLY_SOURCE_STATUS_FILE)
     if not source_ready:
         print(f"Quarterly collector not ready: {source_reason}; final trade eligibility blocked.")
@@ -240,4 +247,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

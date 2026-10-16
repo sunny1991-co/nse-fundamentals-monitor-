@@ -7,6 +7,7 @@ compared. Missing facts remain blank; unknown reporting basis is never guessed.
 from __future__ import annotations
 
 import re
+import math
 import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from typing import Any
 
 import pandas as pd
 import requests
+from research_monitor.filing_dates import parse_filing_date, QUARTERLY_PARSER_VERSION
 
 ROOT = Path(__file__).resolve().parent
 API_URL = "https://www.nseindia.com/api/integrated-filing-results"
@@ -24,7 +26,7 @@ PAGE_SIZE = 500
 MAX_PAGES = 100
 LOOKBACK_DAYS = 560
 MAX_NEW_XBRL_PER_RUN = 9000
-PARSER_VERSION = "5"
+PARSER_VERSION = QUARTERLY_PARSER_VERSION
 MAX_CONSECUTIVE_ACCESS_BLOCKS = 4
 MAX_CONSECUTIVE_DOWNLOAD_ERRORS = 12
 COLLECTION_STATUS_FILE = ROOT / "quarterly_collection_status.csv"
@@ -67,12 +69,7 @@ def local_name(tag: str) -> str:
 
 
 def parse_date(value: Any) -> date | None:
-    if value is None or str(value).strip() in ("", "nan", "NaT", "None"):
-        return None
-    dt = pd.to_datetime(str(value).strip(), errors="coerce", dayfirst=True)
-    if pd.isna(dt):
-        return None
-    return dt.date()
+    return parse_filing_date(value)
 
 
 def xbrl_upload_date(url: str) -> date | None:
@@ -262,7 +259,7 @@ def get_fact(root: ET.Element, aliases: list[str], context_ids: set[str]) -> flo
             value = float(raw)
         except ValueError:
             continue
-        if pd.notna(value):
+        if math.isfinite(value):
             candidates.append((rank[name], value))
     if not candidates:
         return None
@@ -361,6 +358,7 @@ def parse_xbrl(xml_bytes: bytes, record: dict, url: str) -> tuple[dict | None, s
 
     row = {
         "Symbol": record_symbol(record),
+        "Parser_Version": PARSER_VERSION,
         "Quarter_End": quarter_end.isoformat(),
         "Reporting_Basis": TARGET_BASIS,
         "Revenue_Operations_Cr": None,
@@ -416,34 +414,36 @@ def save_frame(df: pd.DataFrame, path: Path) -> None:
 def build_change_report(results: pd.DataFrame) -> pd.DataFrame:
     if results.empty:
         return results
-    frame = results.copy()
+    # Preserve old raw history, but never compare un-reverified parser output.
+    if "Parser_Version" not in results.columns:
+        return results.iloc[0:0].copy()
+    frame = results[results["Parser_Version"].astype(str).eq(PARSER_VERSION)].copy()
+    if frame.empty:
+        return frame
     frame["Quarter_End_Date"] = pd.to_datetime(frame["Quarter_End"], errors="coerce")
     for field in VALUE_FIELDS:
         frame[field] = pd.to_numeric(frame[field], errors="coerce")
-    frame = frame.sort_values(["Symbol", "Quarter_End_Date", "Filing_Published_At"])
+    frame = frame.sort_values(["Symbol", "Quarter_End_Date", "Filing_Published_At"], kind="stable")
+    frame = frame.drop_duplicates(["Symbol", "Quarter_End"], keep="last").reset_index(drop=True)
+    lookup = {(row.Symbol, row.Quarter_End_Date): idx for idx, row in frame.iterrows()}
     for metric, field in METRICS.items():
         frame[f"{metric}_QoQ_Change_Pct"] = None
         frame[f"{metric}_YoY_Change_Pct"] = None
-        for _symbol, indexes in frame.groupby("Symbol").groups.items():
-            idxs = list(indexes)
-            for pos, idx in enumerate(idxs):
-                current_date = frame.at[idx, "Quarter_End_Date"]
-                current_value = frame.at[idx, field]
-                if pd.isna(current_date) or pd.isna(current_value):
+        for idx, row in frame.iterrows():
+            current_date, current_value = row.Quarter_End_Date, row[field]
+            if pd.isna(current_date) or pd.isna(current_value) or not math.isfinite(current_value):
+                continue
+            if not current_date.is_month_end or current_date.month not in (3, 6, 9, 12):
+                continue
+            for months, output in ((3, f"{metric}_QoQ_Change_Pct"), (12, f"{metric}_YoY_Change_Pct")):
+                prior_date = (current_date - pd.DateOffset(months=months)) + pd.offsets.MonthEnd(0)
+                prior_idx = lookup.get((row.Symbol, prior_date))
+                if prior_idx is None:
                     continue
-                for lag, output in ((1, f"{metric}_QoQ_Change_Pct"), (4, f"{metric}_YoY_Change_Pct")):
-                    prior_pos = pos - lag
-                    if prior_pos < 0:
-                        continue
-                    prior_idx = idxs[prior_pos]
-                    prior_date = frame.at[prior_idx, "Quarter_End_Date"]
-                    prior_value = frame.at[prior_idx, field]
-                    if pd.isna(prior_date) or pd.isna(prior_value) or prior_value == 0:
-                        continue
-                    days = (current_date - prior_date).days
-                    allowed = (70 <= days <= 115) if lag == 1 else (330 <= days <= 400)
-                    if allowed:
-                        frame.at[idx, output] = round((current_value / prior_value - 1) * 100, 4)
+                prior_value = frame.at[prior_idx, field]
+                if pd.isna(prior_value) or not math.isfinite(prior_value) or prior_value == 0:
+                    continue
+                frame.at[idx, output] = round((current_value / prior_value - 1) * 100, 4)
     return frame.drop(columns=["Quarter_End_Date"], errors="ignore")
 
 
@@ -463,6 +463,11 @@ def main() -> None:
         existing_processed["Parser_Version"].astype(str).eq(PARSER_VERSION)
         & existing_processed["Status"].astype(str).eq("VERIFIED"), "Source_URL"
     ].astype(str))
+    current_result_urls = set(existing_results.loc[
+        existing_results["Parser_Version"].astype(str).eq(PARSER_VERSION), "Source_URL"
+    ].astype(str)) if {"Parser_Version", "Source_URL"}.issubset(existing_results.columns) else set()
+    processed_urls &= current_result_urls
+    reverify_urls = set(existing_results["Source_URL"].astype(str)) - current_result_urls if "Source_URL" in existing_results else set()
     previous_attempts = {
         str(row.get("Source_URL", "")): str(row.get("Processed_At_UTC", ""))
         for _, row in existing_processed.iterrows()
@@ -536,6 +541,7 @@ def main() -> None:
     candidates = sorted(
         [(url, rec) for url, rec in by_url.items() if url not in processed_urls],
         key=lambda pair: (
+            pair[0] not in reverify_urls,
             pair[0] in previous_attempts,
             previous_attempts.get(pair[0], ""),
             -(record_publish_date(pair[1]) or date.min).toordinal(),
@@ -608,6 +614,7 @@ def main() -> None:
         }
         new_processed.append(processed_row)
         if row:
+            row["Parser_Version"] = PARSER_VERSION
             new_rows.append(row)
         else:
             new_unverified.append({
@@ -626,7 +633,7 @@ def main() -> None:
         "Symbol", "Quarter_End", "Reporting_Basis", *VALUE_FIELDS, "Missing_Fields",
         "Fundamentals_Complete", "Reporting_Type", "Submission_Subtype", "Revision_Date",
         "Revision_Remark", "Sequence_ID", "Filing_Audit_Status", "Filing_Consolidation_Status", "Filing_Published_At", "Source_URL",
-        "Quarter_Context_Days", "Quarter_Context_IDs", "Instant_Context_IDs", "Basis_Verification",
+        "Quarter_Context_Days", "Quarter_Context_IDs", "Instant_Context_IDs", "Basis_Verification", "Parser_Version",
     ]
     all_results = pd.concat([existing_results, pd.DataFrame(new_rows)], ignore_index=True, sort=False)
     if not all_results.empty:
@@ -672,7 +679,8 @@ def main() -> None:
             full_change_report = full_change_report.iloc[0:0]
         save_frame(full_change_report, COMPARE_FILE)
     else:
-        save_frame(pd.DataFrame(columns=result_columns), RESULTS_FILE)
+        all_results = pd.DataFrame(columns=result_columns)
+        save_frame(all_results, RESULTS_FILE)
         save_frame(pd.DataFrame(columns=result_columns), COMPARE_FILE)
 
     unverified_columns = ["Symbol", "Quarter_End", "Source_URL", "Reason", "Submission_Subtype", "Revision_Date"]
@@ -700,9 +708,11 @@ def main() -> None:
     save_frame(all_processed, PROCESSED_FILE)
 
     complete_count = 0
-    result_count = len(all_results)
+    stored_count = len(all_results)
+    current_results = all_results[all_results["Parser_Version"].astype(str).eq(PARSER_VERSION)]
+    result_count = len(current_results)
     if not all_results.empty and "Fundamentals_Complete" in all_results:
-        complete_count = all_results["Fundamentals_Complete"].astype(str).str.lower().isin(["true", "1"]).sum()
+        complete_count = current_results["Fundamentals_Complete"].astype(str).str.lower().isin(["true", "1"]).sum()
     status = pd.DataFrame([{
         "Run_Date": date.today().isoformat(),
         "Collection_Status": collection_status,
@@ -712,6 +722,9 @@ def main() -> None:
         "Attempted_URLs": attempted,
         "New_Verified_URLs": len(new_rows),
         "Verified_Quarter_Rows": result_count,
+        "Stored_Quarter_Rows": stored_count,
+        "Reverification_Required_Rows": stored_count-result_count,
+        "Parser_Version": PARSER_VERSION,
         "Qualified_Comparison_Rows": len(full_change_report) if not all_results.empty else 0,
     }])
     save_frame(status, COLLECTION_STATUS_FILE)
@@ -722,3 +735,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

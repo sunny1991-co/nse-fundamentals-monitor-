@@ -17,6 +17,8 @@ on:
       - 'nse_sector_classification.py'
       - 'diagnose_fundamental_blockers.py'
       - 'test_quarterly_collection.py'
+      - 'test_quarterly_dates.py'
+      - 'research_monitor/filing_dates.py'
       - 'test_final_shortlist_source.py'
       - 'test_legacy_annual_recovery.py'
       - 'test_legacy_index_fetch.py'
@@ -30,7 +32,7 @@ permissions:
 
 concurrency:
   group: nse-fundamentals-monitor-v4-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   monitor:
@@ -55,7 +57,7 @@ jobs:
         run: python -m py_compile nse_fundamentals_check.py nse_annual_history.py nse_legacy_annual_recovery.py nse_legacy_index_fetch.py nse_legacy_xbrl_verify.py research_monitor/legacy_xbrl.py nse_sector_classification.py annual_fundamental_quality.py nse_quarterly_monitor.py final_fundamental_shortlist.py
 
       - name: Test trading and fundamental collection safety
-        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery test_legacy_index_fetch test_legacy_xbrl_verify -v
+        run: python -m unittest test_monitor_safety test_quarterly_collection test_final_shortlist_source test_legacy_annual_recovery test_legacy_index_fetch test_legacy_xbrl_verify test_quarterly_dates -v
 
       - name: Check annual baseline files
         run: python nse_fundamentals_check.py

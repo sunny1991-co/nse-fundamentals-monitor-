@@ -115,3 +115,15 @@ Observed old filings can have annual-looking human-readable labels while the
 actual XBRL context covers January–March only. These are rejected rather than
 silently rewriting context dates. They need an independently verified corrected
 filing or annual financial statement; this verifier does not extract PDFs.
+
+## Quarterly parser v6 migration
+
+ISO dates are parsed deterministically, without day-first reinterpretation.
+Older raw quarterly rows remain stored, with their old/blank `Parser_Version`,
+but are excluded from comparisons and final shortlist decisions. The collector
+prioritizes their source URLs for verification. The collection status includes
+`Stored_Quarter_Rows`, `Verified_Quarter_Rows` (current parser only),
+`Reverification_Required_Rows`, and `Parser_Version`. A temporary decrease in
+verified counts during migration is expected and must not be hidden.
+A current source-status version is necessary but not sufficient: individual
+quarterly comparison rows must also carry the current parser version.

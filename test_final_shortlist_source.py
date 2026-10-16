@@ -22,7 +22,7 @@ class QuarterlySourceSafetyTests(unittest.TestCase):
                 ("OK", (date.today() - timedelta(days=3)).isoformat(), "QUARTERLY_SOURCE_STATUS_STALE"),
                 ("OK", date.today().isoformat(), "OK"),
             ]:
-                pd.DataFrame([{"Run_Date": run_date, "Collection_Status": status}]).to_csv(path, index=False)
+                pd.DataFrame([{"Run_Date": run_date, "Collection_Status": status, "Parser_Version": screen.QUARTERLY_PARSER_VERSION}]).to_csv(path, index=False)
                 ready, reason = screen.quarterly_source_readiness(path)
                 self.assertEqual(ready, expected == "OK")
                 self.assertEqual(reason, expected)
@@ -63,3 +63,4 @@ class QuarterlySourceSafetyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
