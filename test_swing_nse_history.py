@@ -10,6 +10,7 @@ import pandas as pd
 
 from swing_nse_history import (
     Action,
+    action_audit,
     adjust_frame,
     candidate_urls,
     classify_action,
@@ -84,6 +85,31 @@ class NseHistoryTests(unittest.TestCase):
         malformed_bonus = classify_action("ABC", date(2024, 6, 10), "Issue of Bonus Shares")
         self.assertFalse(malformed_bonus.supported)
         self.assertEqual(malformed_bonus.kind, "SHARE_UNIT_ACTION_UNPARSED")
+
+    def test_action_audit_reclassifies_cached_rows_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = init_db(root / "history.sqlite")
+            try:
+                db.execute(
+                    "INSERT INTO actions(symbol,ex_date,purpose,kind,factor,supported,source_hash) "
+                    "VALUES(?,?,?,?,?,?,?)",
+                    ("ABC", "2024-05-10", "Other Corporate Purpose",
+                     "NO_SHARE_UNIT_ADJUSTMENT", 1.0, 1, "old"),
+                )
+                db.commit()
+                audit = action_audit(
+                    db, {"ABC"}, date(2024, 1, 1), date(2024, 12, 31), root
+                )
+                self.assertEqual(audit["unsupported_actions"], 1)
+                self.assertEqual(audit["unsupported_symbols"], 1)
+                review = pd.read_csv(root / "nse_corporate_action_review.csv")
+                self.assertEqual(
+                    review.iloc[0].Kind,
+                    "UNRECOGNIZED_ACTION_REVIEW_REQUIRED",
+                )
+            finally:
+                db.close()
 
     def test_adjustment_changes_only_bars_before_ex_date(self):
         frame = pd.DataFrame(
