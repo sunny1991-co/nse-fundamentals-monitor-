@@ -1,5 +1,66 @@
 # Project progress — 16 October 2026
 
+## Five original XBRL facts traced to archived `FourD` context — 16 October 2026
+
+The owner's new context-aware recheck fetched all four original NSE
+XBRL documents successfully and showed that **all five** disputed
+financial metric/year cells came from the same context ID `FourD`
+in each XML, with amounts identical to the original NSE history CSV:
+
+- MWL FY2025-26 OCF: `-20.426cr`
+- KRIDHANINF FY2024-25 OCF `-11.0165cr`, Revenue `2.5767cr`
+- TBOTEK FY2025-26 OCF `46.44cr`
+- NECLIFE FY2025-26 Revenue `0.0cr`
+
+**Zero** additional non-basis XBRL dimensions and **zero** apparent
+unit errors were implicated. All five selected `FourD` fact contexts
+were correctly rejected by the stricter audit because their
+`<identifier scheme="...">` was **not an attested NSESymbol-scheme
+identifier**. Context `basis` was **UNSPECIFIED** for all five.
+Although original NSE archive URLs, XML symbol and global consolidated
+reporting claims match, these DO NOT independently establish issuer
+identity for a raw fact's reporting context or audited legal entity.
+
+Root issue: historical `nse_annual_history.parse_annual()` selected
+period/dimension-aligned contexts without checking the *context entity
+identifier scheme and value*. The archived fact selection is
+**reproducible**, but the original parser's issuer-attribution check
+was not sufficient for stronger source attestation. Do NOT automatically
+rewrite NSE history, promote these values into strict fundamentals or
+interpret the differences as vendor errors.
+
+Added forensic improvements:
+- Exact classification of context identifier URI scheme (NSESymbol
+  vs recognized MCA CIN vs other scheme), without printing company
+  identifier values or credentials.
+- Optional **document-internal** company CIN-fact agreement checks:
+  if context scheme is MCA CIN and the filing's separate CIN fact
+  matches, mark as **unverified document-self-claim only**; independent
+  NSE/MCA symbol-to-CIN evidence is still required.
+- Per-metric archived XBRL context-ID matching (no mixing instant
+  balance-sheet and FY-duration contexts), with issuer-identity
+  pending counts visible in `project_status.py`.
+- Regression tests for forged issuer scheme, mismatched self-declared
+  CIN, absent CIN, non-NSE context identifiers and per-metric context
+  isolation. Never modifies company values, source rows, strict gates,
+  strategy approvals or orders.
+
+Next user-local command (same four official filings, at most 4 HTTPS
+GETs, stops on archive 403/429 or other source limits):
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_xbrl_discrepancy_audit.py --max-files 4
+```
+
+Inspect `xml_context_identifier_scheme_classes`,
+`xml_claimed_cin_fact_count`, and each
+`excluded_fact_examples_not_verified[].document_cin_relation` before
+deciding if an external official symbol↔issuer-ID crosswalk can be
+obtained safely. The official NSE source review is still PENDING.
+Do NOT treat the legacy parser's `VERIFIED` column as a standalone
+guarantee of this *new stricter context-issuer attribution test*.
+
 ## Four live original-NSE XBRL downloads exposed context-quality blockers — 16 October 2026
 
 User's on-device raw XML drilldown was **successful on all four official
