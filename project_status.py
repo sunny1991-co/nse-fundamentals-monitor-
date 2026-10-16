@@ -183,6 +183,11 @@ def snapshot(root: Path | None = None) -> dict:
         runtime / "experiments" / "upstox-nse-historical-reference-v1"
         / "upstox-reference-batches-v1" / "reconciliation" / "summary.json"
     )
+    vendor_review_queue = read_json(
+        runtime / "experiments" / "upstox-nse-historical-reference-v1"
+        / "upstox-reference-batches-v1" / "reconciliation"
+        / "company_source_review_summary.json"
+    )
     post = read_json(runtime / "history_backtest_done.json")
     paper = read_json(runtime / "paper_status.json")
     experiment = read_json(
@@ -333,6 +338,19 @@ def snapshot(root: Path | None = None) -> dict:
             "NSE_XBRL_VS_UPSTOX_REFERENCE_RECONCILIATION_V1"
         ) else 0,
         "upstox_reconciliation_is_offline_reference_only": True,
+        "upstox_source_review_worker_state": upstox_reference_worker.get(
+            "source_review_queue_state","NOT_YET_RUN"
+        ),
+        "upstox_source_review_queue_companies": int_value(
+            vendor_review_queue.get("companies_requiring_source_review",0)
+        ) if vendor_review_queue.get("scope")==(
+            "UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1"
+        ) else 0,
+        "upstox_source_review_queue_discrepancies": int_value(
+            vendor_review_queue.get("mismatched_financial_metrics",0)
+        ) if vendor_review_queue.get("scope")==(
+            "UPSTOX_NSE_FINANCIAL_SOURCE_REVIEW_QUEUE_V1"
+        ) else 0,
         "upstox": "BACKUP_ONLY_NSE_HISTORY_COLLECTOR_DOES_NOT_USE_UPSTOX",
         "automatic_groww_order_execution": "DISABLED_NO_VALIDATED_STRATEGY",
         "orders": "MANUAL_ONLY",
