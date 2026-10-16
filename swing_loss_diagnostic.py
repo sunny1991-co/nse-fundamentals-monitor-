@@ -44,6 +44,24 @@ def _describe(trades):
         (float(t["Sell_Turnover_Rs"]) - float(t["Buy_Turnover_Rs"]))
         / float(t["Buy_Turnover_Rs"]) for t in completed
     ]
+    # All forensics are descriptive. Missing older ledger fields must be
+    # reported as unknown, never silently counted as zero.
+    diagnostic_flags = (
+        "Gap_Below_Stop", "Stop_And_Target_Both_Touched",
+        "Trailing_Stop_Active", "Exit_On_Entry_Session",
+        "Partial_Profit_Taken",
+    )
+    forensic_counts = {
+        flag: (sum(bool(t[flag]) for t in completed)
+               if all(flag in t for t in completed) else None)
+        for flag in diagnostic_flags
+    }
+    stop_rows = [t for t in completed if t["Reason"] == "stop"]
+    stopped_count = len(stop_rows)
+    stops_at_initial = (
+        sum(not bool(t["Trailing_Stop_Active"]) for t in stop_rows)
+        if all("Trailing_Stop_Active" in t for t in stop_rows) else None
+    )
     net = [float(t["Return"]) for t in completed]
     return {
         "completed_trades": len(completed),
@@ -60,6 +78,11 @@ def _describe(trades):
             sum(int(t["Held_Sessions"]) for t in completed)/len(completed)
         ),
         "by_exit_reason": by_reason,
+        "forensics": {
+            **forensic_counts,
+            "Stop_At_Initial_Level_Or_Lower": stops_at_initial,
+            "Total_Stop_Exits": stopped_count,
+        },
     }
 
 
@@ -116,6 +139,11 @@ def diagnose(raw, digest, limit=100, top=5, selected=None):
                     100*(float(t["Sell_Turnover_Rs"])/float(t["Buy_Turnover_Rs"])-1),2
                 ),
                 "held_sessions": int(t["Held_Sessions"]),
+                "gap_below_stop": t.get("Gap_Below_Stop"),
+                "stop_and_target_both_touched":
+                    t.get("Stop_And_Target_Both_Touched"),
+                "trailing_stop_active": t.get("Trailing_Stop_Active"),
+                "partial_profit_taken": t.get("Partial_Profit_Taken"),
             } for t in complete], key=lambda t:(t["net_return_pct"],t["symbol"])
         )[:top]
         summaries[name] = desc
@@ -145,22 +173,66 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit",type=int,default=100)
     ap.add_argument("--top",type=int,default=5)
+    ap.add_argument("--brief",action="store_true",
+                    help="Print compact per-strategy loss causes; retain detailed private report")
+    ap.add_argument("--strategies", nargs="+",
+                    choices=[name for name,_ in BUILDERS],
+                    help="Only diagnose these existing research strategies")
     args=ap.parse_args()
     if not 1 <= args.limit <= 100 or not 1 <= args.top <= 20:
         ap.error("--limit must be 1..100 and --top must be 1..20")
     root=data_root()
     raw,digest=read_history(root)
-    result=diagnose(raw,digest,args.limit,args.top)
+    result=diagnose(raw,digest,args.limit,args.top,args.strategies)
     out=root/"runtime"/"experiments"/"loss-diagnostic-v1"/"report.json"
     atomic_status(out,result)
-    print(json.dumps({
-        "scope": result["scope"],
-        "analysed_stocks": result["analysed_stocks"],
-        "summary": result["summary"],
-        "potential_extreme_jump_symbols_requiring_independent_review":
-            result["potential_extreme_jump_symbols_requiring_independent_review"],
-        "live_eligible": False,
-    },indent=2))
+    if args.brief:
+        concise = {}
+        for name, desc in result["summary"].items():
+            reasons = desc.get("by_exit_reason") or {}
+            flags = desc.get("forensics") or {}
+            concise[name] = {
+                "completed_trades": desc["completed_trades"],
+                "winning_trades": desc["wins"],
+                "losing_trades": desc["losses"],
+                "mean_net_return_pct": (
+                    round(100*desc["mean_net_trade_return"], 2)
+                    if desc["mean_net_trade_return"] is not None else None
+                ),
+                "mean_fee_drag_percentage_points": (
+                    round(desc["mean_fee_drag_percentage_points"], 3)
+                    if desc["mean_fee_drag_percentage_points"] is not None else None
+                ),
+                "stop_exits": reasons.get("stop", {}).get("count", 0),
+                "target2_exits": reasons.get("target2", {}).get("count", 0),
+                "time_exits": reasons.get("time", {}).get("count", 0),
+                "gap_below_stop_exits": flags.get("Gap_Below_Stop"),
+                "ambiguous_stop_and_target_days":
+                    flags.get("Stop_And_Target_Both_Touched"),
+                "trailing_stop_exits": flags.get("Trailing_Stop_Active"),
+                "partial_profit_taken": flags.get("Partial_Profit_Taken"),
+                "mean_holding_sessions": (
+                    round(desc["mean_holding_sessions"], 1)
+                    if desc["mean_holding_sessions"] is not None else None
+                ),
+            }
+        print(json.dumps({
+            "scope": result["scope"],
+            "analysed_stocks": result["analysed_stocks"],
+            "strategy_diagnostics": concise,
+            "data_quality_review_flags":
+                result["potential_extreme_jump_symbols_requiring_independent_review"],
+            "live_eligible": False,
+        }, indent=2))
+    else:
+        print(json.dumps({
+            "scope": result["scope"],
+            "analysed_stocks": result["analysed_stocks"],
+            "summary": result["summary"],
+            "potential_extreme_jump_symbols_requiring_independent_review":
+                result["potential_extreme_jump_symbols_requiring_independent_review"],
+            "live_eligible": False,
+        },indent=2))
     print("Private loss diagnostic:",out)
 
 
