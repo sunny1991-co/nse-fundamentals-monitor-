@@ -118,6 +118,27 @@ Remove reboot startup with:
 ```
 
 
+## Official NSE adjusted history without Upstox
+
+The backend now builds daily equity history directly from official NSE bhavcopy
+archives and the NSE corporate-actions feed. It works in bounded batches and
+stores progress in `~/nse-fundamentals-data/runtime/nse_eod_history.sqlite`.
+Upstox is not read by this collector.
+
+Only completed daily bars are accepted. Bonus, split and consolidation factors
+are applied to earlier OHLC/volume. Rights issues, demergers and other complex
+price-reset actions are fail-closed: affected symbols are excluded until an
+independently verified adjustment is available. `market_ohlcv.csv` is published
+only after the requested archive and corporate-action ranges are complete.
+
+The daily worker advances a small batch automatically. For a larger bounded
+catch-up run:
+
+```sh
+python swing_nse_history.py --days 120 --max-minutes 25
+cat ~/nse-fundamentals-data/runtime/nse_eod_history_status.json
+```
+
 ## Non-Upstox maintenance
 
 While Upstox is deferred, the phone can still run bounded official-source recovery
