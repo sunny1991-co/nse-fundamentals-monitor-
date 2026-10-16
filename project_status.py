@@ -393,6 +393,14 @@ def snapshot(root: Path | None = None) -> dict:
             "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
         ) else 0,
         "nse_xbrl_issuer_identity_strict_approval": False,
+        "nse_xml_numeric_reproduced_issuer_link_pending": int_value(
+            nse_original_drilldown.get(
+                "official_nse_xml_numeric_reproductions_pending_issuer",0
+            )
+        ) if nse_original_drilldown.get("scope")==(
+            "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
+        ) else 0,
+        "nse_xml_numeric_reproduction_is_audited_attestation": False,
         "upstox_manual_catchup_state": vendor_manual_catchup.get(
             "state","NOT_YET_RUN"
         ) if vendor_manual_catchup.get("scope")==(
