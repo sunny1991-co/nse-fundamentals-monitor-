@@ -36,9 +36,15 @@ def main(reuse_current_backtest=False):
     if not all(path.is_file() for path in required_history):
         print('WAITING_FOR_VALID_ADJUSTED_HISTORY; no technical candidates published')
         return
-    raw, digest = load_market()
-    if not (reuse_current_backtest and current_backtest_matches(raw, digest)):
-        run_backtests()  # Recompute unless an internally generated matching report is proven current.
+    if reuse_current_backtest:
+        raw, digest = load_market()
+        if not current_backtest_matches(raw, digest):
+            run_backtests()
+            raw, digest = load_market()
+    else:
+        # Preserve fail-closed default behavior: force a fresh internally
+        # generated report before trusting any market-data read.
+        run_backtests()
         raw, digest = load_market()
     approved = pd.read_csv(ROOT/'final_fundamental_shortlist.csv', dtype=str)
     if not {'Symbol','Final_Fundamental_Criteria_Pass'}.issubset(approved):
