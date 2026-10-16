@@ -76,6 +76,25 @@ show_status() {
   fi
 }
 
+run_maintenance() {
+  was_running=0
+  if is_running; then
+    was_running=1
+    stop_backend
+  fi
+  echo "Running bounded non-Upstox maintenance. This can take a while."
+  if "$PYTHON_BIN" "$PROJECT_DIR/termux_maintenance.py"; then
+    code=0
+  else
+    code=$?
+  fi
+  if [ "$was_running" -eq 1 ]; then
+    start_backend
+  fi
+  echo "Maintenance status: $PROJECT_DIR/runtime/maintenance_status.json"
+  return "$code"
+}
+
 install_boot() {
   boot_dir="$HOME/.termux/boot"
   mkdir -p "$boot_dir"
@@ -103,10 +122,11 @@ case "${1:-status}" in
   restart) stop_backend; start_backend ;;
   status) show_status ;;
   once) "$PYTHON_BIN" "$PROJECT_DIR/swing_worker.py" --once ;;
+  maintenance) run_maintenance ;;
   install-boot) install_boot ;;
   uninstall-boot) uninstall_boot ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|once|install-boot|uninstall-boot}"
+    echo "Usage: $0 {start|stop|restart|status|once|maintenance|install-boot|uninstall-boot}"
     exit 2
     ;;
 esac
