@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import termux_supervisor as supervisor
 
@@ -28,6 +28,33 @@ class TermuxSupervisorTests(unittest.TestCase):
         run = Mock(return_value=result)
         self.assertFalse(supervisor.acquire_wakelock(run=run, which=lambda _name: '/bin/fake'))
         run.assert_called_once()
+
+    def test_terminate_all_signals_every_child_before_waiting(self):
+        events = []
+
+        class Child:
+            def __init__(self, pid):
+                self.pid = pid
+                self.done = False
+
+            def poll(self):
+                return 0 if self.done else None
+
+            def wait(self, timeout=None):
+                events.append(('wait', self.pid))
+                self.done = True
+                return 0
+
+        children = {'a': Child(101), 'b': Child(202)}
+        with patch.object(
+            supervisor.os,
+            'killpg',
+            side_effect=lambda pid, sig: events.append(('signal', pid)),
+        ):
+            supervisor.terminate_all(children)
+
+        self.assertEqual(events[:2], [('signal', 101), ('signal', 202)])
+        self.assertEqual(events[2:], [('wait', 101), ('wait', 202)])
 
     def test_history_worker_is_separate_supervised_process(self):
         command = supervisor.history_command()
