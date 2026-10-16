@@ -1,5 +1,4 @@
-"""Laptop swing supervisor. No broker orders; missing dependencies stay visible."""
-from research_monitor.paths import data_root, CODE_ROOT
+"""Swing supervisor for a trusted local host. No broker orders are placed."""
 import argparse
 import json
 import os
@@ -8,6 +7,14 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Load private local settings before data_root() is resolved. This matters on
+# Termux where NSE_DATA_DIR may be set only in the ignored .env file.
+from dotenv import load_dotenv
+_CODE_DIR = Path(__file__).resolve().parent
+load_dotenv(_CODE_DIR/'.env', interpolate=False)
+
+from research_monitor.paths import data_root, CODE_ROOT
 from research_monitor.upstox_data import UpstoxData, DataUnavailable
 from research_monitor.schedule import IST, phase, atomic_status, claim_job
 
@@ -104,8 +111,6 @@ def tick(root=ROOT, now=None):
     return status
 
 def main():
-    from dotenv import load_dotenv
-    load_dotenv(ROOT/'.env',interpolate=False)
     parser = argparse.ArgumentParser()
     parser.add_argument('--once', action='store_true')
     args = parser.parse_args()
