@@ -15,7 +15,7 @@ from research_monitor.readiness import candidate_rows
 
 ROOT=data_root()
 LOGIN='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Secure login</title><body><main><h1>NSE Research · सुरक्षित login</h1><p>Password और Authenticator code दोनों आवश्यक हैं।</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><p><label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label></p><p><label>Authenticator / recovery code <input name="code" autocomplete="one-time-code" required maxlength="80"></label></p><button>Login</button></form><p>{{ error }}</p></main></body></html>'''
-DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Swing Research</title><body><main><h1>Swing Research</h1><p>Equity swing only · Orders aap manually broker app mein karenge.</p><h2>System status</h2><p>{{ worker }}</p><p>Live feed, approved SMS template aur forward paper validation pending hone par entry alerts blocked rahenge.</p><h2>Fundamental screening</h2><p>Report date: {{ date }} · Strict shortlist: {{ count }}</p><h2>Data readiness (last local check)</h2><p>{{ readiness }}</p><h2>Conditional research plans</h2><p>{{ plan_status }}</p><p>Yeh executable entry alerts nahi hain. Historical win rate future probability nahi hai.</p><table><thead><tr><th>Stock</th><th>Signal date</th><th>Entry range</th><th>Stop</th><th>Targets at minimum entry</th><th>Evidence/status</th></tr></thead><tbody>{% for r in candidates %}<tr><td>{{ r.Symbol }}</td><td>{{ r.Signal_Date }}</td><td>{{ r.Entry_Min }} – {{ r.Entry_Max_No_Chase }}</td><td>{{ r.Stop_Loss }}</td><td>{{ r.Target_1_At_Min_Entry }} / {{ r.Target_2_At_Min_Entry }}</td><td>{{ r.Status }}</td></tr>{% else %}<tr><td colspan="6">Abhi verified actionable setup nahi hai.</td></tr>{% endfor %}</tbody></table><h2>Paper research</h2><p>{{ paper }}</p><p>Per-stock model observations only; no portfolio allocation or verified future win probability.</p><h2>Schedule</h2><p>Verified exchange calendar ke mutabik market session monitoring; close ke baad fundamental screening aur backtest. Holidays aur special sessions calendar se aayenge. Worker host ko chalu aur internet se connected rehna chahiye.</p><p>Capital abhi configure nahi hua ho to position sizing blocked rahegi. Stop loss ke paar gap hone par loss zyada ho sakta hai.</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>''' 
+DASH='''<!doctype html><html lang="hi"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Swing Research</title><body><main><h1>Swing Research</h1><p>Equity swing only · Orders aap manually broker app mein karenge.</p><h2>System status</h2><p>{{ worker }}</p><p>Live feed, approved SMS template aur forward paper validation pending hone par entry alerts blocked rahenge.</p><h2>Fundamental screening</h2><p>Report date: {{ date }} · Strict shortlist: {{ count }}</p><h2>Data readiness (last local check)</h2><p>{{ readiness }}</p><p>{{ history_recovery }}</p><h2>Conditional research plans</h2><p>{{ plan_status }}</p><p>Yeh executable entry alerts nahi hain. Historical win rate future probability nahi hai.</p><table><thead><tr><th>Stock</th><th>Signal date</th><th>Entry range</th><th>Stop</th><th>Targets at minimum entry</th><th>Evidence/status</th></tr></thead><tbody>{% for r in candidates %}<tr><td>{{ r.Symbol }}</td><td>{{ r.Signal_Date }}</td><td>{{ r.Entry_Min }} – {{ r.Entry_Max_No_Chase }}</td><td>{{ r.Stop_Loss }}</td><td>{{ r.Target_1_At_Min_Entry }} / {{ r.Target_2_At_Min_Entry }}</td><td>{{ r.Status }}</td></tr>{% else %}<tr><td colspan="6">Abhi verified actionable setup nahi hai.</td></tr>{% endfor %}</tbody></table><h2>Paper research</h2><p>{{ paper }}</p><p>Per-stock model observations only; no portfolio allocation or verified future win probability.</p><h2>Schedule</h2><p>Verified exchange calendar ke mutabik market session monitoring; close ke baad fundamental screening aur backtest. Holidays aur special sessions calendar se aayenge. Worker host ko chalu aur internet se connected rehna chahiye.</p><p>Capital abhi configure nahi hua ho to position sizing blocked rahegi. Stop loss ke paar gap hone par loss zyada ho sakta hai.</p><form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Logout</button></form></main></body></html>''' 
 
 def create_app(settings=None):
     cfg=dict(os.environ);cfg.update(settings or {})
@@ -110,6 +110,19 @@ def create_app(settings=None):
         except (OSError,ValueError,KeyError,TypeError):
             pass
         candidates, plan_status = candidate_rows(ROOT)
+        history_recovery = 'Official NSE adjusted-history recovery: not started.'
+        try:
+            recovery = json.loads((ROOT/'runtime'/'nse_eod_history_status.json').read_text(encoding='utf-8'))
+            daily = recovery.get('daily') or {}
+            actions = recovery.get('corporate_actions') or {}
+            history_recovery = (
+                'Official NSE adjusted-history recovery: '+str(recovery.get('state','UNKNOWN'))
+                +' · Remaining weekdays: '+str(daily.get('remaining_weekdays','?'))
+                +' · Corporate actions: '+str(actions.get('status','UNKNOWN'))
+                +' · Upstox: '+str(recovery.get('upstox','NOT_USED'))
+            )
+        except (OSError, ValueError, TypeError):
+            pass
         readiness = 'Run python swing_readiness.py for local data/readiness checks.'
         try:
             report = json.loads((ROOT/'runtime'/'readiness.json').read_text(encoding='utf-8'))
@@ -122,7 +135,7 @@ def create_app(settings=None):
             paper='Checked: '+snapshot['checked_at']+' · '+snapshot.get('data_status','UNKNOWN')+' · '+str(snapshot.get('counts',{}))
         except (OSError,ValueError,KeyError,TypeError):
             pass
-        return render_template_string(DASH,paper=paper,count=count,date=day,worker=worker,candidates=candidates,plan_status=plan_status,readiness=readiness,csrf=session['csrf'])
+        return render_template_string(DASH,paper=paper,count=count,date=day,worker=worker,candidates=candidates,plan_status=plan_status,readiness=readiness,history_recovery=history_recovery,csrf=session['csrf'])
 
     @app.post('/logout')
     def logout():
