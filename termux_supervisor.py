@@ -70,6 +70,10 @@ def dashboard_command(env: dict) -> list[str] | None:
             '127.0.0.1:8787', 'app:create_app()']
 
 
+def history_command() -> list[str]:
+    return [sys.executable, str(CODE_ROOT/'termux_history_worker.py')]
+
+
 def dashboard_env(base: dict) -> dict:
     env = dict(base)
     env['LOCAL_LOOPBACK_ONLY'] = '1'
@@ -147,7 +151,7 @@ def main() -> int:
                         stderr=subprocess.STDOUT, start_new_session=True,
                     ),
                     'history': subprocess.Popen(
-                        [sys.executable, str(CODE_ROOT/'termux_history_worker.py')],
+                        history_command(),
                         cwd=CODE_ROOT, env=base_env, stdout=log,
                         stderr=subprocess.STDOUT, start_new_session=True,
                     ),
