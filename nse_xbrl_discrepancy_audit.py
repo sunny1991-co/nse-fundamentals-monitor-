@@ -19,6 +19,7 @@ from datetime import date, datetime, timezone
 import csv
 from decimal import Decimal, InvalidOperation
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -82,7 +83,8 @@ def _period(node):
     return start,end,instant
 
 
-def inspect_xml(body, *, symbol, fiscal_year, official_values):
+def inspect_xml(body, *, symbol, fiscal_year, official_values,
+                archived_context_ids=None):
     """Show all exact-period INR aliases; never arbitrarily pick first fact.
 
     Values of multiple aliases/contexts are returned as possible XBRL
@@ -93,9 +95,25 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
     if b"<!DOCTYPE" in body.upper() or b"<!ENTITY" in body.upper():
         raise DrilldownError("XML_EXTERNAL_ENTITY_DECLARATION_REJECTED")
     try:
+        # QName prefix text in XBRL units must resolve to the official
+        # iso4217 namespace; arbitrary "anything:INR" is not accepted.
+        namespaces={}
+        for _, (prefix, uri) in ET.iterparse(
+            io.BytesIO(body), events=("start-ns",)
+        ):
+            if prefix in namespaces and namespaces[prefix]!=uri:
+                raise DrilldownError("AMBIGUOUS_XML_NAMESPACE_REDEFINITION")
+            namespaces[prefix]=uri
         xml=ET.fromstring(body)
     except (ET.ParseError,ValueError):
         raise DrilldownError("XBRL_XML_INVALID") from None
+    if archived_context_ids is None:
+        archived_context_ids=set()
+    else:
+        archived_context_ids={
+            str(item) for item in archived_context_ids
+            if isinstance(item,str) and len(item)<=128
+        }
     if fiscal_year not in ("2024-25","2025-26"):
         raise DrilldownError("FISCAL_YEAR_NOT_SUPPORTED")
     start_year=int(fiscal_year[:4])
@@ -111,35 +129,66 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
             ids.add(cid)
             start,finish,instant=_period(node)
             dimensions=[]
-            basis="UNSPECIFIED"
+            stated_bases=set()
             entity=[]
             for child in node.iter():
                 lower=_local(child.tag).lower()
                 if lower in ("explicitmember","typedmember"):
                     axis=str(child.attrib.get("dimension","")).split(":")[-1].lower()
                     member=str(child.text or "").split(":")[-1].lower()
-                    combined=axis+" "+member
-                    if "standalone" in combined or "separate" in combined:
-                        basis="STANDALONE"
-                    elif "consolidated" in combined:
-                        basis="CONSOLIDATED"
+                    typed=(lower=="typedmember")
+                    if typed:
+                        # Typed dimensions must never be silently counted as
+                        # a consolidated reporting-basis declaration.
+                        dimensions.append((axis,"TYPED_DIMENSION"))
+                    elif "standalone" in member or "separate" in member:
+                        stated_bases.add("STANDALONE")
+                    elif "consolidated" in member:
+                        stated_bases.add("CONSOLIDATED")
                     else:
                         dimensions.append((axis,member))
                 elif lower=="identifier":
-                    entity.append((child.text or "").strip().upper())
+                    entity.append((
+                        (child.text or "").strip().upper(),
+                        str(child.attrib.get("scheme","")).strip().lower(),
+                    ))
+            basis=(
+                "CONFLICTING" if len(stated_bases)>1 else
+                next(iter(stated_bases)) if stated_bases else "UNSPECIFIED"
+            )
+            nse_scheme_ids={
+                v for v,scheme in entity
+                if scheme in (
+                    "http://www.nseindia.com/nsesymbol",
+                    "https://www.nseindia.com/nsesymbol",
+                )
+            }
+            identifier_status=(
+                "NSE_SYMBOL_MISMATCH" if nse_scheme_ids and nse_scheme_ids!={symbol}
+                else "NSE_SYMBOL_MATCHED" if nse_scheme_ids=={symbol}
+                else "IDENTIFIER_SCHEME_NOT_NSE_SYMBOL_VERIFIED"
+            )
             contexts[cid]={
                 "start":start,"end":finish,"instant":instant,
                 "dimensions":dimensions,"basis":basis,
                 "identifiers":entity,
+                "identifier_status":identifier_status,
             }
     currencies={}
     for node in xml.iter():
         if _local(node.tag).lower()!="unit" or not node.attrib.get("id"):
             continue
-        names=[(child.text or "").strip() for child in node.iter()
-               if _local(child.tag).lower()=="measure"]
+        # A currency unit must contain exactly one direct <measure>; ratio
+        # and compound unit definitions are NOT monetary INR amounts.
+        names=[(child.text or "").strip()
+               for child in node if _local(child.tag).lower()=="measure"]
+        other_parts=[child for child in node
+                     if _local(child.tag).lower()!="measure"]
+        prefix,separator,unit_name=names[0].partition(":") if len(names)==1 else ("","","")
         currencies[node.attrib["id"]]=(
-            len(names)==1 and names[0].lower().endswith(":inr")
+            len(names)==1 and not other_parts and separator==":"
+            and unit_name=="INR"
+            and namespaces.get(prefix)=="http://www.xbrl.org/2003/iso4217"
         )
 
     fact_bases=set()
@@ -173,7 +222,11 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
         candidates=[]
         rejected_wrong_unit=0
         rejected_other_dimension=0
+        rejected_identifier=0
         rejected_wrong_basis=0
+        rejected_samples=[]
+        rejected_matching_archived=[]
+        rejected_matching_original=[]
         for node in xml.iter():
             tag=_local(node.tag)
             if tag.lower() not in match_alias:
@@ -187,19 +240,8 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
             )
             if not right_period:
                 continue
-            if ctx["dimensions"] or (
-                ctx["identifiers"] and set(ctx["identifiers"])!={symbol}
-            ):
-                rejected_other_dimension+=1
-                continue
-            if ctx["basis"]=="STANDALONE":
-                rejected_wrong_basis+=1
-                continue
             unit=node.attrib.get("unitRef")
-            if currencies.get(unit) is not True:
-                rejected_wrong_unit+=1
-                continue
-            if node.attrib.get("{http://www.w3.org/2001/XMLSchema-instance}nil")=="true":
+            if node.attrib.get("{http://www.w3.org/2001/XMLSchema-instance}nil") in ("true","1"):
                 continue
             try:
                 value=Decimal((node.text or "").strip().replace(",",""))
@@ -207,11 +249,45 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
                 continue
             if not value.is_finite():
                 continue
-            crore=float(value/Decimal("10000000"))
+            if currencies.get(unit) is not True or "scale" in node.attrib:
+                rejected_wrong_unit+=1
+                continue
+            crore=round(float(value/Decimal("10000000")),7)
+            reason=None
+            if ctx["dimensions"]:
+                reason="DIMENSIONED_CONTEXT"
+                rejected_other_dimension+=1
+            elif ctx["identifier_status"]=="NSE_SYMBOL_MISMATCH":
+                reason="NSE_SYMBOL_IDENTIFIER_MISMATCH"
+                rejected_identifier+=1
+            elif ctx["basis"] in ("STANDALONE","CONFLICTING"):
+                reason="STANDALONE_OR_CONFLICTING_BASIS"
+                rejected_wrong_basis+=1
+            elif ctx["identifier_status"]!="NSE_SYMBOL_MATCHED":
+                reason="CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED"
+                rejected_identifier+=1
+            if reason:
+                if _number(official) is not None and abs(crore-_number(official))<=0.0001:
+                    rejected_matching_original.append(reason)
+                    if node.attrib.get("contextRef") in archived_context_ids:
+                        rejected_matching_archived.append(reason)
+                if len(rejected_samples)<4:
+                    rejected_samples.append({
+                        "tag":tag,
+                        "context_id":node.attrib.get("contextRef"),
+                        "crore":crore,
+                        "reason":reason,
+                        "basis":ctx["basis"],
+                        "identifier_status":ctx["identifier_status"],
+                        "dimension_names":[d[0][:80] for d in ctx["dimensions"][:4]],
+                        "in_archived_context_ids":
+                            node.attrib.get("contextRef") in archived_context_ids,
+                    })
+                continue
             candidates.append({
                 "tag":tag,"context_id":node.attrib.get("contextRef"),
                 "context_basis":ctx["basis"],
-                "unit_id":unit,"crore":round(crore,7),
+                "unit_id":unit,"crore":crore,
             })
         # Duplicate numeric facts / tags are kept, rather than selecting
         # a favorable candidate. No approximate vendor-driven value choice.
@@ -222,6 +298,12 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
                             for r in candidates)
         if not basis_safe or not symbol_safe:
             verdict="DOCUMENT_REPORTING_BASIS_OR_SYMBOL_NOT_PROVEN"
+        elif not candidates and rejected_matching_archived:
+            verdict="ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+        elif not candidates and rejected_matching_original:
+            verdict="RAW_NSE_VALUE_ONLY_IN_EXCLUDED_CONTEXT_REVIEW"
+        elif not candidates and rejected_samples:
+            verdict="EXCLUDED_XBRL_CONTEXT_FACT_REQUIRES_REVIEW"
         elif not candidates:
             verdict="NO_EXACT_CONTEXT_INR_FACT_FOR_METRIC"
         elif uncertain_basis:
@@ -243,8 +325,16 @@ def inspect_xml(body, *, symbol, fiscal_year, official_values):
             ),
             "wrong_unit_rejected":rejected_wrong_unit,
             "other_dimensions_or_identifier_rejected":
-                rejected_other_dimension,
+                rejected_other_dimension+rejected_identifier,
+            "non_basis_dimension_rejected":rejected_other_dimension,
+            "identifier_scheme_or_symbol_rejected":rejected_identifier,
             "standalone_context_rejected":rejected_wrong_basis,
+            "archived_selected_context_ids_count":len(archived_context_ids),
+            "excluded_facts_matching_archived_nse_value":
+                len(rejected_matching_original),
+            "excluded_matching_facts_in_archived_context_ids":
+                len(rejected_matching_archived),
+            "excluded_fact_examples_not_verified":rejected_samples,
             "verdict":verdict,
             "automatic_numeric_correction":False,
         }
@@ -317,8 +407,18 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
         key=(sym,fy,url)
         if key not in selection and len(selection)>=max_files:
             continue
-        selection.setdefault(key,{})[metric]=_number(
-            official[METRICS[metric][1]]
+        group=selection.setdefault(key,{
+            "values":{},
+            "archived_context_ids":set(),
+        })
+        group["values"][metric]=_number(official[METRICS[metric][1]])
+        context_field=(
+            "Instant_Context_IDs" if metric=="total_assets"
+            else "Annual_Context_IDs"
+        )
+        group["archived_context_ids"].update(
+            x for x in str(official.get(context_field) or "").split("|")
+            if x and len(x)<=128
         )
     own=session is None
     session=session or requests.Session()
@@ -327,7 +427,8 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
     blocked=False
     stop_reason=None
     try:
-        for (sym,fy,url),measurements in selection.items():
+        for (sym,fy,url),group in selection.items():
+            measurements=group["values"]
             body,error=_download(session,url)
             attempted+=1
             record={
@@ -343,6 +444,7 @@ def drilldown(root, *, max_files=4, session=None, pause=time.sleep,
                     parsed=inspect_xml(
                         body,symbol=sym,fiscal_year=fy,
                         official_values=measurements,
+                        archived_context_ids=group["archived_context_ids"],
                     )
                     record.update(parsed)
                 except DrilldownError as exc:
