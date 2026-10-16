@@ -64,9 +64,11 @@ class TermuxHistoryWorkerTests(unittest.TestCase):
 
             self.assertEqual(first['state'], 'BACKTEST_SCREEN_PAPER_READINESS_COMPLETE')
             self.assertEqual(second['state'], 'ALREADY_VALIDATED_FOR_CURRENT_HISTORY')
-            self.assertEqual(run.call_count, 4)
+            self.assertEqual(run.call_count, 6)
             marker = json.loads((root/'runtime'/'history_backtest_done.json').read_text())
             self.assertEqual(marker['sha256'], 'abc123')
+            self.assertEqual(marker['annual_quality_returncode'], 0)
+            self.assertEqual(marker['final_shortlist_returncode'], 0)
             self.assertEqual(marker['backtest_returncode'], 0)
             self.assertEqual(marker['technical_screen_returncode'], 0)
             self.assertEqual(marker['paper_returncode'], 0)
@@ -84,7 +86,7 @@ class TermuxHistoryWorkerTests(unittest.TestCase):
                 meta.write_text(json.dumps({'sha256': 'second'}), encoding='utf-8')
                 result = run_post_publish_validation(root, {}, io.StringIO())
             self.assertEqual(result['sha256'], 'second')
-            self.assertEqual(run.call_count, 8)
+            self.assertEqual(run.call_count, 12)
 
     def test_missing_metadata_keeps_validation_blocked(self):
         with tempfile.TemporaryDirectory() as directory:
