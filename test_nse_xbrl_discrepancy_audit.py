@@ -599,6 +599,63 @@ class RawNSEAuditTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())["live_orders"],
                              "DISABLED")
 
+    def test_drilldown_end_to_end_counts_sebi_raw_match_without_issuer_attestation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            folder=_stored_paths(root)[0]/"reconciliation"
+            folder.mkdir(parents=True)
+            with (folder/"source_discrepancy_forensics.csv").open(
+                "w",newline=""
+            ) as handle:
+                writer=csv.DictWriter(handle,fieldnames=[
+                    "symbol","financial_year","nse_filing_url",
+                    "metric","verified_nse_crore",
+                ])
+                writer.writeheader()
+                writer.writerow({
+                    "symbol":SYMBOL,"financial_year":"2025-26",
+                    "nse_filing_url":BASE,"metric":"revenue",
+                    "verified_nse_crore":100,
+                })
+            def triager(_root):
+                return {
+                    "scope":"UPSTOX_NSE_DIFFERENCE_FORENSIC_TRIAGE_ONLY_V1",
+                    "upstox_companies_checked":1,"metric_discrepancies":1,
+                }
+            def history(_root):
+                row=original_row("2025-26",url=BASE)
+                row["Annual_Context_IDs"]="FY"
+                return {(SYMBOL,"2025-26"):row},{}
+            session=FakeSession(valid_xml().replace(
+                b'https://www.nseindia.com/NSESymbol',
+                b'https://www.sebi.gov.in',
+            ))
+            result=drilldown(
+                root,max_files=1,session=session,
+                triager=triager,history_loader=history,
+                pause=lambda _:None,
+            )
+            self.assertEqual(result["metric_drilldown_verdict_counts"],{
+                "OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING":1
+            })
+            self.assertEqual(
+                result["official_nse_xml_numeric_reproductions_pending_issuer"],1
+            )
+            self.assertEqual(
+                result["issuer_identity_attestation_pending_metric_cells"],1
+            )
+            self.assertFalse(result["issuer_identity_independently_attested"])
+            self.assertEqual(result["new_nse_verified_years_added"],0)
+            self.assertEqual(result["strict_fundamental_pass_changes"],0)
+            self.assertFalse(result["trade_approvals"])
+            self.assertEqual(result["live_orders"],"DISABLED")
+            saved=json.loads(
+                (folder/"nse_xbrl_drilldown.json").read_text()
+            )
+            self.assertEqual(
+                saved["official_nse_xml_numeric_reproductions_pending_issuer"],1
+            )
+
     def test_max_four_original_urls_hard_cap(self):
         with tempfile.TemporaryDirectory() as td:
             for limit in (0,5,100,False,True,-1):
