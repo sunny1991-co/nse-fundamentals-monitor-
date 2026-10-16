@@ -1,5 +1,50 @@
 # Project progress — 16 October 2026
 
+## Five-of-five Upstox source coverage confirmed; 1,270-symbol batch plan — 16 October 2026
+
+Owner's private 16 October NSE EQ/ISIN crosswalk run established:
+- Both annual baseline symbols: **1,396**, of which **1,270** match distinct
+  current Upstox NSE_EQ + EQ instrument ISINs; **126** unmatched. The public
+  BOD universe contains **2,699** NSE_EQ instrument rows. This is a CURRENT
+  vendor reference mapping, **not** historic constituents or a guarantee
+  SME/mainboard classification of every symbol.
+- Actual Upstox Analytics Token succeeded on all **20** read-only GETs across
+  five different issuers: `RKFORGE`, `INDIANB`, `DEEDEV`,
+  `PALREDTEC`, `HCG`. All five had the **four selected vendor metrics**
+  (yearly revenue, profit, total assets and operating cash flow) for
+  `Mar 2023` and `Mar 2024`. The profile endpoint also provided sector
+  labels: Castings/Forgings/Fasteners, Bank, Engineering, IT Software,
+  and Miscellaneous. Upstox vendor sectors do not qualify as official
+  NSE classifications. Banks require a specialist accounting screen.
+- **Zero NSE-verified audited XBRL years added**, zero official NSE sector
+  rows, zero live order approvals and unchanged 4-year strict screen.
+
+To expand cautiously without hammering API limits or restarting from scratch,
+added `upstox_reference_batches.py` with **at most 25 NEW companies per
+invocation**, 0.30 seconds between read-only requests, per-company atomic
+JSON checkpoints and 0600 file permissions. It validates existing vendor
+mapping timestamp/provenance against BOTH NSE annual baseline symbol sets.
+Matching earlier 5-company pilot data can be seeded as vendor reference,
+not repromoted as NSE original XBRL. Re-runs skip checkpointed companies;
+soft errors are deferred for 24 hours, authentication/403/429/network/5xx
+fail closed and halt that batch. Stale mapping or changed ISIN fails closed
+rather than silently reassigning company financials.
+This process is intentionally **manual bounded research** until repeated
+user-local runs confirm integrity; it has not been connected to automated
+Termux maintenance and never touches execution or the strict shortlist.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull &&
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_batches.py --batch 25
+```
+
+Private records: `runtime/experiments/upstox-nse-historical-reference-v1/
+upstox-reference-batches-v1/records`; private summary: `last_batch.json`.
+Source instrument master is refreshed only with
+`upstox_reference_pilot.py --sync-instruments --limit 5` if it ages out.
+Avoid accidentally overwriting earlier pilot results without preserving
+provenance. Broker ordering remains Groww primary, Upstox secondary data-only.
+
 ## Upstox actual pilot success; current NSE instrument mapping fallback — 16 October 2026
 
 The owner ran `upstox_reference_pilot.py --limit 5` on their private Termux
