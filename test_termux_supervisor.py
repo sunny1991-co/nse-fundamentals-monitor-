@@ -64,6 +64,13 @@ class TermuxSupervisorTests(unittest.TestCase):
         command = supervisor.research_command()
         self.assertTrue(command[-1].endswith('termux_research_worker.py'))
 
+    def test_vendor_reference_worker_is_separate_supervised_read_only_process(self):
+        command = supervisor.upstox_reference_command()
+        self.assertTrue(
+            command[-1].endswith('termux_upstox_reference_worker.py')
+        )
+        self.assertNotIn('orders', ' '.join(command).lower())
+
     def test_cleanup_stale_dashboard_matches_only_our_loopback_gunicorn(self):
         import tempfile
         from pathlib import Path
