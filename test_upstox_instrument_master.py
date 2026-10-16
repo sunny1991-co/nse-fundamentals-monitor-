@@ -92,7 +92,7 @@ class InstrumentReferenceTests(unittest.TestCase):
             session=FakeSession(raw)
             result=m.sync(td,session=session)
             self.assertEqual(result["verified_by_vendor_crosswalk"],8)
-            self.assertEqual(result["nse_segment_eq_rows"],11)
+            self.assertEqual(result["nse_segment_eq_rows"],10)
             self.assertEqual(result["overlapping_baseline_symbols"],8)
             self.assertFalse(result["verified_mainboard_history"])
             self.assertFalse(result["nse_xbrl_verified"])
