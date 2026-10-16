@@ -162,7 +162,7 @@ def main() -> int:
                         'worker_pid': children.get('worker').pid if children.get('worker') else None,
                         'dashboard_pid': children.get('dashboard').pid if children.get('dashboard') else None,
                         'dashboard': mode,
-                        'dashboard_url': 'http://127.0.0.1:8787' if 'dashboard' in children else None,
+                        'dashboard_url': 'http://localhost:8787' if 'dashboard' in children else None,
                         'state': state,
                         'wake_lock': wake_lock,
                         'orders': 'MANUAL_ONLY',
