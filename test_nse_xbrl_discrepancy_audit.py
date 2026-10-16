@@ -25,7 +25,8 @@ def valid_xml(*, symbol=SYMBOL, another_context=False,
               profit=250_000_000, cash=200_000_000):
     nodes=[
         '<root xmlns:xbrli="http://www.xbrl.org/2003/instance" '
-        'xmlns:xbrldi="http://xbrl.org/2006/xbrldi">',
+        'xmlns:xbrldi="http://xbrl.org/2006/xbrldi" '
+        'xmlns:iso4217="http://www.xbrl.org/2003/iso4217">',
         '<xbrli:unit id="INR"><xbrli:measure>'+currency+
         '</xbrli:measure></xbrli:unit>',
         '<xbrli:context id="FY"><xbrli:entity><xbrli:identifier scheme='
@@ -173,6 +174,58 @@ class RawNSEAuditTests(unittest.TestCase):
                 evil,symbol=SYMBOL,fiscal_year="2025-26",
                 official_values={"revenue":100}
             )
+
+    def test_forged_currency_prefix_is_not_accepted_as_inr(self):
+        forged=valid_xml(currency="evil:INR").replace(
+            b'<root ',b'<root xmlns:evil="https://untrusted.example.com/currency" ',1
+        )
+        info=inspect_xml(
+            forged,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100}
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(info["wrong_unit_rejected"],1)
+        self.assertFalse(info["raw_nse_value_found_among_candidates"])
+
+    def test_source_archived_value_in_other_dimension_is_diagnostic_not_verified(self):
+        sample=valid_xml().replace(
+            b'</xbrldi:explicitMember></xbrli:scenario>',
+            b'</xbrldi:explicitMember><xbrldi:explicitMember '
+            b'dimension="rep:OperatingSegmentsAxis">rep:SteelSegmentMember'
+            b'</xbrldi:explicitMember></xbrli:scenario>',1
+        )
+        result=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"FY"},
+        )
+        report=result["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            report["verdict"],"ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+        )
+        self.assertEqual(report["candidate_inr_exact_period_count"],0)
+        self.assertEqual(report["non_basis_dimension_rejected"],1)
+        self.assertEqual(report["excluded_matching_facts_in_archived_context_ids"],1)
+        self.assertEqual(
+            report["excluded_fact_examples_not_verified"][0]["reason"],
+            "DIMENSIONED_CONTEXT"
+        )
+        self.assertFalse(report["automatic_numeric_correction"])
+
+    def test_cin_identifier_cannot_be_mistaken_for_nse_symbol(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol',
+            b'http://www.mca.gov.in/CIN'
+        )
+        report=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100}
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(report["candidate_inr_exact_period_count"],0)
+        self.assertEqual(report["identifier_scheme_or_symbol_rejected"],1)
+        self.assertEqual(
+            report["excluded_fact_examples_not_verified"][0]["reason"],
+            "CONTEXT_IDENTIFIER_SCHEME_UNVERIFIED"
+        )
 
     def test_download_must_be_official_xbrl_source_without_token(self):
         sess=FakeSession(valid_xml())
