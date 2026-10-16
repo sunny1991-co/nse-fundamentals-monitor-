@@ -385,6 +385,14 @@ def snapshot(root: Path | None = None) -> dict:
             "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
         ) else {},
         "nse_original_xbrl_drilldown_is_trade_approval": False,
+        "nse_xbrl_issuer_identity_pending_cells": int_value(
+            nse_original_drilldown.get(
+                "issuer_identity_attestation_pending_metric_cells",0
+            )
+        ) if nse_original_drilldown.get("scope")==(
+            "NSE_ORIGINAL_XBRL_DISCREPANCY_DRILLDOWN_READ_ONLY_V1"
+        ) else 0,
+        "nse_xbrl_issuer_identity_strict_approval": False,
         "upstox_manual_catchup_state": vendor_manual_catchup.get(
             "state","NOT_YET_RUN"
         ) if vendor_manual_catchup.get("scope")==(
