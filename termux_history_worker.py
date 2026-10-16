@@ -24,9 +24,13 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
-INTERVAL_SECONDS = 6 * 60 * 60
-BATCH_DAYS = 40
-MAX_MINUTES = 10
+# Initial catch-up is intentionally bounded but faster than the first 40-day
+# proof run. ~100 archive days every two hours keeps request volume moderate
+# while finishing multi-year history in roughly 1-2 days when NSE stays
+# available. Once complete, the collector becomes a cheap no-op between cycles.
+INTERVAL_SECONDS = 2 * 60 * 60
+BATCH_DAYS = 100
+MAX_MINUTES = 15
 
 
 def main() -> int:
