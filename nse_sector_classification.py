@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from research_monitor.paths import data_root
+import argparse
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -103,7 +104,10 @@ def lookup(s, sym):
     }
 
 
-def main():
+def main(limit: int = MAX_LOOKUPS_PER_RUN):
+    if not 1 <= int(limit) <= MAX_LOOKUPS_PER_RUN:
+        raise ValueError(f"limit must be 1..{MAX_LOOKUPS_PER_RUN}")
+    limit = int(limit)
     current = read_csv(MAP_FILE)
     symbols = candidate_symbols()
     cache = {}
@@ -119,7 +123,7 @@ def main():
         max_age = REFRESH_DAYS if status == "OK" else RETRY_FAILED_AFTER_DAYS
         if old is None or dt is None or (today - dt).days >= max_age:
             to_lookup.append(sym)
-    to_lookup = to_lookup[:MAX_LOOKUPS_PER_RUN]
+    to_lookup = to_lookup[:limit]
     print(f"Symbols needed: {len(symbols)}; cached: {len(cache)}; lookups this run: {len(to_lookup)}")
     s = None
     if to_lookup:
@@ -160,6 +164,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limit", type=int, default=MAX_LOOKUPS_PER_RUN,
+                        help="Maximum stale/missing symbols to query this run")
+    args = parser.parse_args()
+    main(args.limit)
 
 
