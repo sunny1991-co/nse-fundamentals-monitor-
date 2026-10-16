@@ -162,8 +162,13 @@ def create_forensics(root, *, top=10, mapping_loader=verified_reference_map,
         if official is None or vendor is None or official!=saved_nse:
             raise ForensicError("ORIGINAL_NSE_NUMERIC_FACT_CHANGED")
         verified_status,absolute,pct=_compare(vendor,official)
-        if verified_status!=MISMATCH or not _close_for_hint(
-            pct,_number(row.get("difference_pct_of_larger_abs_value"))
+        if (
+            verified_status!=MISMATCH
+            or pct!=_number(row.get("difference_pct_of_larger_abs_value"))
+            or absolute!=_number(row.get("absolute_difference_crore"))
+            or row.get("nse_original_filing_published_at")!=original.get(
+                "Filing_Published_At"
+            )
         ):
             raise ForensicError("DISCREPANCY_ARITHMETIC_UNVERIFIED")
         kind=_category(vendor,official,pct)
