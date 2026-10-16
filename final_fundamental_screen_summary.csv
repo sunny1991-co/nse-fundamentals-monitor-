@@ -1,2 +1,2 @@
 Annual_Screen_Companies,Annual_Pass_Companies,Companies_With_Quarterly_Data,Quarterly_Source_Gate_Pass,Quarterly_Source_Gate_Reason,Final_Shortlist_Count,Excluded_After_Annual_And_Quarterly_Checks,Report_Generated_On,Criteria_Note
-1747,0,0,True,OK,0,1747,2026-10-16,Strict screen; missing/unverified values are never coerced to zero; sector-specialist issuers remain blocked until specific metrics are available.
+1747,0,0,False,QUARTERLY_SOURCE_ACCESS_NOT_VERIFIED,0,1747,2026-10-16,Strict screen; missing/unverified values are never coerced to zero; sector-specialist issuers remain blocked until specific metrics are available.
