@@ -5,10 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from termux_history_worker import run_post_publish_validation
+from termux_history_worker import publish_worker_status, run_post_publish_validation
 
 
 class TermuxHistoryWorkerTests(unittest.TestCase):
+    def test_old_worker_cannot_overwrite_newer_status_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'status.json'
+            path.write_text(json.dumps({'pid': 999999, 'state': 'COLLECTING'}), encoding='utf-8')
+            self.assertFalse(
+                publish_worker_status(path, {'state': 'STOPPED'}, owner_only=True)
+            )
+            self.assertEqual(json.loads(path.read_text())['state'], 'COLLECTING')
+
     def test_post_publish_backtest_runs_once_per_history_sha(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
