@@ -78,6 +78,11 @@ def research_command() -> list[str]:
     return [sys.executable, str(CODE_ROOT/'termux_research_worker.py')]
 
 
+def upstox_reference_command() -> list[str]:
+    """Read-only NSE_EQ vendor fundamentals, isolated from NSE maintenance."""
+    return [sys.executable, str(CODE_ROOT/'termux_upstox_reference_worker.py')]
+
+
 def dashboard_env(base: dict) -> dict:
     env = dict(base)
     env['LOCAL_LOOPBACK_ONLY'] = '1'
@@ -238,6 +243,9 @@ def main() -> int:
                     elif name == 'research':
                         command = research_command()
                         env = base_env
+                    elif name == 'upstox_reference':
+                        command = upstox_reference_command()
+                        env = base_env
                     elif name == 'dashboard':
                         command = dashboard_command(base_env)
                         env = child_env
@@ -253,7 +261,7 @@ def main() -> int:
                     )
 
                 children = {}
-                for name in ('worker', 'history', 'research', 'dashboard'):
+                for name in ('worker', 'history', 'research', 'upstox_reference', 'dashboard'):
                     child = start_named(name)
                     if child is not None:
                         children[name] = child
@@ -265,6 +273,10 @@ def main() -> int:
                         'worker_pid': children.get('worker').pid if children.get('worker') else None,
                         'history_pid': children.get('history').pid if children.get('history') else None,
                         'research_pid': children.get('research').pid if children.get('research') else None,
+                        'upstox_reference_pid': (
+                            children.get('upstox_reference').pid
+                            if children.get('upstox_reference') else None
+                        ),
                         'dashboard_pid': children.get('dashboard').pid if children.get('dashboard') else None,
                         'dashboard': mode,
                         'dashboard_url': 'http://localhost:8787' if 'dashboard' in children else None,
@@ -337,6 +349,7 @@ def main() -> int:
             'worker_pid': None,
             'history_pid': None,
             'research_pid': None,
+            'upstox_reference_pid': None,
             'dashboard_pid': None,
             'dashboard': dashboard_mode(dict(os.environ)),
             'dashboard_url': None,
