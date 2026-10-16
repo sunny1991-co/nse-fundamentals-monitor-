@@ -121,6 +121,8 @@ def _refresh_only_expired_mapping(root, now):
             stamp = datetime.fromisoformat(
                 obj["fetched_at_utc"].replace("Z", "+00:00")
             )
+            if stamp.tzinfo is None:
+                raise ValueError("NAIVE_TIMESTAMP")
             age = now.astimezone(timezone.utc) - stamp.astimezone(timezone.utc)
         except (OSError, KeyError, TypeError, ValueError, AttributeError):
             raise ReferenceBatchError("UPSTOX_MAPPING_DATE_NOT_VERIFIED") from None
@@ -152,8 +154,27 @@ def run_daily(root, now=None, *, token=None, max_batch=MAX_BATCH,
     if not START_LOCAL <= local.time() < END_LOCAL:
         return _status(root, "WAITING_POST_MARKET_IST", now, ist_day=day)
     if _day_claimed(root, day):
-        # Preserve last completed batch report; do not reset data/statistics.
-        return _status(root, "ALREADY_ATTEMPTED_TODAY", now, ist_day=day)
+        # Preserve a completed/blocked run's status across supervisor checks.
+        # A crash between the SQLite claim and final status does NOT retry.
+        try:
+            previous=json.loads(_status_path(root).read_text(encoding="utf-8"))
+            if (
+                previous.get("ist_day")==day
+                and previous.get("scope")==
+                    "NSE_EQ_UPSTOX_SECONDARY_VENDOR_AUTOMATIC_REFERENCE_ONLY"
+                and previous.get("state") not in (
+                    "STARTED_READ_ONLY_DAILY_BATCH",
+                    "WAITING_POST_MARKET_IST",
+                    "WAITING_UPSTOX_ANALYTICS_TOKEN",
+                )
+            ):
+                return previous
+        except (OSError,ValueError,TypeError,AttributeError):
+            pass
+        return _status(
+            root, "ALREADY_CLAIMED_OUTCOME_UNCERTAIN_NO_RETRY_TODAY",
+            now, ist_day=day,
+        )
     if not isinstance(token, str) or not token.strip():
         return _status(
             root, "WAITING_UPSTOX_ANALYTICS_TOKEN", now, ist_day=day,
@@ -265,11 +286,10 @@ def main(argv=None):
                 time.sleep(min(10,max(1,deadline-time.monotonic())))
         return 0
     finally:
-        try:
-            _status(root,"STOPPED_ON_PROCESS_EXIT")
-        finally:
-            fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
-            lock.close()
+        # Do not overwrite the durable last successful/blocked batch outcome
+        # with a generic STOPPED state when --once or supervisor shutdown exits.
+        fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
+        lock.close()
 
 
 if __name__=="__main__":
