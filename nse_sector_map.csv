@@ -1,8 +1,8 @@
 Symbol,Macro_Economic_Sector,Sector,Industry,Basic_Industry,Lookup_Status,Lookup_Date,Source_URL,Error
 20MICRONS,,,,,ERROR,2026-10-16,https://www.nseindia.com/api/quote-equity?symbol=20MICRONS,NSE quote HTTP 403 (blocked)
 21STCENMGM,,,,,ERROR,2026-10-16,https://www.nseindia.com/api/quote-equity?symbol=21STCENMGM,NSE quote HTTP 403 (blocked)
-360ONE,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=360ONE,NSE quote HTTP 403 (blocked)
-3IINFOLTD,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=3IINFOLTD,NSE quote HTTP 403 (blocked)
+360ONE,,,,,ERROR,2026-10-16,https://www.nseindia.com/api/quote-equity?symbol=360ONE,NSE quote HTTP 403 (blocked)
+3IINFOLTD,,,,,ERROR,2026-10-16,https://www.nseindia.com/api/quote-equity?symbol=3IINFOLTD,NSE quote HTTP 403 (blocked)
 3PLAND,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=3PLAND,NSE quote HTTP 403 (blocked)
 5PAISA,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=5PAISA,NSE quote HTTP 403 (blocked)
 63MOONS,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=63MOONS,NSE quote HTTP 403 (blocked)

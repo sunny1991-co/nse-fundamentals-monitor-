@@ -1,2 +1,2 @@
-Run_Date,Collection_Status,Error,Indexed_URLs,Pending_URLs,Attempted_URLs,New_Verified_URLs,Verified_Quarter_Rows,Stored_Quarter_Rows,Reverification_Required_Rows,Parser_Version,Qualified_Comparison_Rows
-2026-10-16,OK,,22863,22863,9000,5172,4989,4989,0,6,0
+Run_Date,Collection_Status,Error,Indexed_URLs,Pending_URLs,Attempted_URLs,New_Verified_URLs,Verified_Quarter_Rows,Qualified_Comparison_Rows
+2026-10-16,OK,,22863,20840,9000,26,1774,0
