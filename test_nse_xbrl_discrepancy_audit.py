@@ -366,8 +366,12 @@ class RawNSEAuditTests(unittest.TestCase):
         )
         info=outcome["metric_source_inspection"]["revenue"]
         self.assertEqual(
-            info["verdict"],"ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW"
+            info["verdict"],"OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING"
         )
+        self.assertTrue(info["official_xml_value_reproduced_pending_issuer_link"])
+        self.assertEqual(info["official_xml_reference_distinct_crore_values"],[100.])
+        self.assertFalse(info["issuer_identity_independently_verified"])
+        self.assertFalse(info["strict_audited_consolidated_fact_attested_by_this_audit"])
         self.assertTrue(info["excluded_fact_examples_not_verified"][0][
             "issuer_identifier_equals_filing_symbol"
         ])
@@ -400,7 +404,70 @@ class RawNSEAuditTests(unittest.TestCase):
         ])
         self.assertEqual(detail["candidate_inr_exact_period_count"],0)
         self.assertEqual(detail["verdict"],
+                         "OFFICIAL_NSE_XML_FACT_REPRODUCED_ISSUER_LINK_PENDING")
+        self.assertTrue(detail["official_xml_value_reproduced_pending_issuer_link"])
+        self.assertFalse(detail["issuer_identity_independently_verified"])
+
+    def test_sebi_scheme_conflicting_raw_revenue_values_not_marked_reproduced(self):
+        sample=valid_xml(duplicate=True).replace(
+            b'https://www.nseindia.com/NSESymbol', b'https://www.sebi.gov.in'
+        )
+        info=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(
+            info["verdict"],"OTHER_SCHEME_CONFLICTING_XBRL_FACTS_REQUIRE_REVIEW"
+        )
+        self.assertEqual(info["official_xml_reference_distinct_crore_values"],
+                         [90.,100.])
+        self.assertFalse(info["official_xml_value_reproduced_pending_issuer_link"])
+
+    def test_sebi_value_without_matching_archived_context_not_reproduced(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol', b'https://www.sebi.gov.in'
+        )
+        info=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"AY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(info["verdict"],
+                         "RAW_NSE_VALUE_ONLY_IN_EXCLUDED_CONTEXT_REVIEW")
+        self.assertFalse(info["official_xml_value_reproduced_pending_issuer_link"])
+
+    def test_sebi_arbitrary_other_dimension_never_marked_scheme_reproduced(self):
+        sample=valid_xml().replace(
+            b'https://www.nseindia.com/NSESymbol', b'https://www.sebi.gov.in'
+        ).replace(
+            b'</xbrldi:explicitMember></xbrli:scenario>',
+            b'</xbrldi:explicitMember><xbrldi:explicitMember '
+            b'dimension="rep:BusinessSegmentsAxis">rep:SubsidiaryMember'
+            b'</xbrldi:explicitMember></xbrli:scenario>',1
+        )
+        info=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertFalse(info["official_xml_value_reproduced_pending_issuer_link"])
+        self.assertEqual(info["non_basis_dimension_rejected"],1)
+        self.assertEqual(info["verdict"],
                          "ARCHIVED_NSE_VALUE_IN_EXCLUDED_CONTEXT_REVIEW")
+
+    def test_sebi_standalone_global_report_never_reproduced(self):
+        sample=valid_xml(basis="Standalone").replace(
+            b'https://www.nseindia.com/NSESymbol', b'https://www.sebi.gov.in'
+        )
+        info=inspect_xml(
+            sample,symbol=SYMBOL,fiscal_year="2025-26",
+            official_values={"revenue":100},
+            archived_context_ids={"revenue":{"FY"}},
+        )["metric_source_inspection"]["revenue"]
+        self.assertEqual(info["verdict"],
+                         "DOCUMENT_REPORTING_BASIS_OR_SYMBOL_NOT_PROVEN")
+        self.assertFalse(info["official_xml_value_reproduced_pending_issuer_link"])
 
     def test_mixed_context_entities_warn_not_verified_even_on_symbol_match(self):
         sample=valid_xml().replace(
