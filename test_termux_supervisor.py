@@ -33,6 +33,10 @@ class TermuxSupervisorTests(unittest.TestCase):
         command = supervisor.history_command()
         self.assertTrue(command[-1].endswith('termux_history_worker.py'))
 
+    def test_research_worker_is_separate_supervised_process(self):
+        command = supervisor.research_command()
+        self.assertTrue(command[-1].endswith('termux_research_worker.py'))
+
     def test_dashboard_requires_complete_private_enrollment(self):
         self.assertEqual(supervisor.dashboard_mode({}), 'NOT_ENROLLED')
         self.assertEqual(supervisor.dashboard_mode({'APP_SECRET_KEY':'x'}), 'CONFIG_INCOMPLETE')
