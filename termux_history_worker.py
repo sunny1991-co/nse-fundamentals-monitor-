@@ -24,6 +24,63 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
+
+def run_post_publish_validation(root: Path, env: dict, log) -> dict:
+    """Run the fixed-rule backtest once per newly published history SHA."""
+    metadata_path = root/'market_data_metadata.json'
+    marker_path = root/'runtime'/'history_backtest_done.json'
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+        digest = str(metadata.get('sha256') or '').strip()
+    except (OSError, ValueError, TypeError):
+        return {'state': 'WAITING_FOR_PUBLISHED_HISTORY_METADATA'}
+    if not digest:
+        return {'state': 'WAITING_FOR_PUBLISHED_HISTORY_METADATA'}
+
+    try:
+        marker = json.loads(marker_path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        marker = {}
+    if marker.get('sha256') == digest and marker.get('backtest_returncode') == 0:
+        return {'state': 'ALREADY_VALIDATED_FOR_CURRENT_HISTORY', 'sha256': digest}
+
+    results = {}
+    for name, script, timeout in (
+        ('backtest_returncode', 'swing_backtest.py', 45*60),
+        ('readiness_returncode', 'swing_readiness.py', 5*60),
+    ):
+        log.write(f'\n[post-publish] {script}\n')
+        log.flush()
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(CODE_ROOT/script)],
+                cwd=CODE_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
+                timeout=timeout, check=False,
+            )
+            results[name] = completed.returncode
+        except subprocess.TimeoutExpired:
+            results[name] = None
+            log.write(f'[post-publish] {script} timeout\n')
+        except OSError as exc:
+            results[name] = None
+            log.write(f'[post-publish] {script} start error: {type(exc).__name__}\n')
+        if name == 'backtest_returncode' and results[name] != 0:
+            break
+
+    marker = {
+        'updated_at': datetime.now(timezone.utc).isoformat(),
+        'sha256': digest,
+        **results,
+        'state': (
+            'BACKTEST_AND_READINESS_COMPLETE'
+            if results.get('backtest_returncode') == 0 and results.get('readiness_returncode') == 0
+            else 'POST_PUBLISH_VALIDATION_INCOMPLETE'
+        ),
+        'orders': 'MANUAL_ONLY',
+    }
+    atomic_status(marker_path, marker)
+    return marker
+
 # Initial catch-up is intentionally bounded but faster than the first 40-day
 # proof run. ~100 archive days every two hours keeps request volume moderate
 # while finishing multi-year history in roughly 1-2 days when NSE stays
@@ -133,6 +190,14 @@ def main() -> int:
             except (OSError, ValueError, TypeError):
                 collector = {}
 
+            post_publish = {'state': 'NOT_READY'}
+            if collector.get('state') == 'ADJUSTED_HISTORY_PUBLISHED':
+                try:
+                    with log_path.open('a', encoding='utf-8', buffering=1) as log:
+                        post_publish = run_post_publish_validation(root, env, log)
+                except OSError:
+                    post_publish = {'state': 'POST_PUBLISH_LOG_ERROR'}
+
             next_run = time.time() + INTERVAL_SECONDS
             atomic_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
@@ -142,6 +207,7 @@ def main() -> int:
                 'remaining_weekdays': int(
                     (collector.get('daily') or {}).get('remaining_weekdays') or 0
                 ),
+                'post_publish_validation': post_publish,
                 'next_run_epoch': next_run,
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
