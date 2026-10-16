@@ -150,8 +150,14 @@ def scan(root,now=None,*,history_loader=read_history,
         candidates=candidates[:MAX_WATCHLIST]
         # Digest ties the exact market OHLCV source, TRI and current strict
         # fundamentals to this immutable paper evaluation.
+        # Bind BOTH data files and their provenance/adjustment attestations.
+        # Replacing metadata alone must invalidate the pending paper proposal.
+        meta_hashes=(
+            _hash_file(root/"market_data_metadata.json"),
+            _hash_file(root/"nifty50_tri_history_metadata.json"),
+        )
         source_sha=hashlib.sha256(
-            "|".join((digest,tri_digest,*fund_hashes)).encode()
+            "|".join((digest,tri_digest,*fund_hashes,*meta_hashes)).encode()
         ).hexdigest()
         for item in candidates:
             item["source_sha"]=source_sha
@@ -164,6 +170,8 @@ def scan(root,now=None,*,history_loader=read_history,
             "tri_sha":tri_digest,
             "fundamental_shortlist_sha":fund_hashes[0],
             "fundamental_screen_summary_sha":fund_hashes[1],
+            "ohlcv_metadata_sha":meta_hashes[0],
+            "tri_metadata_sha":meta_hashes[1],
             "entries":candidates,
             "eligible_for_live_orders":False,
             "signals_are_prospective_validation":False,
@@ -218,6 +226,8 @@ def match_quote_and_prepare_paper_prompt(root,now=None):
             _hash_file(root/"nifty50_tri_history.csv"),
             _hash_file(root/"final_fundamental_shortlist.csv"),
             _hash_file(root/"final_fundamental_screen_summary.csv"),
+            _hash_file(root/"market_data_metadata.json"),
+            _hash_file(root/"nifty50_tri_history_metadata.json"),
         )).encode()).hexdigest()
         # Original OHLCV digest SHA and TRI digest must be bound to source
         # files and accompanying attestation metadata; missing meta blocks.
