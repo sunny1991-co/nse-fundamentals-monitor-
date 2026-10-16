@@ -45,15 +45,17 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
         return {'state': 'ALREADY_VALIDATED_FOR_CURRENT_HISTORY', 'sha256': digest}
 
     results = {}
-    for name, script, timeout in (
-        ('backtest_returncode', 'swing_backtest.py', 45*60),
-        ('readiness_returncode', 'swing_readiness.py', 5*60),
+    for name, script, script_args, timeout in (
+        ('backtest_returncode', 'swing_backtest.py', [], 45*60),
+        ('technical_screen_returncode', 'swing_technical_screener.py', ['--reuse-current-backtest'], 20*60),
+        ('paper_returncode', 'swing_paper_monitor.py', [], 10*60),
+        ('readiness_returncode', 'swing_readiness.py', [], 5*60),
     ):
         log.write(f'\n[post-publish] {script}\n')
         log.flush()
         try:
             completed = subprocess.run(
-                [sys.executable, str(CODE_ROOT/script)],
+                [sys.executable, str(CODE_ROOT/script), *script_args],
                 cwd=CODE_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
                 timeout=timeout, check=False,
             )
@@ -64,7 +66,7 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
         except OSError as exc:
             results[name] = None
             log.write(f'[post-publish] {script} start error: {type(exc).__name__}\n')
-        if name == 'backtest_returncode' and results[name] != 0:
+        if results[name] != 0:
             break
 
     marker = {
@@ -72,8 +74,13 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
         'sha256': digest,
         **results,
         'state': (
-            'BACKTEST_AND_READINESS_COMPLETE'
-            if results.get('backtest_returncode') == 0 and results.get('readiness_returncode') == 0
+            'BACKTEST_SCREEN_PAPER_READINESS_COMPLETE'
+            if all(results.get(key) == 0 for key in (
+                'backtest_returncode',
+                'technical_screen_returncode',
+                'paper_returncode',
+                'readiness_returncode',
+            ))
             else 'POST_PUBLISH_VALIDATION_INCOMPLETE'
         ),
         'orders': 'MANUAL_ONLY',
