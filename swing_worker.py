@@ -77,12 +77,22 @@ def tick(root=ROOT, now=None):
             status['analysis'] = 'RUNNING'
             atomic_status(runtime/'worker_status.json', status)
             failed = None
-            for script in ['annual_fundamental_quality.py', 'final_fundamental_shortlist.py', 'swing_technical_screener.py']:
+            analysis_steps = [
+                ('annual_fundamental_quality.py', []),
+                ('final_fundamental_shortlist.py', []),
+                # Keep building broker-independent adjusted EOD history in small
+                # bounded batches while Upstox remains deferred.
+                ('swing_nse_history.py', ['--days', '25', '--max-minutes', '8']),
+                ('swing_technical_screener.py', []),
+            ]
+            for script, script_args in analysis_steps:
                 try:
                     with (runtime/'analysis.log').open('a', encoding='utf-8') as log:
                         log.write('\n'+now.isoformat()+' '+script+'\n'); log.flush()
-                        result = subprocess.run([sys.executable, str(CODE_ROOT/script)], cwd=root,
-                            stdout=log, stderr=log, timeout=1800, check=False)
+                        result = subprocess.run(
+                            [sys.executable, str(CODE_ROOT/script), *script_args], cwd=root,
+                            stdout=log, stderr=log, timeout=1800, check=False,
+                        )
                     if result.returncode:
                         failed = script
                         break
