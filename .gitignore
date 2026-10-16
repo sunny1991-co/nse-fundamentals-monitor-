@@ -7,6 +7,11 @@ monitor_config.json
 runtime/
 market_ohlcv.csv
 market_data_metadata.json
+# Optional licensed and point-in-time strategy research inputs (private)
+nifty50_tri_history.csv
+nifty50_tri_history_metadata.json
+official_earnings_events.csv
+official_earnings_events_metadata.json
 watchlist.json
 instrument_master.json
 *.sqlite
