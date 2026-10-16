@@ -34,7 +34,7 @@ is_running() {
 start_backend() {
   bootstrap_data
   if pid_running "$LEGACY_PID_FILE"; then
-    echo "Legacy repo-local backend is still running. Run ./termux_backend.sh stop first."
+    echo "Legacy repo-local backend is still running. Run bash ./termux_backend.sh stop first."
     return 1
   fi
   if is_running; then
@@ -48,7 +48,7 @@ start_backend() {
   if is_running; then
     echo "NSE swing backend started. PID $(cat "$PID_FILE")."
     echo "Data directory: $DATA_DIR"
-    echo "Status: ./termux_backend.sh status"
+    echo "Status: bash ./termux_backend.sh status"
     return 0
   fi
   if kill -0 "$launcher_pid" 2>/dev/null; then
@@ -155,7 +155,7 @@ install_boot() {
 sleep 20
 export NSE_DATA_DIR=$escaped_data
 cd $escaped_dir
-./termux_backend.sh start >> $escaped_data/runtime/boot.log 2>&1
+bash ./termux_backend.sh start >> $escaped_data/runtime/boot.log 2>&1
 EOF
   chmod 700 "$boot_file"
   echo "Boot script installed: $boot_file"
