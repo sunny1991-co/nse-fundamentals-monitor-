@@ -33,6 +33,28 @@ If dependency installation fails, stop and capture the exact error rather than
 using random package workarounds. The project has previously encountered Python
 package build issues on Android, so resolve the actual failing package first.
 
+## Private mobile dashboard enrollment
+
+The backend can expose the dashboard only on the phone itself at
+`http://127.0.0.1:8787`. It is not bound to Wi-Fi/mobile-network interfaces.
+Password + Authenticator remain mandatory even in this local-only mode.
+
+Stop the backend and enroll privately in Termux (never paste the password,
+Authenticator seed, current code, or recovery codes into chat):
+
+```sh
+./termux_backend.sh stop
+mkdir -p runtime
+python setup_auth.py --host localhost --db "$PWD/runtime/auth.sqlite"
+./termux_backend.sh start
+./termux_backend.sh status
+```
+
+After successful enrollment, status should show `dashboard: LOOPBACK_MFA_ENABLED`
+and a dashboard PID. Open `http://127.0.0.1:8787` in the same phone's browser.
+The local HTTP exception is accepted only for loopback clients; non-loopback HTTP
+requests are rejected and the server never binds to `0.0.0.0`.
+
 ## Private Upstox setting
 
 After the Upstox analytics/read-only token is available, edit the ignored
