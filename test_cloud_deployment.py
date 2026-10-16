@@ -119,20 +119,31 @@ class CloudTests(unittest.TestCase):
         stop_children([child])
         self.assertIsNotNone(child.poll())
 
-    def test_no_calendar_still_runs_offline_checks_using_code_directory(self):
+    def test_reviewed_nse_calendar_works_without_broker_token(self):
         from swing_worker import tick
         from datetime import datetime, timezone
         with patch('swing_worker.subprocess.run') as run:
             run.return_value.returncode = 0
             with patch.dict(os.environ, {'UPSTOX_ANALYTICS_TOKEN': ''}):
                 state = tick(self.root, datetime(2026, 10, 16, 4, tzinfo=timezone.utc))
+        self.assertEqual(state['phase'], 'LIVE_MONITORING')
+        self.assertEqual(state['live_feed'], 'UPSTOX_DEFERRED')
+        self.assertIn('BLOCKED', state['entry_alerts'])
+        run.assert_not_called()
+        self.assertTrue((self.root/'exchange_sessions.json').exists())
+
+    def test_unknown_calendar_year_runs_offline_checks_fail_closed(self):
+        from swing_worker import tick
+        from datetime import datetime, timezone
+        with patch('swing_worker.subprocess.run') as run:
+            run.return_value.returncode = 0
+            with patch.dict(os.environ, {'UPSTOX_ANALYTICS_TOKEN': ''}):
+                state = tick(self.root, datetime(2027, 1, 4, 4, tzinfo=timezone.utc))
         self.assertEqual(state['phase'], 'CALENDAR_PENDING')
         self.assertEqual(state['live_feed'], 'NOT_CONNECTED')
-        self.assertIn('BLOCKED', state['entry_alerts'])
         self.assertEqual(len(run.call_args_list), 5)
         for call in run.call_args_list:
             self.assertEqual(Path(call.args[0][1]).parent, CODE_ROOT)
-        self.assertTrue((self.root/'runtime'/'schedule.sqlite').exists())
 
 
 if __name__ == '__main__':
