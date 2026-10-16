@@ -29,6 +29,18 @@ class TermuxSupervisorTests(unittest.TestCase):
         self.assertFalse(supervisor.acquire_wakelock(run=run, which=lambda _name: '/bin/fake'))
         run.assert_called_once()
 
+    def test_dashboard_requires_complete_private_enrollment(self):
+        self.assertEqual(supervisor.dashboard_mode({}), 'NOT_ENROLLED')
+        self.assertEqual(supervisor.dashboard_mode({'APP_SECRET_KEY':'x'}), 'CONFIG_INCOMPLETE')
+        env={key:'value' for key in supervisor.AUTH_KEYS}
+        self.assertEqual(supervisor.dashboard_mode(env), 'LOOPBACK_MFA_ENABLED')
+        command=supervisor.dashboard_command(env)
+        self.assertIn('127.0.0.1:8787', command)
+        local=supervisor.dashboard_env(env)
+        self.assertEqual(local['LOCAL_LOOPBACK_ONLY'],'1')
+        self.assertEqual(local['APP_HOST'],'localhost')
+        self.assertEqual(local['SMS_ENABLED'],'0')
+
 
 if __name__ == '__main__':
     unittest.main()
