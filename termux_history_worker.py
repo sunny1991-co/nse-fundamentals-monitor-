@@ -108,13 +108,13 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
     atomic_status(marker_path, marker)
     return marker
 
-# Initial catch-up is intentionally bounded but faster than the first 40-day
-# proof run. ~100 archive days every two hours keeps request volume moderate
-# while finishing multi-year history in roughly 1-2 days when NSE stays
-# available. Once complete, the collector becomes a cheap no-op between cycles.
+# Fast catch-up still preserves source/hash/date/corporate-action validation.
+# It changes throughput only; evidence gates are not relaxed. HTTP 403/429
+# remains an immediate stop condition inside the collector.
 INTERVAL_SECONDS = 2 * 60 * 60
-BATCH_DAYS = 100
-MAX_MINUTES = 15
+CATCHUP_INTERVAL_SECONDS = 3 * 60
+BATCH_DAYS = 250
+MAX_MINUTES = 30
 
 
 def main() -> int:
@@ -232,15 +232,29 @@ def main() -> int:
                 except OSError:
                     post_publish = {'state': 'POST_PUBLISH_LOG_ERROR'}
 
-            next_run = time.time() + INTERVAL_SECONDS
+            daily = collector.get('daily') or {}
+            remaining = int(
+                daily.get('remaining_archive_days', daily.get('remaining_weekdays', 0)) or 0
+            )
+            blocked = bool(daily.get('blocked')) or collector.get('state') == 'BLOCKED_BY_NSE_ACCESS'
+            fast_catchup = (
+                code == 0
+                and remaining > 0
+                and not blocked
+                and collector.get('state') != 'ADJUSTED_HISTORY_PUBLISHED'
+            )
+            wait_seconds = CATCHUP_INTERVAL_SECONDS if fast_catchup else INTERVAL_SECONDS
+            next_run = time.time() + wait_seconds
             publish_worker_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'SLEEPING',
                 'collector_returncode': code,
                 'collector_state': collector.get('state', 'STATUS_UNAVAILABLE'),
-                'remaining_weekdays': int(
-                    (collector.get('daily') or {}).get('remaining_weekdays') or 0
-                ),
+                'remaining_weekdays': remaining,
+                'remaining_archive_days': remaining,
+                'unverified_no_file_days': int(daily.get('unverified_no_file_days') or 0),
+                'fast_catchup': fast_catchup,
+                'next_run_seconds': wait_seconds,
                 'post_publish_validation': post_publish,
                 'next_run_epoch': next_run,
                 'upstox': 'NOT_USED',
