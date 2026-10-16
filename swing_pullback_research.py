@@ -50,6 +50,23 @@ def pullback_features(bars):
     return d
 
 
+
+def completed_trade_stats(trades):
+    """Net trade returns excluding censored/forced sample-end liquidations.
+
+    This is descriptive research, not a significance test or strategy approval.
+    Unknown exit reasons are not presumed to be completed positions.
+    """
+    returns = [float(t['Return']) for t in trades
+               if t.get('Reason') not in (None, 'sample_end')]
+    if not returns:
+        return dict(count=0, mean_net_return=None, profit_factor=None)
+    losses = -sum(r for r in returns if r < 0)
+    gains = sum(r for r in returns if r > 0)
+    return dict(count=len(returns), mean_net_return=sum(returns)/len(returns),
+                profit_factor=gains/losses if losses > 0 else None)
+
+
 def compare(raw, digest, limit=20):
     if not 1 <= limit <= 100:
         raise ValueError('limit must be 1..100 for a bounded exploratory run')
@@ -63,13 +80,19 @@ def compare(raw, digest, limit=20):
         start=220+int((len(bars)-220)*.7)
         for version, build in [(VERSION,features),(PROTOCOL['version'],pullback_features)]:
             d=build(bars)
-            base,_=simulate(d,start,len(d))
-            stress,_=simulate(d,start,len(d),cost=COST*2,slip=SLIP*2)
+            base,base_trades=simulate(d,start,len(d))
+            stress,stress_trades=simulate(d,start,len(d),cost=COST*2,slip=SLIP*2)
+            completed=completed_trade_stats(base_trades)
+            stress_completed=completed_trade_stats(stress_trades)
             rows.append(dict(symbol=symbol,strategy=version,
                 start=str(d.Date.iloc[start].date()),end=str(d.Date.iloc[-1].date()),
                 signal_opportunities=int(d.Signal.iloc[start-1:len(d)-1].sum()),
                 completed_trades=base['Completed_Trades'],
                 sample_end_liquidations=base['Trades']-base['Completed_Trades'],
+                completed_mean_net_trade_return=completed['mean_net_return'],
+                stress_completed_mean_net_trade_return=stress_completed['mean_net_return'],
+                completed_profit_factor=completed['profit_factor'],
+                stress_completed_profit_factor=stress_completed['profit_factor'],
                 mean_trade_return_including_sample_end=base['Mean_Return'],
                 max_single_stock_drawdown=base['Max_Drawdown'],
                 stress_mean_trade_return_including_sample_end=stress['Mean_Return']))
@@ -82,7 +105,10 @@ def compare(raw, digest, limit=20):
             median_completed_trades=median([r['completed_trades'] for r in selected]) if selected else None,
             signal_opportunities=sum(r['signal_opportunities'] for r in selected),
             stocks_with_completed_trades_and_positive_mean=sum(r['completed_trades']>0 and r['mean_trade_return_including_sample_end']>0 for r in selected),
-            stocks_with_completed_trades_and_positive_stress_mean=sum(r['completed_trades']>0 and r['stress_mean_trade_return_including_sample_end']>0 for r in selected))
+            stocks_with_completed_trades_and_positive_stress_mean=sum(r['completed_trades']>0 and r['stress_mean_trade_return_including_sample_end']>0 for r in selected),
+            stocks_with_positive_completed_mean=sum(r['completed_mean_net_trade_return'] is not None and r['completed_mean_net_trade_return']>0 for r in selected),
+            stocks_with_positive_completed_mean_under_stress=sum(r['stress_completed_mean_net_trade_return'] is not None and r['stress_completed_mean_net_trade_return']>0 for r in selected),
+            stocks_with_at_least_30_completed_trades=sum(r['completed_trades']>=30 for r in selected))
     source=Path(__file__).read_bytes()
     engine=Path(__file__).with_name('swing_backtest.py').read_bytes()
     indicators=Path(__file__).with_name('swing_strategy.py').read_bytes()
@@ -96,7 +122,8 @@ def compare(raw, digest, limit=20):
         validation_status='NOT_VALIDATED',live_eligible=False,
         limitations=['Fixed bounded sample, not whole-universe performance.',
           'Current surviving universe; no point-in-time fundamentals or portfolio simulation.',
-          'Returns include forced sample-end liquidation and illustrative trading costs.',
+          'Original mean_trade_return fields include forced sample-end liquidation; completed_mean_net_trade_return fields exclude them and are descriptive only.',
+          'All returns use illustrative per-side trading costs; profit factor with no losing completed trades is reported as null.',
           'Already inspected history cannot certify a revised strategy; separate untouched evaluation or forward paper evidence required.'])
 
 
