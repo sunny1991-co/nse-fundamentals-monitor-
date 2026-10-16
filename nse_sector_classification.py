@@ -11,7 +11,8 @@ import pandas as pd
 import requests
 
 ROOT = data_root()
-LANDING_URL = "https://www.nseindia.com/companies-listing/corporate-integrated-filing"
+LANDING_URL = "https://www.nseindia.com/"
+QUOTE_PAGE_URL = "https://www.nseindia.com/get-quotes/equity"
 QUOTE_URL = "https://www.nseindia.com/api/quote-equity"
 MAP_FILE = ROOT / "nse_sector_map.csv"
 MAX_LOOKUPS_PER_RUN = 3500
@@ -35,9 +36,9 @@ def session_create():
     s = requests.Session()
     s.headers.update({
         "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
         "Referer": LANDING_URL,
-        "X-Requested-With": "XMLHttpRequest",
     })
     r = s.get(LANDING_URL, timeout=30)
     r.raise_for_status()
@@ -67,9 +68,25 @@ def fresh_date(value):
 
 def lookup(s, sym):
     last = None
+    quote_page = f"{QUOTE_PAGE_URL}?symbol={sym}"
     for attempt in range(3):
         try:
-            r = s.get(QUOTE_URL, params={"symbol": sym}, timeout=20)
+            r = s.get(
+                QUOTE_URL, params={"symbol": sym}, timeout=20,
+                headers={"Referer": quote_page, "Accept": "application/json,text/plain,*/*"},
+            )
+            if r.status_code in (403, 429) and attempt == 0:
+                # One normal-browser warm-up retry is allowed. This is not a
+                # proxy/identity bypass; if NSE still refuses access we stop.
+                page = s.get(
+                    quote_page, timeout=20,
+                    headers={"Referer": LANDING_URL, "Accept": "text/html,application/xhtml+xml,*/*"},
+                )
+                if page.status_code == 200:
+                    r = s.get(
+                        QUOTE_URL, params={"symbol": sym}, timeout=20,
+                        headers={"Referer": quote_page, "Accept": "application/json,text/plain,*/*"},
+                    )
             if r.status_code in (403, 429):
                 raise requests.HTTPError(f"NSE quote HTTP {r.status_code} (blocked)")
             if r.status_code in (500, 502, 503, 504):
