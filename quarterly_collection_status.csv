@@ -1,2 +1,2 @@
 Run_Date,Collection_Status,Error,Indexed_URLs,Pending_URLs,Remaining_Pending_URLs,Attempted_URLs,New_Verified_URLs,Verified_Quarter_Rows,Stored_Quarter_Rows,Reverification_Required_Rows,Parser_Version,Qualified_Comparison_Rows
-2026-10-16,BOUNDED_ATTEMPT_LIMIT_REACHED,,22863,17874,15374,2500,1206,6159,6159,0,6,0
+2026-10-16,BOUNDED_ATTEMPT_LIMIT_REACHED,,22864,16705,14205,2500,1138,7176,7176,0,6,0
