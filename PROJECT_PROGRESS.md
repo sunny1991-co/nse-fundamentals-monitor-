@@ -1,5 +1,38 @@
 # Project progress — 16 October 2026
 
+## Upstox NSE-only old-fundamentals coverage pilot — 16 October 2026
+
+User raised a BSE membership concern. Official Upstox public site currently
+lists BSE TM code **6155** and NSE TM code **13942**. The project's
+trading/research universe is **NSE EQ mainboard only**, not BSE-listed
+instruments. Upstox company-fundamental APIs are keyed by valid Indian ISIN,
+not by choosing BSE vs NSE as the market venue. The already locally verified
+read-only Analytics Token can call the developer Fundamentals APIs.
+
+Added `upstox_reference_pilot.py` as a **manual 1–5 NSE EQ symbol reference
+coverage check**, separate from all strict fundamental files. It looks for a
+local `EQUITY_L*.csv` (NSE listed equity symbol + ISIN + EQ series) in
+persistent research or Android Download. If unavailable it uses the
+Upstox-documented NSE Reliance example only, not guessed mappings. Wherever
+the two baseline FY24/25 and FY25/26 files are present, a source-map symbol
+must occur in both. Fetches up to four read-only GET endpoints per ISIN:
+company profile sector, consolidated yearly income statement, balance sheet
+and cash flow. Extracts vendor-reference Mar 2023/2024 figures, rejects
+wrong report type/units, stops on auth/limit HTTP blocks, and never prints a
+credential. Output stays in private `runtime/experiments/upstox-nse-historical-reference-v1/report.json`.
+
+**Absolutely NO promotion** of vendor numbers to independently verified NSE
+audited/consolidated XBRL, zero official NSE sector classifications added,
+no change to the 4-year strict quality gate and **zero broker orders**.
+Upstox historical coverage has not been verified in the user's account until
+the local pilot is executed. This is not an automated complete-fundamentals
+importer and not a permission to loosen screening conditions.
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python upstox_reference_pilot.py --limit 5
+```
+
 ## Termux restart and real Upstox token status — 16 October 2026
 
 Owner's actual phone-local configuration (no secrets shared):
