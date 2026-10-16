@@ -1,5 +1,32 @@
 # Project progress — 16 October 2026
 
+## Separate trend-pullback experiment — not enabled for trading
+
+Added `swing_pullback_research.py` with frozen, explicit research-v1 rules:
+close > EMA50 > EMA200, reclaim of EMA20 from the prior close at/below EMA20,
+RSI 50–72, volume at least its 20-bar average, average turnover >= INR 5 crore,
+and the existing ATR/stop-distance limits. Entry/exit/cost model is reused.
+This is a hypothesis-driven experimental strategy, not a proven improvement.
+No active strategy, candidate list, alert gate or paper plan is switched.
+
+It compares the original and experimental strategy on the same deterministic
+20-symbol sample by default (maximum 100 per invocation). Both base and doubled
+cost/slippage runs are exploratory. Sampling is based on symbol hash, not returns.
+Only history through 15 October 2026 is used; post-design observations are excluded.
+The old holdout is already consumed for design and is never called independent
+validation for the new version. Source hashes and the complete protocol are
+recorded under `runtime/experiments/trend-pullback-research-v1/comparison.json`.
+No future win probability, portfolio result or live pass is generated.
+
+```sh
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_pullback_research.py --limit 20
+```
+
+This reads existing history and runs a bounded comparison, not history collection
+or a full-universe backtest. More signals alone are not an investment improvement.
+Point-in-time universe/fundamentals, portfolio risk, fresh evaluation data and
+forward observations remain outstanding. Fundamental/sector blockers are unchanged.
+
 ## Filter-level signal investigation
 
 Owner supplied signal audit: 660 history-eligible stocks, 273,570 holdout-day
