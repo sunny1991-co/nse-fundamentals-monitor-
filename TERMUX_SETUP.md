@@ -10,7 +10,7 @@ own Android phone. Upstox access remains read-only. No broker order is placed.
 - It uses `termux-wake-lock` when available.
 - `termux_backend.sh` provides start, stop, restart, status and one-shot commands.
 - An optional Termux:Boot script can be installed for phone reboot recovery.
-- Runtime state stays under the project's ignored `runtime/` directory.
+- Mutable research data and runtime state stay under `~/nse-fundamentals-data` by default, outside the Git worktree.
 - Private credentials remain in ignored `.env`; never commit or paste them into
   chat.
 - Android can still stop Termux after force-stop, battery optimization, vendor
@@ -33,6 +33,30 @@ If dependency installation fails, stop and capture the exact error rather than
 using random package workarounds. The project has previously encountered Python
 package build issues on Android, so resolve the actual failing package first.
 
+
+## One-time migration from repo-local data
+
+Older Termux installs wrote generated CSV reports into the Git checkout. Before
+pulling a version that uses the private data directory, preserve those local
+results and clean the worktree:
+
+```sh
+./termux_backend.sh stop
+mkdir -p "$HOME/nse-fundamentals-data/runtime"
+cp -n ./*.csv "$HOME/nse-fundamentals-data/" 2>/dev/null || true
+cp -a runtime/. "$HOME/nse-fundamentals-data/runtime/" 2>/dev/null || true
+rm -f "$HOME/nse-fundamentals-data/runtime/termux_supervisor.pid" \
+      "$HOME/nse-fundamentals-data/runtime/termux_supervisor.lock"
+git restore --worktree --staged -- '*.csv'
+git pull
+chmod +x termux_backend.sh
+./termux_backend.sh init-data
+./termux_backend.sh install-boot
+```
+
+The bootstrap copies tracked public CSV snapshots only when the private copy is
+missing. It never overwrites newer phone-local data.
+
 ## Private mobile dashboard enrollment
 
 The backend can expose the dashboard only on the phone itself at
@@ -45,7 +69,7 @@ Authenticator seed, current code, or recovery codes into chat):
 ```sh
 ./termux_backend.sh stop
 mkdir -p runtime
-python setup_auth.py --host localhost --db "$PWD/runtime/auth.sqlite"
+python setup_auth.py --host localhost --db "$HOME/nse-fundamentals-data/runtime/auth.sqlite"
 ./termux_backend.sh start
 ./termux_backend.sh status
 ```
@@ -105,8 +129,8 @@ worker first so report files are not written concurrently, then restarts it.
 ```
 
 This command does **not** use an Upstox token, does not enable SMS, and never
-places orders. It writes progress to `runtime/maintenance_status.json` and details
-to `runtime/maintenance.log`. NSE 403/429 or missing official historical evidence
+places orders. It writes progress to `~/nse-fundamentals-data/runtime/maintenance_status.json` and details
+to `~/nse-fundamentals-data/runtime/maintenance.log`. NSE 403/429 or missing official historical evidence
 remain visible blockers; they are never converted into passes.
 
 ## Daily commands
@@ -115,8 +139,8 @@ remain visible blockers; they are never converted into passes.
 ./termux_backend.sh status
 ./termux_backend.sh restart
 ./termux_backend.sh stop
-tail -n 100 runtime/termux_backend.log
-tail -n 100 runtime/analysis.log
+tail -n 100 ~/nse-fundamentals-data/runtime/termux_backend.log
+tail -n 100 ~/nse-fundamentals-data/runtime/analysis.log
 ```
 
 After a GitHub update:
