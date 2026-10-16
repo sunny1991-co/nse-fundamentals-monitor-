@@ -66,6 +66,8 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
 
     results = {}
     for name, script, script_args, timeout in (
+        ('annual_quality_returncode', 'annual_fundamental_quality.py', [], 10*60),
+        ('final_shortlist_returncode', 'final_fundamental_shortlist.py', [], 10*60),
         ('backtest_returncode', 'swing_backtest.py', [], 45*60),
         ('technical_screen_returncode', 'swing_technical_screener.py', ['--reuse-current-backtest'], 20*60),
         ('paper_returncode', 'swing_paper_monitor.py', [], 10*60),
@@ -96,6 +98,8 @@ def run_post_publish_validation(root: Path, env: dict, log) -> dict:
         'state': (
             'BACKTEST_SCREEN_PAPER_READINESS_COMPLETE'
             if all(results.get(key) == 0 for key in (
+                'annual_quality_returncode',
+                'final_shortlist_returncode',
                 'backtest_returncode',
                 'technical_screen_returncode',
                 'paper_returncode',
