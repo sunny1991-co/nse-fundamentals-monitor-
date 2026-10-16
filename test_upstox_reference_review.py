@@ -172,6 +172,19 @@ class ReviewTests(unittest.TestCase):
                 rows=list(csv.DictReader(file))
             self.assertEqual(rows,[])
 
+    def test_edited_comparison_csv_checksum_requires_fresh_nse_audit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            prepare(root)
+            folder=_stored_paths(root)[0]/"reconciliation"
+            path=folder/"metric_comparisons.csv"
+            path.write_text(path.read_text()+"\\n")
+            with self.assertRaisesRegex(
+                SourceReviewError,"COMPARISON_INPUT_CHANGED"
+            ):
+                create_review(root)
+            self.assertFalse((folder/"company_source_review_queue.csv").exists())
+
     def test_duplicate_comparison_key_not_accepted(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
@@ -185,6 +198,11 @@ class ReviewTests(unittest.TestCase):
             summary=folder/"summary.json"
             report=json.loads(summary.read_text())
             report["metric_comparisons"]+=1
+            # Re-sign a forged CSV so the *semantic duplicate* guard, not
+            # the checksum guard, is the check exercised in this test.
+            report["metric_comparisons_csv_sha256"]=hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
             summary.write_text(json.dumps(report))
             with self.assertRaisesRegex(
                 SourceReviewError,"DUPLICATE_COMPARISON_METRIC"
