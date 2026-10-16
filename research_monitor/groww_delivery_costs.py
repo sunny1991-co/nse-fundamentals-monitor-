@@ -77,13 +77,22 @@ def groww_delivery_breakdown(turnover: float, side: str, *,
 
 def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                       slip: float = 0.001, stress_multiplier: float = 1.0,
-                      max_hold: int = 100, liquidate_at_end: bool = True):
+                      max_hold: int = 100, liquidate_at_end: bool = True,
+                      risk_fraction: float | None = None):
     """Single-stock whole-share strategy execution with per-order fees.
 
     Same prior-bar signal/next-open 1% band and same conservative stop-first
     partial targets as swing_backtest.simulate; separate implementation avoids
     changing previous research reports. Returns per-position NET realisation.
     Both slippage and costs are embedded in the returned net trade returns.
+
+    risk_fraction is strictly optional and defaults to the original all-cash
+    model. When set, size a position so an *assumed fill at the initial stop*
+    after modeled sell slippage and all estimated round-trip charges loses at
+    most risk_fraction of the cash available BEFORE the trade. This is NOT a
+    guaranteed stop loss: actual gaps and order execution can lose far more.
+    Each invocation tests one stock independently, never a diversified
+    portfolio with shared capital.
     """
     if not (capital > 0 and math.isfinite(capital)
             and 0 <= slip < .1 and math.isfinite(slip)
@@ -91,6 +100,13 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
         raise ValueError("INVALID_SIMULATION_PARAMETERS")
     if not (0 <= start <= end <= len(d)):
         raise ValueError("INVALID_DATE_RANGE")
+    if risk_fraction is not None and (
+        isinstance(risk_fraction, bool)
+        or not isinstance(risk_fraction, (int, float))
+        or not math.isfinite(risk_fraction)
+        or not 0 < risk_fraction <= 0.05
+    ):
+        raise ValueError("INVALID_OPTIONAL_RISK_FRACTION")
     cash = float(capital)
     position = None
     trades = []
@@ -121,6 +137,38 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                 0 < fill-float(sig.Stop) <= .12*fill
             ):
                 qty = int(cash // fill)
+                # Binary-search integer share count under the hypothetical
+                # no-gap initial-stop loss, including *both* execution-side
+                # fees. This does not alter the original engine when disabled.
+                if risk_fraction is not None and qty > 0:
+                    stop_fill = float(sig.Stop) * (1-slip)
+                    budget = cash * risk_fraction
+                    if stop_fill <= 0 or stop_fill >= fill:
+                        qty = 0
+                    else:
+                        low, high = 0, qty
+                        while low < high:
+                            test_qty = (low + high + 1)//2
+                            test_buy_turnover = test_qty * fill
+                            test_sell_turnover = test_qty * stop_fill
+                            buy_cost = groww_delivery_breakdown(
+                                test_buy_turnover, "buy",
+                                stress_multiplier=stress_multiplier,
+                            ).total
+                            sell_cost = groww_delivery_breakdown(
+                                test_sell_turnover, "sell",
+                                stress_multiplier=stress_multiplier,
+                            ).total
+                            model_loss = (
+                                test_buy_turnover + buy_cost
+                                - test_sell_turnover + sell_cost
+                            )
+                            if (model_loss <= budget + 1e-8
+                                    and test_buy_turnover + buy_cost <= cash + 1e-8):
+                                low = test_qty
+                            else:
+                                high = test_qty - 1
+                        qty = low
                 fee = None
                 while qty > 0:
                     turnover = qty*fill
@@ -137,10 +185,23 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                     cash -= buy_total
                     total_fees += fee
                     risk = fill-float(sig.Stop)
+                    budget = before * risk_fraction if risk_fraction is not None else None
+                    projected_stop_loss = None
+                    if risk_fraction is not None:
+                        stop_turnover = qty * float(sig.Stop) * (1-slip)
+                        stop_sell_fee = groww_delivery_breakdown(
+                            stop_turnover, "sell",
+                            stress_multiplier=stress_multiplier,
+                        ).total
+                        projected_stop_loss = (
+                            buy_total - stop_turnover + stop_sell_fee
+                        )
                     position = {
                         "qty": qty, "original_qty": qty, "entry": fill,
                         "stop": float(sig.Stop), "t1": fill+2*risk,
                         "t2": fill+3*risk, "i": i,
+                        "risk_budget": budget,
+                        "projected_initial_stop_loss": projected_stop_loss,
                         "entry_date": str(b.Date.date()), "before": before,
                         "buy_total": buy_total, "buy_turnover": qty*fill,
                         "buy_fees": fee, "sell_receipts": 0.0,
@@ -190,6 +251,16 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
                     "Net_Profit_Rs": pnl,
                     "Return": pnl/p["buy_total"],
                     "Held_Sessions": i-p["i"]+1,
+                    "Pre_Trade_Capital_Rs": p["before"],
+                    "Return_On_Pre_Trade_Capital": pnl / p["before"],
+                    "Position_Entry_Fraction": p["buy_total"] / p["before"],
+                    "Risk_Budget_Rs": p["risk_budget"],
+                    "Projected_No_Gap_Stop_Loss_Rs":
+                        p["projected_initial_stop_loss"],
+                    "Risk_Budget_Exceeded_On_Exit": (
+                        pnl < -p["risk_budget"] - 1e-8
+                        if p["risk_budget"] is not None else None
+                    ),
                     # Extra fields for independent *loss attribution*.
                     # These are never consumed to choose the exit.
                     "Signal_Date": p["signal_date"],
@@ -253,4 +324,9 @@ def simulate_delivery(d, start: int, end: int, *, capital: float = 100_000.0,
         "Estimated_All_Trading_Charges_Rs": total_fees,
         "Final_Marked_Capital_Rs": curve[-1],
         "Open_Position": position is not None,
+        "Position_Risk_Fraction": risk_fraction,
+        "Realised_Risk_Budget_Breaches": sum(
+            t["Risk_Budget_Exceeded_On_Exit"] is True
+            for t in trades if t["Reason"] != "sample_end"
+        ),
     }, trades
