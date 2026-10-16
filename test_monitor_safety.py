@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import pandas as pd
 import requests
 import nse_sector_classification as sector
@@ -63,6 +63,25 @@ class SafetyTests(unittest.TestCase):
             pd.DataFrame([dict(Symbol='ABC',Lookup_Status='OK',Lookup_Date=sector.date.today().isoformat(),Sector='Industrials')]).to_csv(path,index=False)
             with patch.object(sector,'MAP_FILE',path),patch.object(sector,'candidate_symbols',return_value=['ABC']),patch.object(sector,'session_create') as connect:
                 sector.main();connect.assert_not_called()
+
+    def test_sector_lookup_allows_one_normal_quote_page_warmup_retry(self):
+        session = Mock()
+        blocked = Mock(status_code=403)
+        page = Mock(status_code=200)
+        good = Mock(status_code=200)
+        good.json.return_value = {
+            'industryInfo': {
+                'macro': 'Commodities',
+                'sector': 'Metals & Mining',
+                'industry': 'Ferrous Metals',
+                'basicIndustry': 'Iron & Steel',
+            }
+        }
+        session.get.side_effect = [blocked, page, good]
+        row = sector.lookup(session, 'ABC')
+        self.assertEqual(row['Lookup_Status'], 'OK')
+        self.assertEqual(row['Sector'], 'Metals & Mining')
+        self.assertEqual(session.get.call_count, 3)
 
     def test_sector_session_block_does_not_quarantine_whole_universe(self):
         with tempfile.TemporaryDirectory() as tmp:
