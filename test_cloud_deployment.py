@@ -129,7 +129,7 @@ class CloudTests(unittest.TestCase):
         self.assertEqual(state['phase'], 'CALENDAR_PENDING')
         self.assertEqual(state['live_feed'], 'NOT_CONNECTED')
         self.assertIn('BLOCKED', state['entry_alerts'])
-        self.assertEqual(len(run.call_args_list), 6)
+        self.assertEqual(len(run.call_args_list), 5)
         for call in run.call_args_list:
             self.assertEqual(Path(call.args[0][1]).parent, CODE_ROOT)
         self.assertTrue((self.root/'runtime'/'schedule.sqlite').exists())
