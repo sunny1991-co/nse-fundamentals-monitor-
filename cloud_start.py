@@ -112,6 +112,13 @@ def main():
     try:
         heartbeat.unlink(missing_ok=True)
         seed_sources(CODE_ROOT, root)
+        # Publish a fresh fail-closed readiness snapshot even when the service
+        # starts during a verified live NSE session and the swing worker
+        # therefore skips offline research jobs.
+        subprocess.run(
+            [sys.executable, str(CODE_ROOT/'swing_readiness.py')],
+            cwd=CODE_ROOT, env=env, timeout=30, check=True,
+        )
         commands = [
             [sys.executable, str(CODE_ROOT/'swing_worker.py')],
             [sys.executable, '-m', 'gunicorn', '--config', str(CODE_ROOT/'gunicorn.conf.py'),
