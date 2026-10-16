@@ -116,6 +116,11 @@ show_status() {
     cat "$RUNTIME_DIR/history_worker_status.json"
     echo
   fi
+  if [ -f "$RUNTIME_DIR/research_worker_status.json" ]; then
+    echo "Daily research maintenance status:"
+    cat "$RUNTIME_DIR/research_worker_status.json"
+    echo
+  fi
 }
 
 run_once() {
