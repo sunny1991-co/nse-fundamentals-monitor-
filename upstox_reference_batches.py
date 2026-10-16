@@ -269,7 +269,15 @@ def _summary(root, mapping, completed, *, run_results, fatal, requests_made,
         "soft_failure_companies_skipped_during_cooldown":cooldown_skipped,
         "soft_failure_retry_after_hours":SOFT_FAILURE_RETRY_HOURS,
         "requests_this_run":requests_made,
-        "new_company_records":len(run_results),
+        "new_company_records":sum(
+            row.get("status")=="UPSTOX_REFERENCE_ONLY_NOT_NSE_VERIFIED"
+            for row in run_results
+        ),
+        "batch_attempted_companies":len(run_results),
+        "batch_failed_companies":sum(
+            row.get("status")!="UPSTOX_REFERENCE_ONLY_NOT_NSE_VERIFIED"
+            for row in run_results
+        ),
         "batch_results":run_results,
         "stop_reason":fatal,
         "fy2022_23_vendor_reference_complete":sum(
