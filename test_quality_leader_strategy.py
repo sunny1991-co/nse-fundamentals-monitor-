@@ -17,7 +17,7 @@ from swing_quality_leader_research import compare,PROTOCOL
 
 
 def synthetic(count=620, symbol="SYNTH"):
-    dates=pd.bdate_range("2023-01-02",periods=count)
+    dates=pd.bdate_range("2019-01-02",periods=count)
     price=100.0+.40*np.arange(count,dtype=float)
     price[-1]+=8.0
     volume=np.full(count,2_000_000.0)
