@@ -54,8 +54,18 @@ def tick(root=ROOT, now=None):
         if history.get(day) != calendar:
             history[day]=calendar
             atomic_status(history_path,history)
+    # Configured secrets are *not* proof of market-data permissions, current
+    # quote freshness or access to an account. Never log token values.
+    upstox_configured = bool(os.environ.get('UPSTOX_ANALYTICS_TOKEN'))
+    groww_configured = bool(os.environ.get('GROWW_ACCESS_TOKEN'))
     status = dict(updated_at=now.isoformat(), phase=state, scope='SWING_EQUITY_ONLY',
-        live_feed='NOT_CONNECTED', sms='PROVIDER_SETUP_REQUIRED',
+        live_feed='SESSION_NOT_OPEN_NO_LIVE_QUOTE' if state != 'LIVE_MONITORING'
+                  else 'NOT_CONNECTED',
+        market_data_primary='GROWW', market_data_backup='UPSTOX',
+        groww_api_token_configured=groww_configured,
+        upstox_analytics_token_configured=upstox_configured,
+        broker_tokens_are_not_live_quote_validation=True,
+        sms='PROVIDER_SETUP_REQUIRED',
         entry_alerts='BLOCKED_PENDING_LIVE_AND_FORWARD_VALIDATION',
         paper_trading='PENDING_VALIDATED_FEED', orders='MANUAL_ONLY')
     if state=='LIVE_MONITORING':
