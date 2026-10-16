@@ -35,3 +35,37 @@ Approved template placeholders must be `symbol`, `event`, `entry`, `stop`, `targ
 Full technical/backtest/risk evidence remains in the application/outbox. Provider acceptance is not proof of delivery. Timeout produces DELIVERY_UNKNOWN_DO_NOT_RETRY; reconcile in provider dashboard before any resend. SMS can arrive late; expired entry alerts are not usable. No actual message has been sent by the tests.
 
 Official references: https://upstox.com/developer/api-documentation/analytics-token/ ; https://upstox.com/developer/api-documentation/get-market-timings/ ; https://upstox.com/developer/api-documentation/get-full-market-quote/ ; https://docs.msg91.com/sms/send-sms
+
+
+## Offline preparation while Upstox activation is pending
+
+No account or token is needed for these commands:
+
+```
+python swing_readiness.py
+python swing_import_history.py --csv "path/to/adjusted_daily.csv" --metadata "path/to/provider_metadata.json"
+python swing_technical_screener.py
+python swing_readiness.py
+```
+
+Supply `Symbol,Date,Open,High,Low,Close,Volume`; dates must be exactly `YYYY-MM-DD`.
+The metadata JSON must contain `source`, `adjustment_method`,
+`corporate_actions_adjusted: true`, and `sha256` of the exact original CSV bytes.
+Only attest adjustments after checking provider evidence for prices AND volume.
+The importer does not download data, adjust prices itself, verify an exchange
+instrument mapping, or establish that a provider attestation is true.
+No demo prices are installed as production data. At least 1260 completed bars
+per stock remain necessary, and meeting that minimum does not imply a pass.
+
+Import validates everything before replacing existing data. It rejects missing
+symbols, malformed daily dates, future dates, duplicates and invalid OHLCV.
+Current-day rows remain excluded. Successful imports invalidate previous
+backtest and candidate outputs. Raw licensed history and generated plans are
+ignored by Git and must stay private.
+
+The dashboard displays only conditional plans with a fresh (at most 24 hours)
+manifest whose hashes still match the historical data, metadata, fundamental
+reports, backtest report and candidate file. Older pre-manifest plans must be
+regenerated. A failed screener removes previous plans. The local readiness
+report includes its check timestamp; it is not continuous cloud monitoring.
+Entry SMS stays blocked pending forward validation.

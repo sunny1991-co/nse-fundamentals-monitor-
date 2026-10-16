@@ -13,3 +13,11 @@ instrument_master.json
 *.sqlite3
 swing_watchlist.json
 exchange_sessions.json
+
+market_ohlcv.csv.tmp
+market_data_metadata.tmp
+swing_backtest_report.csv
+swing_backtest_trades.csv
+swing_trade_candidates.csv
+swing_candidates_manifest.json
+swing_candidates_manifest.tmp

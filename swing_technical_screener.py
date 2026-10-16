@@ -1,12 +1,15 @@
 """Publish only current fundamental-pass AND technical holdout-pass candidates."""
 from pathlib import Path
 import pandas as pd
+from research_monitor.readiness import candidate_manifest
+from research_monitor.schedule import atomic_status
 from swing_backtest import main as run_backtests, load_market, features, VERSION, MAX_HOLD
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT/'swing_trade_candidates.csv'
 
 def main():
     OUTPUT.unlink(missing_ok=True)
+    (ROOT/'swing_candidates_manifest.json').unlink(missing_ok=True)
     run_backtests()  # Recompute: never trust a stale external pass flag.
     raw, digest = load_market()
     approved = pd.read_csv(ROOT/'final_fundamental_shortlist.csv', dtype=str)
@@ -43,7 +46,9 @@ def main():
             Backtest_Start=e.Start, Holdout_Start=e.Holdout_Start, Backtest_End=e.End,
             Status='EOD conditional plan; technical holdout evidence; live price not connected'))
     pd.DataFrame(rows,columns=None if rows else ['Symbol','Signal_Date','Entry_Min','Entry_Max_No_Chase','Stop_Loss','Status']).to_csv(OUTPUT,index=False)
+    atomic_status(ROOT/'swing_candidates_manifest.json', candidate_manifest(ROOT))
     print(f'{len(rows)} evidence-gated candidates; no future win probability claimed')
 
 if __name__=='__main__':
     main()
+

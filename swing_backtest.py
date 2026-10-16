@@ -4,8 +4,6 @@ Current fundamentals are NOT applied retrospectively. This tests technical rules
 per stock; it does not establish a point-in-time fundamental strategy backtest.
 Require provider metadata confirming corporate-action-adjusted daily OHLCV.
 """
-import json
-import hashlib
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -89,28 +87,9 @@ def simulate(d, start, end, cost=COST, slip=SLIP):
     return stats, trades
 
 def load_market():
-    path = ROOT/'market_ohlcv.csv'
-    meta = json.loads((ROOT/'market_data_metadata.json').read_text())
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if (meta.get('sha256') != digest or meta.get('corporate_actions_adjusted') is not True
-        or not meta.get('source') or not meta.get('adjustment_method')):
-        raise ValueError('Data provenance/adjustments not verified; no candidates')
-    raw = pd.read_csv(path)
-    raw['Date'] = pd.to_datetime(raw.Date, errors='raise')
-    raw['Symbol'] = raw.Symbol.astype(str).str.strip().str.upper()
-    for col in ['Open','High','Low','Close','Volume']:
-        raw[col] = pd.to_numeric(raw[col], errors='raise')
-    if not np.isfinite(raw[['Open','High','Low','Close','Volume']]).all().all():
-        raise ValueError('Non-finite market data')
-    if (raw.duplicated(['Symbol','Date']).any() or raw.Date.isna().any()
-        or (raw[['Open','High','Low','Close']]<=0).any().any() or (raw.Volume<0).any()
-        or (raw.High<raw[['Open','Close','Low']].max(axis=1)).any()
-        or (raw.Low>raw[['Open','Close','High']].min(axis=1)).any()):
-        raise ValueError('Invalid or duplicate OHLCV bars')
-    # Never treat today's unfinished daily candle as a completed signal.
-    today = pd.Timestamp.now(tz='Asia/Kolkata').tz_localize(None).normalize()
-    raw = raw[raw.Date < today]
-    return raw.sort_values(['Symbol','Date']), digest
+    from research_monitor.history import read_history
+    return read_history(ROOT)
+
 
 def main():
     # Remove obsolete success files before a missing-feed/error exit.
@@ -148,3 +127,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
