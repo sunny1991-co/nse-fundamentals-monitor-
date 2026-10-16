@@ -28,6 +28,8 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
      [sys.executable, str(CODE_ROOT/'nse_quarterly_monitor.py'), '--limit', '600', '--max-minutes', '20'], 25*60),
+    ("official_eod_history",
+     [sys.executable, str(CODE_ROOT/'swing_nse_history.py'), '--days', '80', '--max-minutes', '20'], 25*60),
     ("annual_quality",
      [sys.executable, str(CODE_ROOT/'annual_fundamental_quality.py')], 10*60),
     ("final_shortlist",
@@ -66,6 +68,11 @@ def summary(root: Path) -> dict:
                     sectors['other'] += 1
     except OSError:
         pass
+    history_state = {}
+    try:
+        history_state = json.loads((root/'runtime'/'nse_eod_history_status.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        history_state = {}
     return {
         'annual_full_pass': int(annual.get('Year_Data_Quality_Pass') or 0),
         'two_year_baseline_pass': int(annual.get('Six_Core_Fields_Complete') or 0),
@@ -76,6 +83,11 @@ def summary(root: Path) -> dict:
         'sector_verified_rows': sectors['ok'],
         'sector_missing_or_error_rows': sectors['other'],
         'adjusted_history': 'PRESENT' if (root/'market_ohlcv.csv').is_file() else 'MISSING',
+        'official_eod_history_state': history_state.get('state', 'NOT_STARTED'),
+        'official_eod_remaining_weekdays': int(
+            (history_state.get('daily') or {}).get('remaining_weekdays') or 0
+        ),
+        'official_eod_actions': (history_state.get('corporate_actions') or {}).get('status', 'NOT_STARTED'),
         'upstox': 'INTENTIONALLY_DEFERRED',
         'orders': 'MANUAL_ONLY',
     }
