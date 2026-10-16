@@ -171,30 +171,35 @@ def main() -> int:
             child_env = dashboard_env(base_env)
             with log_path.open('a', encoding='utf-8', buffering=1) as log:
                 log.write(f'\n{time.strftime("%Y-%m-%dT%H:%M:%S%z")} starting swing_worker.py\n')
-                children = {
-                    'worker': subprocess.Popen(
-                        [sys.executable, str(CODE_ROOT/'swing_worker.py')],
-                        cwd=CODE_ROOT, env=base_env, stdout=log,
-                        stderr=subprocess.STDOUT, start_new_session=True,
-                    ),
-                    'history': subprocess.Popen(
-                        history_command(),
-                        cwd=CODE_ROOT, env=base_env, stdout=log,
-                        stderr=subprocess.STDOUT, start_new_session=True,
-                    ),
-                    'research': subprocess.Popen(
-                        research_command(),
-                        cwd=CODE_ROOT, env=base_env, stdout=log,
-                        stderr=subprocess.STDOUT, start_new_session=True,
-                    ),
-                }
-                command = dashboard_command(base_env)
-                if command:
-                    log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} starting loopback dashboard\n')
-                    children['dashboard'] = subprocess.Popen(
-                        command, cwd=CODE_ROOT, env=child_env, stdout=log,
+                def start_named(name):
+                    if name == 'worker':
+                        command = [sys.executable, str(CODE_ROOT/'swing_worker.py')]
+                        env = base_env
+                    elif name == 'history':
+                        command = history_command()
+                        env = base_env
+                    elif name == 'research':
+                        command = research_command()
+                        env = base_env
+                    elif name == 'dashboard':
+                        command = dashboard_command(base_env)
+                        env = child_env
+                        if not command:
+                            return None
+                    else:
+                        raise ValueError('Unknown supervised process: '+name)
+                    log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} starting {name}\n')
+                    log.flush()
+                    return subprocess.Popen(
+                        command, cwd=CODE_ROOT, env=env, stdout=log,
                         stderr=subprocess.STDOUT, start_new_session=True,
                     )
+
+                children = {}
+                for name in ('worker', 'history', 'research', 'dashboard'):
+                    child = start_named(name)
+                    if child is not None:
+                        children[name] = child
 
                 def publish(state='RUNNING', **extra):
                     atomic_status(status_path, {
@@ -214,34 +219,52 @@ def main() -> int:
 
                 publish()
                 last_publish = time.monotonic()
-                failed_name = None
+                restart_history: dict[str, list[float]] = {}
                 while not stopping:
-                    failed_name = next((name for name, child in children.items()
-                                        if child.poll() is not None), None)
+                    failed_name = next(
+                        (name for name, child in children.items() if child.poll() is not None),
+                        None,
+                    )
                     if failed_name:
-                        break
+                        failed = children[failed_name]
+                        exit_code = failed.returncode
+                        history = restart_history.get(failed_name, [])
+                        history, delay = restart_delay(history, time.monotonic())
+                        restart_history[failed_name] = history
+                        log.write(
+                            f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} {failed_name} exited '
+                            f'code={exit_code}; restart in {delay}s\n'
+                        )
+                        log.flush()
+                        publish(
+                            'PROCESS_RESTART_WAIT',
+                            last_failed_process=failed_name,
+                            last_exit_code=exit_code,
+                            restart_delay_seconds=delay,
+                        )
+                        deadline = time.monotonic()+delay
+                        while not stopping and time.monotonic() < deadline:
+                            time.sleep(1)
+                        if stopping:
+                            break
+                        replacement = start_named(failed_name)
+                        if replacement is None:
+                            children.pop(failed_name, None)
+                        else:
+                            children[failed_name] = replacement
+                        publish('RUNNING', last_restarted_process=failed_name)
+                        last_publish = time.monotonic()
+                        continue
+
                     now_tick = time.monotonic()
                     if now_tick-last_publish >= 10:
                         publish()
                         last_publish = now_tick
-                    # Check stop signals/process exits quickly enough that the
-                    # outer Termux launcher does not need to force-kill us.
                     time.sleep(1)
 
                 if stopping:
                     terminate_all(children)
                     break
-
-                exit_code = children[failed_name].returncode if failed_name else None
-                terminate_all(children)
-                restarts, delay = restart_delay(restarts, time.monotonic())
-                log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} {failed_name} exited '
-                          f'code={exit_code}; restart in {delay}s\n')
-                publish('RESTART_WAIT', last_failed_process=failed_name,
-                        last_exit_code=exit_code, restart_delay_seconds=delay)
-            deadline = time.monotonic()+delay
-            while not stopping and time.monotonic() < deadline:
-                time.sleep(1)
         return 0
     finally:
         terminate_all(children)
