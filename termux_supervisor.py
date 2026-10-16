@@ -1,13 +1,11 @@
-"""Termux process supervisor for the read-only swing worker.
+"""Termux supervisor for the swing worker and optional loopback dashboard.
 
-It keeps one worker alive, holds an Android wake lock when the command exists,
-and never places broker orders. Android may still stop Termux if the OS/user
-force-stops it, so battery restrictions and Termux:Boot remain operator setup.
+No broker order route exists. The dashboard is started only after password +
+Authenticator enrollment has produced all required private settings.
 """
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 from pathlib import Path
 import shutil
@@ -23,6 +21,8 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
+
+AUTH_KEYS = ('APP_SECRET_KEY','APP_PASSWORD_HASH','APP_TOTP_SECRET','APP_AUTH_DB')
 
 
 def acquire_wakelock(run=subprocess.run, which=shutil.which) -> bool:
@@ -54,6 +54,31 @@ def restart_delay(restarts: list[float], now: float) -> tuple[list[float], int]:
     return recent, (60 if len(recent) >= 6 else 5)
 
 
+def dashboard_mode(env: dict) -> str:
+    present = [bool(env.get(key)) for key in AUTH_KEYS]
+    if not any(present):
+        return 'NOT_ENROLLED'
+    if not all(present):
+        return 'CONFIG_INCOMPLETE'
+    return 'LOOPBACK_MFA_ENABLED'
+
+
+def dashboard_command(env: dict) -> list[str] | None:
+    if dashboard_mode(env) != 'LOOPBACK_MFA_ENABLED':
+        return None
+    return [sys.executable, '-m', 'gunicorn', '--workers', '1', '--bind',
+            '127.0.0.1:8787', 'app:create_app()']
+
+
+def dashboard_env(base: dict) -> dict:
+    env = dict(base)
+    env['LOCAL_LOOPBACK_ONLY'] = '1'
+    env['APP_HOST'] = 'localhost'
+    env['TRUST_SINGLE_PROXY'] = '0'
+    env['SMS_ENABLED'] = '0'
+    return env
+
+
 def terminate_child(child: subprocess.Popen) -> None:
     if child.poll() is not None:
         return
@@ -69,6 +94,11 @@ def terminate_child(child: subprocess.Popen) -> None:
         except ProcessLookupError:
             pass
         child.wait()
+
+
+def terminate_all(children: dict[str, subprocess.Popen]) -> None:
+    for child in children.values():
+        terminate_child(child)
 
 
 def main() -> int:
@@ -92,7 +122,6 @@ def main() -> int:
     os.chmod(pid_path, 0o600)
 
     stopping = False
-    child = None
 
     def stop(_signum, _frame):
         nonlocal stopping
@@ -103,61 +132,70 @@ def main() -> int:
 
     wake_lock = acquire_wakelock()
     restarts: list[float] = []
+    children: dict[str, subprocess.Popen] = {}
     try:
         while not stopping:
+            base_env = dict(os.environ)
+            mode = dashboard_mode(base_env)
+            child_env = dashboard_env(base_env)
             with log_path.open('a', encoding='utf-8', buffering=1) as log:
-                started = time.time()
                 log.write(f'\n{time.strftime("%Y-%m-%dT%H:%M:%S%z")} starting swing_worker.py\n')
-                child = subprocess.Popen(
-                    [sys.executable, str(CODE_ROOT/'swing_worker.py')],
-                    cwd=CODE_ROOT,
-                    env=dict(os.environ),
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-                atomic_status(status_path, {
-                    'updated_at': time.time(),
-                    'supervisor_pid': os.getpid(),
-                    'worker_pid': child.pid,
-                    'state': 'RUNNING',
-                    'wake_lock': wake_lock,
-                    'orders': 'MANUAL_ONLY',
-                })
-                while child.poll() is None and not stopping:
+                children = {
+                    'worker': subprocess.Popen(
+                        [sys.executable, str(CODE_ROOT/'swing_worker.py')],
+                        cwd=CODE_ROOT, env=base_env, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                    )
+                }
+                command = dashboard_command(base_env)
+                if command:
+                    log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} starting loopback dashboard\n')
+                    children['dashboard'] = subprocess.Popen(
+                        command, cwd=CODE_ROOT, env=child_env, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                    )
+
+                def publish(state='RUNNING', **extra):
                     atomic_status(status_path, {
                         'updated_at': time.time(),
                         'supervisor_pid': os.getpid(),
-                        'worker_pid': child.pid,
-                        'state': 'RUNNING',
+                        'worker_pid': children.get('worker').pid if children.get('worker') else None,
+                        'dashboard_pid': children.get('dashboard').pid if children.get('dashboard') else None,
+                        'dashboard': mode,
+                        'dashboard_url': 'http://127.0.0.1:8787' if 'dashboard' in children else None,
+                        'state': state,
                         'wake_lock': wake_lock,
                         'orders': 'MANUAL_ONLY',
+                        **extra,
                     })
+
+                publish()
+                failed_name = None
+                while not stopping:
+                    failed_name = next((name for name, child in children.items()
+                                        if child.poll() is not None), None)
+                    if failed_name:
+                        break
+                    publish()
                     time.sleep(10)
+
                 if stopping:
-                    terminate_child(child)
+                    terminate_all(children)
                     break
-                exit_code = child.returncode
+
+                exit_code = children[failed_name].returncode if failed_name else None
+                terminate_all(children)
                 restarts, delay = restart_delay(restarts, time.monotonic())
-                log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} worker exited '
+                log.write(f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} {failed_name} exited '
                           f'code={exit_code}; restart in {delay}s\n')
-                atomic_status(status_path, {
-                    'updated_at': time.time(),
-                    'supervisor_pid': os.getpid(),
-                    'worker_pid': None,
-                    'state': 'RESTART_WAIT',
-                    'last_exit_code': exit_code,
-                    'restart_delay_seconds': delay,
-                    'wake_lock': wake_lock,
-                    'orders': 'MANUAL_ONLY',
-                })
+                publish('RESTART_WAIT', last_failed_process=failed_name,
+                        last_exit_code=exit_code, restart_delay_seconds=delay)
             deadline = time.monotonic()+delay
             while not stopping and time.monotonic() < deadline:
                 time.sleep(1)
         return 0
     finally:
-        if child is not None:
-            terminate_child(child)
+        terminate_all(children)
         release_wakelock()
         try:
             pid_path.unlink()
@@ -167,6 +205,9 @@ def main() -> int:
             'updated_at': time.time(),
             'supervisor_pid': os.getpid(),
             'worker_pid': None,
+            'dashboard_pid': None,
+            'dashboard': dashboard_mode(dict(os.environ)),
+            'dashboard_url': None,
             'state': 'STOPPED',
             'wake_lock': False,
             'orders': 'MANUAL_ONLY',
