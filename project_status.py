@@ -39,6 +39,75 @@ def int_value(value, default=0) -> int:
         return default
 
 
+
+def seven_strategy_snapshot(root: Path, runtime: Path) -> dict:
+    """Only show existing private research when code and input digests match."""
+    result = {
+        "seven_strategy_research": "NOT_RUN",
+        "seven_strategy_tested": 0,
+        "seven_strategy_research_top_three": [],
+        "seven_strategy_verified_top_three": [],
+    }
+    experiment = read_json(runtime / "experiments" / "seven-strategies-v1" / "comparison.json")
+    if not experiment:
+        return result
+    result["seven_strategy_research"] = "STALE_OR_UNVERIFIED_RESEARCH_REPORT"
+    metadata = read_json(root / "market_data_metadata.json")
+    code_paths = (
+        "swing_seven_strategy_research.py",
+        "research_monitor/seven_strategy_rules.py",
+        "research_monitor/strategy_sources.py",
+        "research_monitor/exploratory_ranking.py",
+        "swing_backtest.py", "swing_strategy.py", "swing_pullback_research.py",
+    )
+    try:
+        code_digest = hashlib.sha256(b"".join(
+            (CODE_ROOT / name).read_bytes() for name in code_paths
+        )).hexdigest()
+    except OSError:
+        return result
+    if not (
+        metadata.get("sha256")
+        and experiment.get("data_sha256") == metadata.get("sha256")
+        and experiment.get("implementation_sha256") == code_digest
+        and experiment.get("scope") == "SEVEN_HYPOTHESES_EXPLORATORY_ONLY"
+        and experiment.get("validation_status") == "NOT_VALIDATED"
+        and experiment.get("live_eligible") is False
+        and experiment.get("verified_top_three") == []
+    ):
+        return result
+    csv_names = {"benchmark": "nifty50_tri_history.csv",
+                 "earnings": "official_earnings_events.csv"}
+    meta_names = {"benchmark": "nifty50_tri_history_metadata.json",
+                  "earnings": "official_earnings_events_metadata.json"}
+    source_hashes = experiment.get("source_hashes") or {}
+    meta_hashes = experiment.get("metadata_hashes") or {}
+    for kind in csv_names:
+        src, meta = root / csv_names[kind], root / meta_names[kind]
+        if kind in source_hashes:
+            try:
+                if (hashlib.sha256(src.read_bytes()).hexdigest() != source_hashes[kind]
+                        or hashlib.sha256(meta.read_bytes()).hexdigest()
+                        != meta_hashes.get(kind)):
+                    return result
+            except OSError:
+                return result
+        elif src.exists() or meta.exists():
+            return result
+    summary = experiment.get("summary") or {}
+    research_top = experiment.get("research_top_three_unvalidated") or []
+    if (not isinstance(summary, dict) or not isinstance(research_top, list)
+            or len(research_top) > 3):
+        return result
+    result.update(
+        seven_strategy_research="CURRENT_EXPLORATORY_NOT_VALIDATED",
+        seven_strategy_tested=len(summary),
+        seven_strategy_research_top_three=research_top,
+    )
+    return result
+
+
+
 def snapshot(root: Path | None = None) -> dict:
     root = Path(root or data_root())
     runtime = root / "runtime"
@@ -157,6 +226,7 @@ def snapshot(root: Path | None = None) -> dict:
         "research_strategies_compared": research_strategies,
         "verified_profitable_strategies": 0,
         "strategy_trading_enabled": False,
+        **seven_strategy_snapshot(root, runtime),
         "live_feed": worker.get("live_feed", "NOT_CONNECTED"),
         "sms": worker.get("sms", "PROVIDER_SETUP_REQUIRED"),
         "upstox": "INTENTIONALLY_DEFERRED",
