@@ -38,11 +38,11 @@ watchdog_running() {
   pid_running "$WATCHDOG_PID_FILE" || return 1
   pid="$(cat "$WATCHDOG_PID_FILE")"
   [ -r "/proc/$pid/cmdline" ] || return 1
-  tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -Fq "$PROJECT_DIR/termux_watchdog.py"
+  tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Fq "$PROJECT_DIR/termux_watchdog.py"
 }
 
 start_watchdog() {
-  printf 'enabled\\n' > "$WATCHDOG_ENABLE_FILE"
+  printf 'enabled\n' > "$WATCHDOG_ENABLE_FILE"
   chmod 600 "$WATCHDOG_ENABLE_FILE"
   if watchdog_running; then
     return 0
