@@ -45,7 +45,7 @@ STATUS_NAME = "annual_report_pdf_pilot_status.json"
 ANNUAL_YEAR_MARKERS = {"2022-23": "2022 23", "2023-24": "2023 24"}
 MARKERS = {
     "consolidated_auditor": (
-        re.compile(r"independent auditors? report", re.I),
+        re.compile(r"independent\s+auditors?(?:['\u2019]s?)?\s+report", re.I),
         re.compile(r"consolidated", re.I),
     ),
     "consolidated_balance_sheet": (
