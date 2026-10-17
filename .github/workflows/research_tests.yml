@@ -1,5 +1,7 @@
 name: Research app and security tests
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
