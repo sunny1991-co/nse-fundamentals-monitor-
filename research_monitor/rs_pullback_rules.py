@@ -62,7 +62,6 @@ def rs_pullback_features(bars: pd.DataFrame, nifty_50_tri: pd.Series) -> pd.Data
     close, high, low, volume = d.Close, d.High, d.Low, d.Volume
     e20, e50, e200 = (ema(close, n) for n in (20, 50, 200))
     tri50, tri200 = ema(tri, 50), ema(tri, 200)
-    tri_return126 = tri / tri.shift(PARAMETERS["relative_return_sessions"]) - 1
     dates = pd.DatetimeIndex(d.Date)
     # Reindex by exact bar date. No forward/back fill, nearest date, or price NIFTY.
     tri_level = pd.Series(tri.reindex(dates).to_numpy(), index=d.index)
@@ -72,7 +71,14 @@ def rs_pullback_features(bars: pd.DataFrame, nifty_50_tri: pd.Series) -> pd.Data
         tri200.shift(PARAMETERS["long_term_slope_sessions"])
         .reindex(dates).to_numpy(), index=d.index
     )
-    tri_ret = pd.Series(tri_return126.reindex(dates).to_numpy(), index=d.index)
+    # A missing benchmark session *inside* the lookback must not silently
+    # shorten the benchmark's 126-observation return horizon.
+    complete_tri_window = tri_level.notna().rolling(
+        PARAMETERS["warmup_sessions"], min_periods=PARAMETERS["warmup_sessions"]
+    ).sum().eq(PARAMETERS["warmup_sessions"])
+    tri_ret = tri_level / tri_level.shift(
+        PARAMETERS["relative_return_sessions"]
+    ) - 1
     stock_ret = close / close.shift(PARAMETERS["relative_return_sessions"]) - 1
     relative = stock_ret - tri_ret
 
@@ -96,6 +102,7 @@ def rs_pullback_features(bars: pd.DataFrame, nifty_50_tri: pd.Series) -> pd.Data
     stop_dist = (close - stop) / close
     d["Stop"] = stop
     d["TRI_Exact_Day_Present"] = tri_level.notna()
+    d["TRI_Complete_260_Sessions"] = complete_tri_window
     d["Relative_TRI_126d_Return"] = relative
     d["Initial_Stop_Distance_Pct"] = stop_dist
     warmup = pd.Series(
@@ -103,7 +110,7 @@ def rs_pullback_features(bars: pd.DataFrame, nifty_50_tri: pd.Series) -> pd.Data
     )
     d["Signal"] = (
         warmup
-        & d.TRI_Exact_Day_Present
+        & d.TRI_Exact_Day_Present & d.TRI_Complete_260_Sessions
         & (tri_level > tri_ma200) & (tri_ma50 > tri_ma200)
         & (tri_ma200 > tri_ma200_prev)
         & (tri_ret > 0)
