@@ -192,9 +192,9 @@ class LegacyCollectionTests(unittest.TestCase):
         ready.write_text(
             'Symbol,Financial_Year,Official_XBRL_Source_URL,'
             'Source_Review_State,Metadata_Ready_For_XML,'
-            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\\n'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
             'TEST,2022-23,'+URL+','
-            'READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW,true,false\\n'
+            'READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW,true,false\n'
         )
         with (
             patch('nse_legacy_xbrl_preflight.snapshot') as preflight,
@@ -228,15 +228,15 @@ class LegacyCollectionTests(unittest.TestCase):
             collect(self.root,limit=1,plan_only=True,require_preflight=False)
 
     def test_plan_only_preserves_previous_verification_attempt_bytes(self):
-        original=b'Source_URL,Status,Reason\\n'+URL.encode()+b',ACCESS_BLOCKED,SOURCE_HTTP_403\\n'
+        original=b'Source_URL,Status,Reason\n'+URL.encode()+b',ACCESS_BLOCKED,SOURCE_HTTP_403\n'
         file=self.root/'legacy_xbrl_verification.csv'
         file.write_bytes(original)
         from nse_legacy_xbrl_preflight import OUTPUT as READY
         (self.root/READY).write_text(
             'Symbol,Financial_Year,Official_XBRL_Source_URL,'
             'Source_Review_State,Metadata_Ready_For_XML,'
-            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\\n'
-            'TEST,2022-23,'+URL+',PREVIOUS_SOURCE_ATTEMPT_COOLDOWN,false,false\\n'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+',PREVIOUS_SOURCE_ATTEMPT_COOLDOWN,false,false\n'
         )
         with patch('nse_legacy_xbrl_preflight.snapshot'):
             planned=collect(self.root,require_preflight=True,plan_only=True)
