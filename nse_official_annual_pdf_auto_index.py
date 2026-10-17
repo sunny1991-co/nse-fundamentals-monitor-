@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -33,6 +33,7 @@ HOST = "nsearchives.nseindia.com"
 OUTPUT = "nse_official_annual_pdf_candidates.csv"
 LEDGER = "runtime/nse_official_annual_pdf_index_ledger.csv"
 STATUS = "runtime/nse_official_annual_pdf_collector_status.json"
+ACCESS_COOLDOWN = timedelta(hours=20)
 PDF_DIR = Path("runtime") / "official_annual_report_pdf_candidates"
 PDF_LOG = "runtime/nse_official_pdf_download_receipts.csv"
 REQUIRED_YEARS = {"2022-23","2023-24"}
@@ -302,14 +303,132 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
     return added,state
 
 
+
+def source_access_cooldown(root:Path, now:datetime)->str:
+    """Return the original NSE source block's expiry without altering it.
+
+    Applies to a real NSE annual-index/landing 403/429 from this collector;
+    an ordinary empty PDF index or missing older year is not an access block.
+    """
+    path=root/STATUS
+    if not path.is_file():
+        return ""
+    if path.is_symlink() or path.stat().st_size>50_000:
+        raise OfficialAnnualPdfUnavailable("UNSAFE_ANNUAL_SOURCE_STATUS_FILE")
+    try:
+        report=json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError, TypeError) as exc:
+        raise OfficialAnnualPdfUnavailable("ANNUAL_SOURCE_STATUS_UNREADABLE") from exc
+    if not isinstance(report,dict):
+        raise OfficialAnnualPdfUnavailable("ANNUAL_SOURCE_STATUS_SCHEMA_INVALID")
+    state=report.get("state")
+    if state=="NSE_OFFICIAL_ANNUAL_INDEX_ACCESS_BLOCKED":
+        pass
+    elif (state=="OFFICIAL_ANNUAL_INDEX_BLOCKED"
+          and "ACCESS_BLOCKED" in str(report.get("reason",""))):
+        pass
+    else:
+        return ""
+    try:
+        seen=datetime.fromisoformat(report["checked_at_utc"])
+        if seen.tzinfo is None:
+            raise ValueError("timezone missing")
+        expiry=seen+ACCESS_COOLDOWN
+        if seen<=now<expiry:
+            return expiry.astimezone(timezone.utc).isoformat()
+    except (KeyError,ValueError,TypeError,OverflowError) as exc:
+        raise OfficialAnnualPdfUnavailable("ANNUAL_SOURCE_BLOCK_TIMESTAMP_INVALID") from exc
+    return ""
+
+
+def offline_pdf_source_plan(root:Path, now:datetime, limit:int)->dict:
+    """Source queue only: no HTTP session, no PDF bytes, no mutations."""
+    if not 1<=limit<=MAX_SYMBOLS:
+        raise ValueError("OFFICIAL_ANNUAL_PDF_BOUNDED_LIMIT_REQUIRED")
+    selected=choose_symbols(root,now,limit)
+    original_index=read_rows(root/OUTPUT)
+    original_receipts=read_rows(root/PDF_LOG)
+    # Receipt is NOT source validation: only a locally saved metadata
+    # claim. Original bytes/SHA, issuer, audited annual context and basis
+    # are independently checked by the later PDF reviewer.
+    index_keys={
+        (r.get("Symbol"),r.get("Financial_Year"),r.get("Official_Report_URL"),
+         r.get("Original_Metadata_SHA256"))
+        for r in original_index
+        if r.get("Financial_Year") in REQUIRED_YEARS
+        and source_pdf(r.get("Official_Report_URL",""),r.get("Symbol",""))
+    }
+    receipt_keys={
+        (r.get("Symbol"),r.get("Financial_Year"),
+         r.get("Official_Report_URL"),r.get("Source_Index_SHA256"))
+        for r in original_receipts
+    }
+    total_index_by_fy={
+        fy:sum(r[1]==fy for r in index_keys)
+        for fy in sorted(REQUIRED_YEARS)
+    }
+    unarchived=[r for r in index_keys if r not in receipt_keys]
+    proposed=[]
+    for entry in selected[:10]:
+        symbol=entry["Symbol"]
+        years_indexed={
+            fy for (sym,fy,url,sha) in index_keys if sym==symbol
+        }
+        years_with_receipts={
+            fy for (sym,fy,url,sha) in index_keys
+            if sym==symbol and (sym,fy,url,sha) in receipt_keys
+        }
+        proposed.append({
+            "Symbol":symbol,
+            "Existing_FY_Index_Years":sorted(years_indexed),
+            "Existing_FY_PDF_Receipt_Years_Not_Rehashed":sorted(years_with_receipts),
+            "Next_Research_Action":(
+                "OFFICIAL_NSE_PDF_SECTION_AND_NUMERIC_REVIEW"
+                if len(years_with_receipts)==2
+                else "DOWNLOAD_ALREADY_INDEXED_NSE_ANNUAL_PDF_IF_ACCESS_ALLOWED"
+                if years_indexed-years_with_receipts
+                else "CHECK_ORIGINAL_NSE_ANNUAL_REPORT_METADATA_IF_ACCESS_ALLOWED"
+            ),
+        })
+    return {
+        "checked_at_utc":now.astimezone(timezone.utc).isoformat(),
+        "state":"OFFICIAL_NSE_ANNUAL_PDF_SOURCE_PLAN_ONLY_NO_HTTP",
+        "selected_mainboard_symbols":len(selected),
+        "indexed_original_nse_pdf_links_by_year":total_index_by_fy,
+        "cached_source_receipts_not_rehashed":len(index_keys & receipt_keys),
+        "indexed_source_links_without_receipt":len(unarchived),
+        "previous_access_cooldown_until_utc":source_access_cooldown(root,now),
+        "proposed_next_source_symbols":proposed,
+        "annual_api_requests":0,"pdf_download_requests":0,
+        "archived_pdf_bytes_read":0,
+        "new_audited_fundamental_facts":0,
+        "strict_fundamental_passes_added":0,
+        "orders":"DISABLED",
+    }
+
+
 def collect(root:Path,*,limit:int=25,downloads:int=1,
-            now:datetime|None=None,session=None)->dict:
+            now:datetime|None=None,session=None,plan_only:bool=False)->dict:
     root=Path(root)
     now=now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("TIMEZONE_AWARE_CLOCK_REQUIRED")
     if not 1<=limit<=MAX_SYMBOLS or not 0<=downloads<=MAX_DOWNLOADS:
         raise ValueError("OFFICIAL_ANNUAL_PDF_BOUNDED_LIMIT_REQUIRED")
+    if plan_only:
+        return offline_pdf_source_plan(root,now,limit)
+    expiry=source_access_cooldown(root,now)
+    if expiry:
+        # Preserve ORIGINAL 403/429 timestamp in STATUS. Repeated
+        # maintenance runs must not renew or evade the source cooldown.
+        return {
+            "checked_at_utc":now.astimezone(timezone.utc).isoformat(),
+            "state":"NSE_ANNUAL_SOURCE_ACCESS_COOLDOWN_NO_REQUEST",
+            "next_eligible_at_utc":expiry,
+            "company_symbols_checked_this_run":0,
+            "annual_api_requests":0,"pdf_download_requests":0,
+            "new_strict_fundamental_passes":0,"orders":"DISABLED",
+        }
     root.mkdir(parents=True,exist_ok=True)
     chosen=choose_symbols(root,now,limit)
     all_candidates=read_rows(root/OUTPUT)
@@ -406,9 +525,12 @@ def main()->int:
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit",type=int,default=25)
     ap.add_argument("--download",type=int,default=1)
+    ap.add_argument("--plan-only",action="store_true",
+                    help="List safe official NSE annual PDF source gaps without API calls or writes")
     args=ap.parse_args()
     try:
-        result=collect(data_root(),limit=args.limit,downloads=args.download)
+        result=collect(data_root(),limit=args.limit,downloads=args.download,
+                       plan_only=args.plan_only)
     except (OfficialAnnualPdfUnavailable,ValueError,OSError,
             requests.RequestException) as exc:
         result={"checked_at_utc":datetime.now(timezone.utc).isoformat(),
