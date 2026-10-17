@@ -1,0 +1,47 @@
+name: One-time official NSE TRI source download attempt
+on:
+  push:
+    branches:
+      - probe/official-tri-cloud-download-20261017
+permissions:
+  contents: read
+jobs:
+  official-public-data-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimal HTTPS client
+        run: python -m pip install 'requests>=2.32,<3'
+      - name: One legitimate official-host POST (no redirects)
+        shell: bash
+        env:
+          NSE_DATA_DIR: ${{ runner.temp }}/nse-tri-unreviewed
+        run: |
+          mkdir -p "$NSE_DATA_DIR"
+          python nifty50_tri_official_import.py --fetch
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          d=Path(os.environ['NSE_DATA_DIR'])
+          a=json.loads((d/'runtime/nifty50_tri_acquisition_status.json').read_text())
+          print('Official fetch status:',a['state'])
+          print('Official HTTP status:',a.get('http_status'))
+          print('Official redirect classification:',a.get('redirect_class'))
+          print('Unreviewed official candidate rows:',a.get('candidate_rows',0))
+          print('Auto attested:',a['promoted_to_verified_benchmark'])
+          PY
+      - name: Keep only the official unreviewed result for owner retrieval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: attempted-official-nifty50-tri
+          path: |
+            ${{ runner.temp }}/nse-tri-unreviewed/nifty50_tri_download_candidate.csv
+            ${{ runner.temp }}/nse-tri-unreviewed/nifty50_tri_download_receipt.json
+            ${{ runner.temp }}/nse-tri-unreviewed/runtime/nifty50_tri_acquisition_status.json
+          if-no-files-found: error
+          retention-days: 1
