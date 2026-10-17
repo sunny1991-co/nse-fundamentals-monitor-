@@ -27,6 +27,11 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_mainboard_discovery.py')], 2*60),
     ('mainboard_evidence_gap_inventory',
      [sys.executable, str(CODE_ROOT/'nse_discovery_evidence_gaps.py')], 2*60),
+    # Find original NSE archived annual report PDFs for ALL current
+    # mainboard companies in a bounded daily batch. Index/PDF review ONLY.
+    ('official_annual_pdf_source_index',
+     [sys.executable, str(CODE_ROOT/'nse_official_annual_pdf_auto_index.py'),
+      '--limit', '25', '--download', '1'], 8*60),
     # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
@@ -103,7 +108,14 @@ def summary(root: Path) -> dict:
         discovery_gaps = json.loads((root/'runtime'/'nse_mainboard_evidence_gaps_status.json').read_text(encoding='utf-8'))
     except (OSError, ValueError, TypeError):
         discovery_gaps = {}
+    try:
+        annual_pdf = json.loads((root/'runtime'/'nse_official_annual_pdf_collector_status.json').read_text(encoding='utf-8'))
+    except (OSError,ValueError,TypeError):
+        annual_pdf = {}
     return {
+        'official_annual_pdf_index_state': annual_pdf.get('state','NOT_STARTED'),
+        'official_annual_pdf_index_symbols_checked': int(annual_pdf.get('indexed_company_total') or 0),
+        'official_annual_report_pdf_review_candidates': int(annual_pdf.get('total_candidate_pdf_index_rows') or 0),
         'nse_mainboard_evidence_gaps_state': discovery_gaps.get('state', 'NOT_STARTED'),
         'nse_mainboard_missing_fy_rows': int(discovery_gaps.get('missing_at_least_one_fy_row') or 0),
         'nse_mainboard_discovery_state': discovery.get('state', 'NOT_STARTED'),
