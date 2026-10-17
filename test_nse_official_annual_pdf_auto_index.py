@@ -1,6 +1,7 @@
 """Offline NSE annual-report metadata and bounded candidate-PDF regressions."""
 from datetime import datetime,timezone
 import csv
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from unittest.mock import patch,Mock
 from nse_official_annual_pdf_auto_index import (
     source_pdf,parse_metadata,collect,OUTPUT,PDF_LOG,STATUS,LEDGER,
     OfficialAnnualPdfUnavailable,MAX_PDF_BYTES,choose_symbols,
-    baseline_coverage,annual_source_priority,
+    baseline_coverage,annual_source_priority,offline_pdf_source_plan,source_access_cooldown,
 )
 from nse_mainboard_discovery import CATALOG
 
@@ -190,6 +191,101 @@ class OfficialAnnualAutoIndexTests(unittest.TestCase):
         ):
             reordered=choose_symbols(self.root,self.now,2)
         self.assertEqual([r["Symbol"] for r in reordered],["NEW","ZFAST"])
+
+    def test_annual_pdf_plan_is_no_network_no_writes_no_false_audit(self):
+        before={
+            name:(self.root/name).read_bytes()
+            for name in ("annual_historical_results.csv",
+                         "market_ohlcv.csv","swing_watchlist.json")
+        }
+        with patch("nse_official_annual_pdf_auto_index.requests.Session",
+                   side_effect=AssertionError("NO_HTTP_SESSION_IN_OFFLINE_PLAN")):
+            result=collect(self.root,limit=1,downloads=2,now=self.now,
+                           plan_only=True)
+        self.assertEqual(result["state"],
+                         "OFFICIAL_NSE_ANNUAL_PDF_SOURCE_PLAN_ONLY_NO_HTTP")
+        self.assertEqual(result["selected_mainboard_symbols"],1)
+        self.assertEqual(result["annual_api_requests"],0)
+        self.assertEqual(result["pdf_download_requests"],0)
+        self.assertEqual(result["new_audited_fundamental_facts"],0)
+        self.assertEqual(result["orders"],"DISABLED")
+        self.assertEqual(result["proposed_next_source_symbols"][0]["Symbol"],"NEW")
+        self.assertEqual(result["proposed_next_source_symbols"][0]["Next_Research_Action"],
+                         "CHECK_ORIGINAL_NSE_ANNUAL_REPORT_METADATA_IF_ACCESS_ALLOWED")
+        self.assertFalse((self.root/STATUS).exists())
+        self.assertFalse((self.root/LEDGER).exists())
+        for name,content in before.items():
+            self.assertEqual((self.root/name).read_bytes(),content)
+
+    def test_offline_plan_uses_already_attested_index_link_not_imaginary_pdf(self):
+        metadata=parse_metadata(self.good,"NEW","INE001A01011","New Company",
+                                self.now.isoformat())
+        with (self.root/OUTPUT).open("w",newline="") as f:
+            w=csv.DictWriter(f,fieldnames=list(metadata[0]))
+            w.writeheader()
+            w.writerows(metadata)
+        result=offline_pdf_source_plan(self.root,self.now,1)
+        self.assertEqual(result["indexed_original_nse_pdf_links_by_year"],
+                         {"2022-23":1,"2023-24":1})
+        self.assertEqual(result["indexed_source_links_without_receipt"],2)
+        self.assertEqual(result["cached_source_receipts_not_rehashed"],0)
+        self.assertEqual(result["proposed_next_source_symbols"][0]["Next_Research_Action"],
+                         "DOWNLOAD_ALREADY_INDEXED_NSE_ANNUAL_PDF_IF_ACCESS_ALLOWED")
+        self.assertEqual(result["annual_api_requests"],0)
+        self.assertFalse((self.root/PDF_LOG).exists())
+
+    def test_real_metadata_403_cooldown_prevents_repeated_source_calls(self):
+        provider=MockSession(self.good,status=403)
+        first=collect(self.root,limit=1,downloads=1,session=provider,
+                      now=self.now)
+        self.assertEqual(first["state"],"NSE_OFFICIAL_ANNUAL_INDEX_ACCESS_BLOCKED")
+        self.assertEqual(provider.api_calls,1)
+        original=(self.root/STATUS).read_bytes()
+        expiry=(self.now+__import__("datetime").timedelta(hours=20)).isoformat()
+        self.assertEqual(source_access_cooldown(
+            self.root,self.now+__import__("datetime").timedelta(hours=2)),expiry)
+        # Even explicitly re-invoked with a brand-new mock session, the
+        # blocking status triggers before any NSE request or PDF I/O.
+        fresh=MockSession(self.good)
+        second=collect(self.root,limit=1,downloads=2,session=fresh,
+                       now=self.now+__import__("datetime").timedelta(hours=2))
+        self.assertEqual(second["state"],
+                         "NSE_ANNUAL_SOURCE_ACCESS_COOLDOWN_NO_REQUEST")
+        self.assertEqual(second["next_eligible_at_utc"],expiry)
+        self.assertEqual(second["annual_api_requests"],0)
+        self.assertEqual(fresh.api_calls,0)
+        self.assertEqual(fresh.pdf_calls,0)
+        self.assertEqual((self.root/STATUS).read_bytes(),original)
+        self.assertEqual(offline_pdf_source_plan(
+            self.root,self.now+__import__("datetime").timedelta(hours=2),1
+        )["previous_access_cooldown_until_utc"],expiry)
+
+    def test_resume_after_original_source_cooldown_has_expired(self):
+        denied=MockSession(self.good,status=403)
+        collect(self.root,limit=1,downloads=0,session=denied,now=self.now)
+        approved=MockSession(self.good)
+        after=collect(self.root,limit=1,downloads=0,session=approved,
+                      now=self.now+__import__("datetime").timedelta(hours=21))
+        self.assertEqual(after["state"],"OFFICIAL_ANNUAL_REPORT_METADATA_CAPTURED")
+        self.assertEqual(approved.api_calls,1)
+        self.assertEqual(after["new_strict_fundamental_passes"],0)
+        self.assertEqual(after["orders"],"DISABLED")
+
+    def test_landing_access_denial_timestamp_is_respected(self):
+        blocked={
+            "state":"OFFICIAL_ANNUAL_INDEX_BLOCKED",
+            "reason":"NSE_ANNUAL_LANDING_ACCESS_BLOCKED",
+            "checked_at_utc":self.now.isoformat(),
+        }
+        (self.root/STATUS).parent.mkdir(parents=True,exist_ok=True)
+        (self.root/STATUS).write_text(json.dumps(blocked))
+        fresh=MockSession(self.good)
+        out=collect(self.root,limit=1,downloads=0,session=fresh,
+                    now=self.now+__import__("datetime").timedelta(hours=5))
+        self.assertEqual(out["state"],
+                         "NSE_ANNUAL_SOURCE_ACCESS_COOLDOWN_NO_REQUEST")
+        self.assertEqual(fresh.api_calls,0)
+        self.assertEqual(fresh.pdf_calls,0)
 
     def test_invalid_or_too_large_document_must_not_create_receipt(self):
         s=MockSession(self.good)
