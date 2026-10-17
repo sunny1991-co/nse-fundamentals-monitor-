@@ -30,7 +30,7 @@ REFERENCE_NAME = "nse_totalmarket_industry_reference.csv"
 STATUS_NAME = "nse_totalmarket_industry_reference_status.json"
 MAX_CSV_BYTES = 1_500_000
 MAX_ROWS = 1200
-SYMBOL = re.compile(r"[A-Z0-9&._-]{1,40}\\Z")
+SYMBOL = re.compile(r"[A-Z0-9&._-]{1,40}\Z")
 FIELDS = (
     "Symbol", "Company_Name", "Index_Industry", "Source_URL",
     "Source_SHA256", "Fetched_At_UTC", "Trust_Scope",
@@ -53,7 +53,7 @@ def parse_constituents(blob, *, stamp):
     """Reject malformed/inconsistent source instead of inventing a mapping."""
     if not isinstance(blob, bytes) or not 0 < len(blob) <= MAX_CSV_BYTES:
         raise ValueError("INVALID_SOURCE_SIZE")
-    if b"\\x00" in blob or blob.lstrip()[:5].lower() == b"<html":
+    if b"\x00" in blob or blob.lstrip()[:5].lower() == b"<html":
         raise ValueError("NOT_A_CONSTITUENT_CSV")
     try:
         raw = blob.decode("utf-8-sig")
