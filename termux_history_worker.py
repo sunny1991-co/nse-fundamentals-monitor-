@@ -248,6 +248,51 @@ def main() -> int:
             except (OSError, ValueError, TypeError):
                 collector = {}
 
+            # Run a separate, bounded all-EQ research backfill. Its database
+            # is UNADJUSTED and cannot enter the trade/backtest feed.
+            discovery_cycle = {'state': 'NOT_RUN'}
+            try:
+                with log_path.open('a', encoding='utf-8', buffering=1) as log:
+                    log.write('\n=== automatic all-mainboard research cycle ===\n')
+                    backfill = subprocess.run(
+                        [sys.executable, str(CODE_ROOT/'nse_mainboard_history_backfill.py'),
+                         '--days', '60', '--max-minutes', '12'],
+                        cwd=CODE_ROOT, env=env, stdout=log,
+                        stderr=subprocess.STDOUT, timeout=13*60, check=False,
+                    )
+                    radar = subprocess.run(
+                        [sys.executable, str(CODE_ROOT/'nse_mainboard_technical_radar.py')],
+                        cwd=CODE_ROOT, env=env, stdout=log,
+                        stderr=subprocess.STDOUT, timeout=5*60, check=False,
+                    )
+                backfill_state = json.loads(
+                    (runtime/'mainboard_raw_research_history_status.json').read_text(
+                        encoding='utf-8')
+                )
+                radar_state = json.loads(
+                    (runtime/'nse_mainboard_auto_research_radar_status.json').read_text(
+                        encoding='utf-8')
+                )
+                discovery_cycle = {
+                    'state': 'RESEARCH_CYCLE_COMPLETED' if backfill.returncode == 0 and
+                             radar.returncode == 0 else 'RESEARCH_CYCLE_PARTIAL',
+                    'backfill': backfill_state.get('state', 'UNKNOWN'),
+                    'archive_days_added': int(backfill_state.get(
+                        'archive_days_added_this_run') or 0),
+                    'archive_days_pending': int(backfill_state.get(
+                        'estimated_outstanding_expected_sessions') or 0),
+                    'radar': radar_state.get('state', 'UNKNOWN'),
+                    'unadjusted_research_candidates': int(radar_state.get(
+                        'unadjusted_breakout_research_candidates') or 0),
+                    'trade_eligible': False,
+                }
+            except (OSError, ValueError, TypeError, subprocess.TimeoutExpired) as exc:
+                discovery_cycle = {
+                    'state':'RESEARCH_CYCLE_ERROR',
+                    'error_type':type(exc).__name__,
+                    'trade_eligible':False,
+                }
+
             post_publish = {'state': 'NOT_READY'}
             if collector.get('state') == 'ADJUSTED_HISTORY_PUBLISHED':
                 try:
@@ -270,6 +315,7 @@ def main() -> int:
                 'fast_catchup': fast_catchup,
                 'next_run_seconds': wait_seconds,
                 'post_publish_validation': post_publish,
+                'mainboard_auto_research': discovery_cycle,
                 'next_run_epoch': next_run,
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
