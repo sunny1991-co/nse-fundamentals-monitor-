@@ -388,3 +388,35 @@ prioritized_two_year_six_core_company_sources_selected.
 The PDFs remain evidence for independent audited-consolidated numeric
 reconciliation and do NOT feed annual_historical_results.csv,
 strict fundamental pass, strategy backtest or live broker orders.
+
+## Automatic archived annual report PDF page review (read-only)
+
+The automated daily NSE Annual Reports source collector is followed by
+nse_annual_pdf_section_review.py --max-files 2 in Termux maintenance.
+It does NOT fetch unverified new websites. It uses ONLY existing
+SHA-256-verified privately archived original NSE annual-report candidates
+whose official FY, symbol, ISIN and URL match the current official
+mainboard+SME-excluded catalogue and the NSE report index.
+
+A bounded pypdf **partial text scan** finds potential physical PDF pages for
+(1) independent consolidated auditor's report, (2) consolidated balance
+sheet, (3) consolidated profit & loss, and (4) consolidated cash flow.
+The first four PDF pages are scanned for the apparent financial year.
+A missing page is explicitly reported as "INCOMPLETE ... REVIEW"; a found
+page is a candidate, not proof of audited reporting or a correct monetary
+fact. Unreadable/ambiguous PDFs remain in review and are never auto-OCR'd.
+
+Output (private NSE_DATA_DIR):
+- nse_annual_pdf_section_review.csv, one row per reviewed PDF/hash
+- runtime/nse_annual_pdf_section_review_status.json, bounded batch status
+
+Example after update:
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_section_review.py --max-files 1
+
+The old company FY2022–23/FY2023–24 20MICRONS PDF pilot is a
+separate curated source. This new NSE-only intake is still a FIRST
+STAGE of the broader automated workflow. Full audited/consolidated numeric
+extraction, independent reconciliations, units, comparable fiscal periods
+and source quality verification still require a separate fail-closed step.
+It NEVER appends facts to annual_historical_results.csv, approves strict
+four-year fundamentals, promotes a trade strategy, trades, or alerts.
