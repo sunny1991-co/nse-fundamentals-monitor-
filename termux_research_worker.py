@@ -24,6 +24,7 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 
 from research_monitor.paths import data_root
 from research_monitor.schedule import IST, atomic_status
+from research_monitor.termux_resources import memory_snapshot
 
 CHECK_INTERVAL_SECONDS = 30 * 60
 MIN_AGE_SECONDS = 20 * 60 * 60
@@ -43,6 +44,10 @@ def maintenance_due(root: Path, now: datetime) -> bool:
         if stamp.tzinfo is None:
             return True
         age = (now.astimezone(timezone.utc)-stamp.astimezone(timezone.utc)).total_seconds()
+        # Memory-deferred daily work should retry on the next normal
+        # 30-minute worker check, not wait an entire day.
+        if payload.get("state") == "MEMORY_PRESSURE_DEFERRED":
+            return age >= 25 * 60
         return age >= MIN_AGE_SECONDS
     except (OSError, ValueError, KeyError, TypeError):
         return True
@@ -85,10 +90,13 @@ def main() -> int:
     try:
         while not stopping:
             now = datetime.now(timezone.utc)
-            if maintenance_due(root, now):
+            due = maintenance_due(root, now)
+            ram = memory_snapshot() if due else None
+            if due and ram["heavy_research_allowed"]:
                 atomic_status(status_path, {
                     'updated_at': now.isoformat(),
                     'state': 'RUNNING_MAINTENANCE',
+                    'memory_profile': ram,
                     'upstox': 'NOT_USED',
                     'orders': 'MANUAL_ONLY',
                 })
@@ -135,7 +143,9 @@ def main() -> int:
             else:
                 atomic_status(status_path, {
                     'updated_at': now.isoformat(),
-                    'state': 'WAITING_NEXT_DAILY_WINDOW',
+                    'state': ('WAITING_FOR_RAM' if due
+                              else 'WAITING_NEXT_DAILY_WINDOW'),
+                    'memory_profile': ram,
                     'upstox': 'NOT_USED',
                     'orders': 'MANUAL_ONLY',
                 })
