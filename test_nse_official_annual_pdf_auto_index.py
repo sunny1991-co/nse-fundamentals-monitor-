@@ -8,7 +8,8 @@ from unittest.mock import patch,Mock
 
 from nse_official_annual_pdf_auto_index import (
     source_pdf,parse_metadata,collect,OUTPUT,PDF_LOG,STATUS,LEDGER,
-    OfficialAnnualPdfUnavailable,MAX_PDF_BYTES,
+    OfficialAnnualPdfUnavailable,MAX_PDF_BYTES,choose_symbols,
+    baseline_coverage,annual_source_priority,
 )
 from nse_mainboard_discovery import CATALOG
 
@@ -123,6 +124,72 @@ class OfficialAnnualAutoIndexTests(unittest.TestCase):
         self.assertEqual(s.pdf_calls,0)
         self.assertFalse((self.root/PDF_LOG).exists())
         self.assertFalse((self.root/"final_fundamental_shortlist.csv").exists())
+
+    def test_two_complete_baseline_fys_drive_priority_not_false_trade_approval(self):
+        # A complete six-field baseline prioritizes fetching ORIGINAL audited
+        # annual PDF evidence; it never makes any annual numeric fact verified.
+        core={
+            "Revenue_Operations_Cr":"20","Net_Profit_Cr":"3",
+            "Basic_EPS_Rs":"1","Total_Assets_Cr":"18",
+            "Total_Equity_Cr":"15","Total_Borrowings_Cr":"0",
+        }
+        with (self.root/CATALOG).open("a",newline="") as out:
+            writer=csv.DictWriter(out,fieldnames=[
+                "Symbol","ISIN","Company","Baseline_Tracked"])
+            writer.writerow(dict(Symbol="ZFAST",ISIN="INE999A01011",
+                                 Company="Candidate Research",Baseline_Tracked="true"))
+        for filename in ("FY2425.csv","NSE_FY2025-26_Consolidated_Fundamentals.csv"):
+            with (self.root/filename).open("w",newline="") as out:
+                w=csv.DictWriter(out,fieldnames=["Symbol",*core])
+                w.writeheader()
+                w.writerow({"Symbol":"ZFAST",**core})
+                w.writerow({"Symbol":"NEW",**{**core,
+                             "Net_Profit_Cr":"not_verified_number"}})
+        with patch(
+            "nse_official_annual_pdf_auto_index.verified_discovered_symbols",
+            return_value={"NEW","ZFAST"},
+        ):
+            ranked=choose_symbols(self.root,self.now,2)
+            self.assertEqual([r["Symbol"] for r in ranked],["ZFAST","NEW"])
+            s=MockSession(self.good)
+            # Synthetic per-symbol NSE annual report index payload.
+            class BySymbol(MockSession):
+                def get(self,url,**kwargs):
+                    if "/api/annual-reports" in url:
+                        sym=kwargs["params"]["symbol"]
+                        self.api_calls+=1
+                        return MockResponse({"data":[{
+                            "fromYr":2022,"toYr":2023,
+                            "fileName":"https://nsearchives.nseindia.com/annual_reports/AR_123_"
+                                      +sym+"_2022_2023_A_123.pdf",
+                        }]})
+                    return super().get(url,**kwargs)
+            provider=BySymbol(self.good)
+            result=collect(self.root,limit=2,downloads=1,
+                           session=provider,now=self.now)
+        self.assertEqual(result["prioritized_two_year_six_core_company_sources_selected"],1)
+        self.assertTrue(result["intake_priority_is_not_audited_fundamental_verification"])
+        receipts=list(csv.DictReader((self.root/PDF_LOG).open()))
+        self.assertEqual(len(receipts),1)
+        self.assertEqual(receipts[0]["Symbol"],"ZFAST")
+        self.assertEqual(result["new_strict_fundamental_passes"],0)
+        self.assertFalse((self.root/"final_fundamental_shortlist.csv").exists())
+
+        # Failed/blocked metadata sources must not starve entirely new listed
+        # NSE EQ companies forever: earliest last-checked gets retried first.
+        prior=[
+            {"Symbol":"ZFAST","Checked_At_UTC":"2026-10-15T00:00:00+00:00",
+             "Status":"OFFICIAL_METADATA_RECEIVED","Matching_PDF_Count":1},
+        ]
+        with (self.root/LEDGER).open("w",newline="") as out:
+            w=csv.DictWriter(out,fieldnames=list(prior[0]))
+            w.writeheader();w.writerows(prior)
+        with patch(
+            "nse_official_annual_pdf_auto_index.verified_discovered_symbols",
+            return_value={"NEW","ZFAST"},
+        ):
+            reordered=choose_symbols(self.root,self.now,2)
+        self.assertEqual([r["Symbol"] for r in reordered],["NEW","ZFAST"])
 
     def test_invalid_or_too_large_document_must_not_create_receipt(self):
         s=MockSession(self.good)

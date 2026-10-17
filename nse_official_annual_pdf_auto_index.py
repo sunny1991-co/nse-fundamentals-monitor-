@@ -13,6 +13,7 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -43,6 +44,13 @@ LEDGER_FIELDS = ["Symbol","Checked_At_UTC","Status","Matching_PDF_Count"]
 PDF_FIELDS = ["Symbol","Financial_Year","Official_Report_URL",
               "Source_Index_SHA256","PDF_SHA256","PDF_Bytes",
               "Cached_Private_Path","Downloaded_At_UTC","Review_Status"]
+CORE_FUNDAMENTAL_FIELDS = (
+    "Revenue_Operations_Cr", "Net_Profit_Cr", "Basic_EPS_Rs",
+    "Total_Assets_Cr", "Total_Equity_Cr", "Total_Borrowings_Cr",
+)
+PRIORITY_SOURCE_FILES = (
+    "FY2425.csv", "NSE_FY2025-26_Consolidated_Fundamentals.csv",
+)
 MAX_SYMBOLS = 50
 MAX_DOWNLOADS = 2
 MAX_PDF_BYTES = 26*1024*1024
@@ -156,11 +164,55 @@ def public_pdf(session: requests.Session, url: str)->bytes:
     return payload
 
 
+
+def baseline_coverage(root: Path) -> tuple[dict[str, int], dict[str, int]]:
+    """Use both existing local FY baselines to focus archival SOURCE intake.
+
+    A six-field-filled baseline is a *research lead*, NEVER a verified
+    audited annual result or financial/strategy PASS. Absence of the
+    baseline cannot exclude any NSE EQ symbol from eventual discovery.
+    """
+    existing, core_complete = {}, {}
+    for path in PRIORITY_SOURCE_FILES:
+        present=set()
+        complete=set()
+        for row in read_rows(root/path):
+            sym=str(row.get("Symbol","")).strip().upper()
+            if not SYMBOL_PATTERN.fullmatch(sym):
+                continue
+            present.add(sym)
+            try:
+                values=[float(str(row.get(k,"")).replace(",","").strip())
+                        for k in CORE_FUNDAMENTAL_FIELDS]
+                if all(math.isfinite(x) for x in values):
+                    complete.add(sym)
+            except (ValueError,TypeError):
+                pass
+        for sym in present:
+            existing[sym]=existing.get(sym,0)+1
+        for sym in complete:
+            core_complete[sym]=core_complete.get(sym,0)+1
+    return existing, core_complete
+
+
+def annual_source_priority(symbol:str, existing:dict[str,int],
+                           core_complete:dict[str,int]) -> int:
+    """0 is fastest credible four-year audit path, 3 is new/no FY baseline."""
+    if core_complete.get(symbol,0)==2:
+        return 0
+    if existing.get(symbol,0)==2:
+        return 1
+    if existing.get(symbol,0)==1:
+        return 2
+    return 3
+
+
 def choose_symbols(root:Path, now:datetime, limit:int)->list[dict]:
     verified=verified_discovered_symbols(root,now=now)
     catalog=read_rows(root/CATALOG)
     if len(catalog)!=len(verified):
         raise OfficialAnnualPdfUnavailable("VERIFIED_NSE_MAINBOARD_CATALOG_COUNT_CHANGED")
+    existing,core_complete=baseline_coverage(root)
     previous={r["Symbol"]:r for r in read_rows(root/LEDGER) if r.get("Symbol")}
     candidates=[]
     for row in catalog:
@@ -168,16 +220,15 @@ def choose_symbols(root:Path, now:datetime, limit:int)->list[dict]:
         if s not in verified:
             raise OfficialAnnualPdfUnavailable("OFFICIAL_MAINBOARD_MEMBERSHIP_NOT_MATCHED")
         already=previous.get(s,{})
-        candidates.append((row.get("Baseline_Tracked")!="false",
-                           already.get("Checked_At_UTC",""),
-                           s,row))
-    # Untracked EQ companies always prioritized, but older checks rotate
-    # predictably so no company gets permanent starvation.
-    # Never let an untracked subset starve the tracked universe: once
-    # previously unvisited symbols are indexed they move behind every
-    # never-visited symbol. Within equal timestamps prioritize discoveries.
-    candidates.sort(key=lambda x:(x[1],x[0],x[2]))
-    return [x[3] for x in candidates[:limit]]
+        candidates.append((already.get("Checked_At_UTC",""),
+                           annual_source_priority(s,existing,core_complete),
+                           row.get("Baseline_Tracked")!="false",s,row))
+    # Never-checked sources go first, then oldest check. Within a tie,
+    # companies with BOTH six-field annual FY baselines lead because their
+    # older audited documents have the shortest route to a complete review.
+    # New companies are still eventually checked and NOT excluded.
+    candidates.sort(key=lambda x:(x[0],x[1],x[2],x[3]))
+    return [x[4] for x in candidates[:limit]]
 
 
 def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
@@ -309,10 +360,22 @@ def collect(root:Path,*,limit:int=25,downloads:int=1,
         write_csv_atomic(root/OUTPUT,OUTPUT_FIELDS,ordered)
         write_csv_atomic(root/LEDGER,LEDGER_FIELDS,
                          sorted(ledger.values(),key=lambda x:x["Symbol"]))
+        # Download only already indexed, official and source-bound PDF URLs.
+        # Give best-coverage companies priority even if they are alphabetically
+        # later; all candidates remain indexed independently of source rank.
+        existing,core_complete=baseline_coverage(root)
+        download_queue=sorted(ordered,key=lambda r:(
+            annual_source_priority(r.get("Symbol",""),existing,core_complete),
+            r.get("Financial_Year",""),r.get("Symbol",""),
+            r.get("Official_Report_URL","")))
+        selected_complete=sum(
+            annual_source_priority(row["Symbol"],existing,core_complete)==0
+            for row in chosen
+        )
         downloaded=0
         pdf_state="SKIPPED_ON_ACCESS_BLOCK"
         if state!="NSE_OFFICIAL_ANNUAL_INDEX_ACCESS_BLOCKED":
-            downloaded,pdf_state=acquire_pdfs(root,ordered,receipts,session=session,
+            downloaded,pdf_state=acquire_pdfs(root,download_queue,receipts,session=session,
                                               now=now,limit=downloads)
             write_csv_atomic(root/PDF_LOG,PDF_FIELDS,receipts)
         report={
@@ -323,6 +386,8 @@ def collect(root:Path,*,limit:int=25,downloads:int=1,
             "total_candidate_pdf_index_rows":len(ordered),
             "indexed_company_total":len(ledger),
             "metadata_errors_this_run":errors,
+            "prioritized_two_year_six_core_company_sources_selected":selected_complete,
+            "intake_priority_is_not_audited_fundamental_verification":True,
             "new_archived_pdf_candidates_this_run":downloaded,
             "pdf_archive_state":pdf_state,
             "pdf_storage_limit_bytes":MAX_PDF_STORAGE_BYTES,
