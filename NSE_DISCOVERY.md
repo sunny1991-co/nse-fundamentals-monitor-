@@ -309,3 +309,54 @@ To apply the new running worker code after merging this patch:
 The first few lines of the new history_worker.log cycle will show the
 automatic all-mainboard research phase before the adjusted-data phase.
 A previous COLLECTING state alone does NOT prove a hung collector.
+
+
+## Automatic one-minute real-time chart RESEARCH via Upstox V3
+
+During a VERIFIED live NSE equity session, the existing 10-second swing worker
+automatically runs a separate **60-second** Upstox V3 1-minute OHLCV chart
+research monitor. It uses the already configured read-only
+UPSTOX_ANALYTICS_TOKEN, does not require Groww's separate API plan and
+does not call any broker order endpoint. The original strict, audited,
+consolidated fundamentals and NIFTY TRI rules remain untouched.
+
+Source: https://upstox.com/developer/api-documentation/v3/get-intra-day-candle-data/
+Upstox Analytics Token scope: https://upstox.com/developer/api-documentation/analytics-token/
+
+Each session the monitor:
+- Requires verified local current NSE mainboard+SME-excluded catalog, genuine
+  EQ symbol and ISIN, and exchange open status from Upstox in addition to the
+  independently reviewed session calendar.
+- Chooses **at most 4 symbols** from existing raw-EOD breakout research, the
+  20MICRONS pilot, and high-coverage radar. Override with a verified-only,
+  comma-separated NSE_CHART_SYMBOLS in private .env when desired; a symbol not
+  in the current NSE mainboard EQ catalog blocks the batch.
+- Fetches OFFICIAL BROKER-PUBLISHED 1-minute instrument OHLCV (not manually
+  sampled 10-second price quotes), rejects incomplete/current candles,
+  wrong-day, future, duplicated, malformed or stale source candles, and
+  requires 65 or more CLOSED session minutes before indicators are available.
+- Calculates EMA20/EMA50, RSI14, MACD(12,26,9), volume ratio to previous 20
+  bars, same-session VWAP, and nearest previous 20-minute highs/lows. Only
+  displays 'BULLISH_BREAKOUT_REVIEW_ONLY' or similar explanatory patterns.
+- Persists a bounded private status at:
+  runtime/live_chart_research_status.json
+- Displays mobile-friendly HTML/SVG candlesticks under the EXISTING MFA
+  dashboard (http://localhost:8787/charts), auto-refreshing the display
+  roughly every minute. Off-market displays a blocked/stale status.
+- Source 401/403/429 errors trigger a 5-minute cooldown; no hidden proxy,
+  credentials in reports, session bypass, fabricated candles or blind retry.
+
+Activation after GitHub merge (new swing worker code needs restart):
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    bash termux_backend.sh restart
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python project_status.py
+
+IMPORTANT: This is **bounded live-session near-real-time research** on up
+to 4 NSE EQ stocks each minute, NOT a free all-2,344-stock tick streaming feed,
+and not a successful/profitable trading system. Analysis requires a connected,
+authorized Upstox Analytics Token, a running Termux backend, and an open NSE
+session. Historic and new-company raw-EOD data must not become tradable
+without corporate action adjustments and full audited fundamental screens.
+No real order, protective stop, owner YES/NO approval, or SMS alert is enabled
+by the chart module.
