@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from nse_annual_report_pdf_pilot import (
     REL_FOLDER, SOURCES, SYMBOL, EXPECTED_ISIN,
-    PdfPilotUnavailable, inspect_bytes, capture, safe_preset,
+    PdfPilotUnavailable, inspect_bytes, capture, safe_preset, MARKERS,
 )
 from nse_mainboard_discovery import CATALOG
 
@@ -38,6 +38,20 @@ class FakeReader:
             ),
             FakePage("Notes to Consolidated Financial Statements"),
         ]
+
+
+class FakeReaderPossessiveAuditor(FakeReader):
+    def __init__(self, stream, strict=True):
+        super().__init__(stream, strict=strict)
+        self.pages[10] = FakePage(
+            "Consolidated Independent Auditor’s Report — report on the "
+            "Consolidated Financial Statements of 20 Microns Limited."
+        )
+        self.pages[11] = FakePage(
+            "Consolidated Balance Sheet "
+            "Consolidated Statement of Profit and Loss "
+            "Consolidated Cash Flow Statement"
+        )
 
 
 class FakeReaderFY24(FakeReader):
@@ -75,6 +89,23 @@ class PdfPilotTests(unittest.TestCase):
         self.assertTrue(r["candidate_section_pages_1_based"]["consolidated_balance_sheet"])
         self.assertEqual(r["verified_financial_facts"], 0)
         self.assertEqual(r["reporting_basis_auditor_and_units_review"], "PENDING_MANUAL_REVIEW")
+
+    def test_pdf_realistic_independent_auditor_possessive_heading(self):
+        r=inspect_bytes(pdf_bytes(),"2022-23",reader_cls=FakeReaderPossessiveAuditor)
+        self.assertEqual(r["candidate_section_pages_1_based"]["consolidated_auditor"],[11])
+        self.assertTrue(r["all_required_sections_located"])
+        self.assertEqual(r["verified_financial_facts"],0)
+        self.assertEqual(r["machine_extracted_financial_facts"],0)
+        matcher=MARKERS["consolidated_auditor"][0]
+        for title in (
+            "Independent Auditor’s Report",
+            "Independent Auditor's Report",
+            "Independent Auditors’ Report",
+            "Independent Auditors Report",
+            "Independent Auditor Report",
+        ):
+            self.assertIsNotNone(matcher.search(title),title)
+        self.assertIsNone(matcher.search("Unrelated non-audit section"))
 
     def test_year_mismatch_rejected(self):
         with self.assertRaisesRegex(PdfPilotUnavailable, "COVER_FY"):
