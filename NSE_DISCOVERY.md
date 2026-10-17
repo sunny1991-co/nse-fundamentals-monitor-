@@ -111,3 +111,48 @@ source access blocks and unfinished records do not count as PASS.
 official NSE API/index can block or lack filings. No historical stock OHLCV
 backfill or real trading is added by this step. Do not equate a fundamental
 PASS with a tested entry/stop/exit strategy or ready broker order.
+
+
+## FY 2022-23 / FY 2023-24 public annual PDF pilot (20MICRONS only)
+
+The previously audited legacy XML check correctly rejected its January-March
+quarter contexts as FULL FY contexts. Independent annual-report PDFs on the
+20 Microns *company investor-relations* page are separate primary-source
+candidates; this pilot does not relabel the rejected XML as annual.
+
+Company's official page: https://www.20microns.com/financial-report
+Exact curated PDFs:
+- FY22-23: https://fb949d44010d40db156a-660543cdef2fb4867335bf5294dccba6.ssl.cf2.rackcdn.com/financial_report/1689584643.pdf
+- FY23-24: https://fb949d44010d40db156a-660543cdef2fb4867335bf5294dccba6.ssl.cf2.rackcdn.com/financial_report/1719920352.pdf
+
+Termux, one-time lightweight optional PDF text parsing dependency:
+    python -m pip install "pypdf>=5,<8"
+
+After updating the GitHub repo and refreshing the official mainboard snapshot:
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_mainboard_discovery.py
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_report_pdf_pilot.py --year both
+
+Private persistent output:
+    $HOME/nse-fundamentals-data/runtime/annual_report_pdf_pilot_status.json
+    $HOME/nse-fundamentals-data/runtime/annual_report_pdf_pilot/
+
+The pilot:
+1. Requires current fresh official NSE EQ identity and ISIN for 20MICRONS.
+2. Permits only the two exact reviewed company-linked PDF URLs, no user URL,
+   redirects, alternate domain, broker token, or exchange login.
+3. Limits response to 32 MiB and PDF page count to 400; checks cover year,
+   SHA256 integrity, and extracts page numbers with likely consolidated
+   auditor, balance sheet, profit/loss, and cash-flow headings.
+4. Saves PDFs and their provenance/section receipt *locally*, never in GitHub;
+   successful re-runs use a hash-validated cached PDF.
+5. Always leaves extracted company financial metrics unverified. Real table
+   numbers require a separate exact fiscal-year, consolidated statement,
+   auditor opinion, reporting-unit (INR/crore/lakh), line-item, and source-page
+   review, with duplicate/revision and FY comparatives handled explicitly.
+
+IMPORTANT: this does NOT fill FY2022-23 or FY2023-24 into
+annual_historical_results.csv. No future-company bulk PDF ingestion or
+unattended review is implemented; manual source and row validation still
+needed. No strict fundamental/company trading eligibility is changed.
