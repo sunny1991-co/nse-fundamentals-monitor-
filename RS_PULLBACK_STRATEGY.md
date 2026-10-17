@@ -100,6 +100,56 @@ and **NTR_Value** (net-of-withholding total returns). No vendor substitute.
 The importer does not enable live trading, make an operator attestation
 implicitly, synthesize missing TRI sessions, or alter the portfolio.
 
+### If NSE Indices returns HTTP 302 instead of the TRI values
+
+The public NIFTY Indices historical-data page explicitly offers a **CSV
+export for "Total returns Index Values"**. A 302 response to the internal
+POST endpoint does not prove it is a functioning data API for this connection;
+do not follow redirects or bypass official anti-bot/access controls.
+
+**Manual original-publisher CSV fallback** (read-only until owner approval):
+
+1. In a normal browser open
+   https://www.niftyindices.com/reports/historical-data
+   and select **Total returns Index Values** (not Historical Index
+   Data / price returns), index **NIFTY 50**. Export the official CSV.
+   If the page restricts the period, export successive months/years; aim
+   for **at least 1,260 trading-day observations up to the latest available
+   completed day**.
+2. Keep the downloaded CSVs on the phone, e.g. `Download/nifty50-2019.csv`,
+   `nifty50-2020.csv`, etc. For **each** actual source file run:
+
+   ```bash
+   cd ~/nse-fundamentals-monitor- && git pull --ff-only
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nifty50_tri_official_csv_import.py --import-csv "$HOME/storage/shared/Download/REAL_SOURCE_FILENAME.csv"
+   ```
+
+   Import requires the official index name `NIFTY 50`, a real date column
+   and an explicit `Total Returns Index` **gross TRI** column; it
+   rejects `Close` price-only exports and `Net Total Return Index`.
+   Overlapping source days must report the same level; files are merged
+   without fabricated holiday levels. Downloads remain **UNREVIEWED**.
+3. When at least 1,260 rows are staged and you have **personally checked**
+   the original index, actual values, dates, column name and NSE Indices
+   source, then and only then explicitly attest:
+
+   ```bash
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nifty50_tri_official_csv_import.py --install-reviewed
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --preflight
+   ```
+
+   Never run `--install-reviewed` without that check. This step
+   records an *operator attestation*, not independent primary-source
+   verification. It refuses to overwrite already installed source files.
+   No trade or strategy approval is implied.
+
+4. Only if `--preflight` passes, the **research-only** three-way
+   historical comparison command can be rerun.
+
+If the publisher's page also blocks browser CSV exports, do not claim
+the benchmark is downloaded. A licensed official feed or authorised
+published source is needed; no trading threshold is relaxed.
+
 ### If the backtest reports `SOURCE_REQUIRED_OR_INVALID`
 
 Start with the **read-only** source preflight; it does not conduct a backtest
