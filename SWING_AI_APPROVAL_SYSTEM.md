@@ -28,6 +28,12 @@ the intended user interaction is exactly:
    private SQLite, and each quote observation must be monotonically
    timestamped and fresh. Any unknown/missing tick is **not** called a
    successful fill or a protected holding.
+6. Shared paper capital is now reserved atomically when the owner chooses YES:
+   combined armed/open planned stop risk cannot exceed **3%** of the single
+   paper-capital base; combined entry-high notional plus estimated buy-side
+   fees cannot exceed **100%**. Active duplicate symbols and mixed paper-capital
+   bases are rejected. These are simulation bookkeeping guards, **not** actual
+   account buying power, broker-side stops or a guarantee against gap losses.
 
 **Paper confirmation DOES NOT authorize a Groww order.**
 

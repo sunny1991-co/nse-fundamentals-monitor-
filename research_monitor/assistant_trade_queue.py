@@ -29,6 +29,10 @@ MODE="PAPER_RESEARCH_ONLY"
 STRATEGY="quality-leader-contraction-breakout-v1"
 MAX_RISK_FRACTION=.01
 MAX_POSITION_FRACTION=.25
+# Shared *paper* capital limits across every armed/open proposal in this ledger.
+# Not a broker buying-power check or a claim of real loss containment.
+MAX_TOTAL_PAPER_NOTIONAL_FRACTION=1.0
+MAX_TOTAL_PAPER_STOP_RISK_FRACTION=.03
 MAX_APPROVAL_TTL_SECONDS=300
 MAX_QUOTE_AGE_SECONDS=15
 MAX_HOLD_SESSIONS=100
@@ -138,6 +142,60 @@ class ApprovalQueue:
         record["historically_calibrated_win_probability"]=None
         record["live_trade_authorized"]=False
         return record
+
+    @classmethod
+    def _check_shared_paper_budget(cls,conn,requested,quantity):
+        """Atomically reserve conservative paper exposure at owner YES.
+
+        Each ledger uses one fictional shared capital amount. If multiple
+        capital bases appear, refuse instead of silently adding budgets.
+        Reserve planned entry-high and *initial* stop risk for armed/open
+        shares, even after partial sales or trailing stops. This deliberately
+        does not assume execution proceeds or unrealised profit are available.
+        """
+        plan=requested["plan"]
+        capital=float(plan["capital_inr"])
+        combined_notional=0.0
+        combined_risk=0.0
+        for (pid,) in conn.execute(
+            "SELECT id FROM trades WHERE state IN "
+            "('ARMED_PAPER_ONLY','OPEN_PAPER_ONLY')"
+        ):
+            if pid==requested["id"]:
+                continue
+            other=cls._row(conn,pid)
+            other_plan=other["plan"]
+            if other_plan["symbol"]==plan["symbol"]:
+                raise ValueError("SYMBOL_ALREADY_ARMED_OR_OPEN_PAPER")
+            if not math.isclose(
+                float(other_plan["capital_inr"]),capital,
+                rel_tol=0,abs_tol=.01
+            ):
+                raise ValueError("SHARED_PAPER_CAPITAL_MISMATCH")
+            reserved=(
+                other["quantity"] if other["state"]=="ARMED_PAPER_ONLY"
+                else other["shares_remaining"]
+            )
+            if not isinstance(reserved,int) or reserved<=0:
+                raise ValueError("ACTIVE_PAPER_RESERVATION_INVALID")
+            p_high=float(other_plan["entry_max"])
+            p_stop=float(other_plan["stop_loss"])
+            p_fee=float(other_plan["fee_fraction_per_side"])
+            combined_notional+=reserved*p_high*(1+p_fee)
+            combined_risk+=reserved*(
+                p_high-p_stop+p_fee*(p_high+p_stop)
+            )
+        high=float(plan["entry_max"])
+        stop=float(plan["stop_loss"])
+        fee=float(plan["fee_fraction_per_side"])
+        combined_notional+=quantity*high*(1+fee)
+        combined_risk+=quantity*(high-stop+fee*(high+stop))
+        # Tolerance is only for binary floating point rounding, never a
+        # meaningful percentage or extra whole share.
+        if combined_notional>capital*MAX_TOTAL_PAPER_NOTIONAL_FRACTION+1e-6:
+            raise ValueError("SHARED_PAPER_NOTIONAL_LIMIT")
+        if combined_risk>capital*MAX_TOTAL_PAPER_STOP_RISK_FRACTION+1e-6:
+            raise ValueError("SHARED_PAPER_STOP_RISK_LIMIT")
 
     def list_recent(self,limit=20):
         if not isinstance(limit,int) or not 1<=limit<=50:
@@ -264,6 +322,7 @@ class ApprovalQueue:
                 qty=safe_quantity(quantity)
                 if qty>row["plan"]["maximum_approved_quantity"]:
                     raise ValueError("QUANTITY_EXCEEDS_RISK_OR_POSITION_LIMIT")
+                self._check_shared_paper_budget(conn,row,qty)
                 state="ARMED_PAPER_ONLY"
             conn.execute(
                 "UPDATE trades SET state=?,quantity=? WHERE id=?",
