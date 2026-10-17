@@ -150,9 +150,9 @@ def recoverable(issues:list[dict],journal:dict,*,epoch:float)->tuple[list[str],d
         last=float(prev.get("last_probe_epoch") or 0)
         first=float(prev.get("first_probe_epoch") or epoch)
         count=int(prev.get("checks",0))
-        if last and epoch-last>=MIN_CONFIRMATION_GAP_SECONDS:
+        if last and MIN_CONFIRMATION_GAP_SECONDS<=epoch-last<=10*60:
             count+=1
-        elif not last:
+        elif not last or epoch-last>10*60:
             count=1
         updated[key]={"first_probe_epoch":first,
                       "last_probe_epoch":epoch,"checks":count}
@@ -197,7 +197,9 @@ def optional_ai_advice(issues:list[dict],journal:dict,now:datetime)->dict:
     fingerprint=hashlib.sha256(json.dumps(issue_codes,sort_keys=True).encode()).hexdigest()
     epoch=now.timestamp()
     ai=journal.get("ai",{}) if isinstance(journal.get("ai"),dict) else {}
-    if ai.get("fingerprint")==fingerprint and epoch-float(ai.get("last_attempt",0))<6*3600:
+    previous_ai=epoch-float(ai.get("last_attempt",0))
+    if (previous_ai<60*60 or
+        (ai.get("fingerprint")==fingerprint and previous_ai<6*3600)):
         return {"state":"AI_DIAGNOSIS_RATE_LIMITED"}
     # Record attempt BEFORE network, to avoid retry storm on API failure.
     journal["ai"]={"fingerprint":fingerprint,"last_attempt":epoch}
