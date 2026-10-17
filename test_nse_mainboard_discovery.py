@@ -125,8 +125,11 @@ class NseMainboardDiscoveryTests(unittest.TestCase):
     def test_sme_isin_overlap_cannot_enter_mainboard(self):
         self.sme_rows = [security("OTHER_SME", "INE222A01012", "SM")]
         self.feed[SME_URL] = make_list(self.sme_rows)
-        with self.assertRaisesRegex(DiscoveryUnavailable, "TOO_FEW_MAINBOARD"):
-            self.run_refresh()
+        self.run_refresh()
+        with (self.root/CATALOG).open(newline="") as f:
+            result = {r["Symbol"] for r in csv.DictReader(f)}
+        self.assertNotIn("OTHER", result)
+        self.assertEqual(result, {"OLD", "SMEX"})
 
 
 if __name__ == "__main__":
