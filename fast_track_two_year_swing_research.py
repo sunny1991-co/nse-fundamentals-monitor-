@@ -100,10 +100,12 @@ def source_universe(root: Path, now: datetime) -> list[dict]:
         if sym in seen:
             raise FastTrackBlocked("DUPLICATE_ANNUAL_QUALITY_SYMBOL")
         seen.add(sym)
-        if sym in names and row["Two_Year_Baseline_Data_Quality"] == "PASS":
+        if row["Two_Year_Baseline_Data_Quality"] == "PASS":
             qualifying.add(sym)
     report = _read_csv(root,"fast_fundamental_screen_summary.csv",
-                       {"Report_Generated_On","Fast_Fundamental_Pass_Count","Status"})
+                       {"Report_Generated_On","Fast_Fundamental_Pass_Count","Status",
+                        "Annual_Quality_SHA256","FY2024_25_SHA256",
+                        "FY2025_26_SHA256","Fast_Shortlist_SHA256"})
     if len(report) != 1 or report[0]["Status"] != "PROVISIONAL_SCREEN_COMPLETE":
         raise FastTrackBlocked("PROVISIONAL_SCREEN_UNAVAILABLE")
     day = datetime.strptime(report[0]["Report_Generated_On"][:10],"%Y-%m-%d").date()
@@ -113,24 +115,40 @@ def source_universe(root: Path, now: datetime) -> list[dict]:
     shortlist = _read_csv(root,"fast_fundamental_shortlist.csv", {
         "Symbol","Fast_Fundamental_Pass","Research_Scope",
         "Revenue_Growth_Pct","Net_Profit_Growth_Pct","EPS_Growth_Pct"})
+    for tag,path in (
+        ("Annual_Quality_SHA256","annual_fundamental_quality_report.csv"),
+        ("FY2024_25_SHA256","FY2425.csv"),
+        ("FY2025_26_SHA256","NSE_FY2025-26_Consolidated_Fundamentals.csv"),
+        ("Fast_Shortlist_SHA256","fast_fundamental_shortlist.csv"),
+    ):
+        if report[0].get(tag) != _hash(root/path):
+            raise FastTrackBlocked("PROVISIONAL_SCREEN_SOURCE_CHANGED_REBUILD_REQUIRED:"+tag)
     verified = {}
+    seen_shortlist = set()
+    excluded_from_current_mainboard = 0
     for row in shortlist:
         sym = row["Symbol"].strip().upper()
-        if sym in verified:
+        if sym in seen_shortlist:
             raise FastTrackBlocked("DUPLICATE_PROVISIONAL_RESEARCH_SYMBOL")
+        seen_shortlist.add(sym)
         if (row["Fast_Fundamental_Pass"].strip().lower() != "true"
             or row["Research_Scope"] != "PROVISIONAL_LOWER_CONFIDENCE_RESEARCH_ONLY"
             or sym not in qualifying):
-            raise FastTrackBlocked("PROVISIONAL_AND_YEAR_QUALITY_DISAGREE")
+            raise FastTrackBlocked("PROVISIONAL_AND_YEAR_QUALITY_DISAGREE:"+sym)
+        if sym not in names:
+            # A previously attested company can be absent from the *current*
+            # NSE mainboard. Exclude it, never use it as a current EQ signal.
+            excluded_from_current_mainboard += 1
+            continue
         verified[sym] = {
             "Symbol":sym,"Company":names[sym],
             "Two_FY_Revenue_Growth_Pct":row["Revenue_Growth_Pct"],
             "Two_FY_Profit_Growth_Pct":row["Net_Profit_Growth_Pct"],
             "Two_FY_EPS_Growth_Pct":row["EPS_Growth_Pct"],
         }
-    if int(report[0]["Fast_Fundamental_Pass_Count"]) != len(verified):
+    if int(report[0]["Fast_Fundamental_Pass_Count"]) != len(seen_shortlist):
         raise FastTrackBlocked("PROVISIONAL_SUMMARY_COUNT_MISMATCH")
-    return [verified[s] for s in sorted(verified)]
+    return [verified[s] for s in sorted(verified)], excluded_from_current_mainboard
 
 
 def _hash(path: Path) -> str:
@@ -207,7 +225,7 @@ def scan(root: Path, *, now:datetime|None=None,max_symbols:int=MAX_SYMBOLS,
     resources=resource_probe()
     if not resources.get("heavy_research_allowed"):
         raise FastTrackBlocked("RAM_PRESSURE_RESEARCH_DEFERRED")
-    eligible=source_universe(root,now)
+    eligible,excluded_nonmainboard=source_universe(root,now)
     # Rotate deterministic capped batches between daily maintenance runs.
     # The cursor is bound to the EXACT provisional symbol set, not a stale
     # count or an unrelated previous shortlist. Never skip a company silently.
@@ -276,6 +294,7 @@ def scan(root: Path, *, now:datetime|None=None,max_symbols:int=MAX_SYMBOLS,
         "state":"FAST_TRACK_PROVISIONAL_EOD_RESEARCH_UPDATED",
         "strategy":STRATEGY_ID,
         "provisional_two_fy_quality_symbols":len(eligible),
+        "excluded_not_in_current_mainboard_eq":excluded_nonmainboard,
         "bounded_symbols_assessed_this_run":len(batch),
         "research_batch_start_offset":start,
         "research_batch_next_offset":next_offset,
