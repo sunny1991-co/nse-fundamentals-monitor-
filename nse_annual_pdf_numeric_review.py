@@ -29,7 +29,7 @@ from research_monitor.schedule import atomic_status
 
 OUTPUT="nse_annual_pdf_numeric_evidence_candidates.csv"
 STATUS="runtime/nse_annual_pdf_numeric_evidence_status.json"
-VERSION="numeric-evidence-candidate-v1"
+VERSION="numeric-evidence-candidate-v2-wrapped-layout"
 MAX_FILES=2
 LABELS={
     "Revenue_Operations_Cr":("profit_loss",re.compile(r"\brevenue\s+from\s+operations\b",re.I)),
@@ -83,25 +83,51 @@ def number(raw:str)->Decimal:
     return amount
 
 
+# Only immediate numeric-only PDF continuation lines may be joined.
+# Never bridge a second named row/heading or several unrelated cells.
+NUMERIC_CONTINUATION=re.compile(
+    r"^\s*(?:(?:\(?-?\d[\d,]*\.\d{2}\)?|"
+    r"\(\s*-?\d[\d,]*\.\d{2}\s*\)|"
+    r"(?:(?:Note|No\.?)\s+)?\d{1,3})\s*){1,3}$",re.I
+)
+
+
 def values_on_source_row(text:str,pattern:re.Pattern)->list[tuple[Decimal,str]]:
-    """Extract an unambiguous current/prior pair with exact row evidence."""
+    """Unique 2-column printed rows; at most two immediate numeric-only wraps.
+
+    Keep source line evidence and never join the next *named* row, table
+    heading or a paragraph. Ambiguity fails closed in singular().
+    """
+    lines=[re.sub(r"\s+"," ",line.strip()) for line in text.splitlines()]
     found=[]
-    for line in text.splitlines():
-        line=re.sub(r"\s+"," ",line.strip())
-        if not pattern.search(line):
-            continue
-        matches=list(PAIR.finditer(line))
-        # Numeric cells must occur AFTER the label; years and note numbers
-        # before the label must not be mistaken for financial figures.
+    for i,line in enumerate(lines):
         hit=pattern.search(line)
-        matches=[m for m in matches if m.start()>=hit.end()]
-        if len(matches)!=2:
+        if not hit:
             continue
+        # A line's unrelated prior figures or note numbers are excluded.
+        base=line[hit.start():]
+        after=base[hit.end()-hit.start():]
+        pair=list(PAIR.finditer(after))
+        source=base
+        if len(pair)<2:
+            # pypdf default mode sometimes prints columns on the NEXT
+            # physical text lines. Join only 1-2 immediate number-only
+            # continuation lines, never through another financial label.
+            for next_line in lines[i+1:i+3]:
+                if not NUMERIC_CONTINUATION.fullmatch(next_line):
+                    break
+                source=source+" | "+next_line
+                pair=list(PAIR.finditer(source[hit.end()-hit.start():]))
+                if len(pair)>=2:
+                    break
+        if len(pair)!=2:
+            continue
+        # Extra decimals in the printed label's tail invalidate the pair.
         try:
-            pair=[number(m.group(1)) for m in matches]
+            amounts=[number(m.group(1)) for m in pair]
         except (InvalidOperation,ValueError):
             continue
-        found.append((pair[0],line[:360]))
+        found.append((amounts[0],source[:360]))
     return found
 
 
@@ -109,6 +135,64 @@ def singular(text:str,pattern:re.Pattern)->tuple[Decimal,str]|None:
     values=values_on_source_row(text,pattern)
     return values[0] if len(values)==1 else None
 
+
+def across_layouts(text:str,layout:str,pattern:re.Pattern):
+    """Never choose between conflicting PDF text extraction modes."""
+    primary=singular(text,pattern)
+    secondary=singular(layout,pattern) if layout else None
+    if primary is not None and secondary is not None:
+        if primary[0]!=secondary[0]:
+            return None,"CONFLICTING_PDF_TEXT_EXTRACTION_MODES"
+        return primary,"DEFAULT_AND_LAYOUT_AGREE"
+    if primary:
+        return primary,"DEFAULT_TEXT"
+    if secondary:
+        return secondary,"LAYOUT_TEXT"
+    return None,"MISSING_OR_AMBIGUOUS_TWO_COLUMN_ROW"
+
+
+def debt_rows(text:str,layout:str):
+    """Find noncurrent/current borrowing rows only in correct BS sections.
+
+    The section headings must be present and the current section must
+    occur AFTER non-current. Lease liabilities are never included.
+    """
+    pat=re.compile(r"^\s*(?:\([ivx]+\)\s*)?borrowings\b",re.I)
+    nc=re.compile(r"^\s*(?:\d+\s+)?non[-\s]*current\s+liabilities\b",re.I)
+    cu=re.compile(r"^\s*(?:\d+\s+)?current\s+liabilities\b",re.I)
+
+    def one_view(source):
+        section=None
+        grouped={"noncurrent":[],"current":[]}
+        lines=source.splitlines()
+        for i,line in enumerate(lines):
+            normalized=re.sub(r"\s+"," ",line.strip())
+            if nc.match(normalized):
+                section="noncurrent"
+            elif cu.match(normalized):
+                section="current"
+            if section is None or not pat.match(normalized):
+                continue
+            # Use this ONE label's local source line+number fragments only.
+            block="\n".join(lines[i:i+3])
+            candidate=values_on_source_row(block,pat)
+            if len(candidate)==1:
+                grouped[section].append(candidate[0])
+        if any(len(grouped[k])!=1 for k in grouped):
+            return None
+        return [grouped["noncurrent"][0],grouped["current"][0]]
+
+    main=one_view(text)
+    alt=one_view(layout) if layout else None
+    if main and alt:
+        if [x[0] for x in main]!=[x[0] for x in alt]:
+            return None,"CONFLICTING_PDF_TEXT_EXTRACTION_MODES"
+        return main,"DEFAULT_AND_LAYOUT_AGREE"
+    if main:
+        return main,"DEFAULT_TEXT"
+    if alt:
+        return alt,"LAYOUT_TEXT"
+    return None,"MISSING_OR_AMBIGUOUS_SOURCE_ROWS"
 
 def crore(v:Decimal)->str:
     return str((v/Decimal(100)).quantize(Decimal("0.0001")))
@@ -145,8 +229,16 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
         if len(set(pages.values()))!=4:
             raise SectionReviewBlocked("DUPLICATE_SECTION_INDEX_PAGE")
         original_text={}
+        layout_text={}
         for name,index in pages.items():
             original_text[name]=reader.pages[index].extract_text() or ""
+            # Layout mode is optional across pypdf versions and fake readers.
+            # No second source/network, no OCR and no more PDF pages.
+            try:
+                layout_text[name]=reader.pages[index].extract_text(
+                    extraction_mode="layout") or ""
+            except (TypeError,ValueError,NotImplementedError):
+                layout_text[name]=""
     except SectionReviewBlocked:
         raise
     except (OSError,IndexError,TypeError,ValueError,KeyError,RuntimeError) as exc:
@@ -159,13 +251,14 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
     candidate={}
     evidence={}
     for field,(page,pattern) in LABELS.items():
-        v=singular(original_text[page],pattern)
+        v,how=across_layouts(original_text[page],layout_text[page],pattern)
         if v is None:
-            issue.append(field+":MISSING_OR_AMBIGUOUS_TWO_COLUMN_ROW")
+            issue.append(field+":"+how)
             continue
         candidate[field]=v[0]
         evidence[field]={"page_1based":pages[page]+1,"raw_source_row":v[1],
-                         "current_lakhs_or_eps":str(v[0])}
+                         "current_lakhs_or_eps":str(v[0]),
+                         "pdf_extraction_mode":how}
 
     bs=original_text["balance_sheet"]
     profit=original_text["profit_loss"]
@@ -191,16 +284,19 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
     aux={}
     for name,pat in MORE.items():
         page="profit_loss" if name in ("Tax","Profit_Before_Tax") else "balance_sheet"
-        v=singular(original_text[page],pat)
+        v,how=across_layouts(original_text[page],layout_text[page],pat)
         if v:
             aux[name]=v[0]
             evidence[name]={"page_1based":pages[page]+1,
-                            "raw_source_row":v[1],"current_lakhs":str(v[0])}
+                            "raw_source_row":v[1],"current_lakhs":str(v[0]),
+                            "pdf_extraction_mode":how}
+        elif how=="CONFLICTING_PDF_TEXT_EXTRACTION_MODES":
+            issue.append(name+":"+how)
 
     # Borrowings: TWO source rows only. Non-current must precede current.
     # This is financial borrowing debt and intentionally excludes leases.
-    borrowings=values_on_source_row(bs,re.compile(r"^\s*(?:\([ivx]+\)\s*)?borrowings\b",re.I))
-    if len(borrowings)==2:
+    borrowings,borrow_mode=debt_rows(bs,layout_text["balance_sheet"])
+    if borrowings is not None:
         candidate["Noncurrent_Borrowings_Cr"]=borrowings[0][0]
         candidate["Current_Borrowings_Cr"]=borrowings[1][0]
         candidate["Total_Borrowings_Cr"]=borrowings[0][0]+borrowings[1][0]
@@ -208,16 +304,18 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
             "page_1based":pages["balance_sheet"]+1,
             "raw_source_row":borrowings[0][1],
             "current_lakhs":str(borrowings[0][0]),
+            "pdf_extraction_mode":borrow_mode,
         }
         evidence["Borrowings_Current"]={
             "page_1based":pages["balance_sheet"]+1,
             "raw_source_row":borrowings[1][1],
             "current_lakhs":str(borrowings[1][0]),
+            "pdf_extraction_mode":borrow_mode,
         }
         borrow_check="BOTH_ROW_CANDIDATES_FOUND_UNVERIFIED"
     else:
         borrow_check="MISSING_OR_AMBIGUOUS_SOURCE_ROWS"
-        issue.append("BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS")
+        issue.append("BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS:"+borrow_mode)
     # Balance arithmetic is ONLY a reasonableness check. It does not verify
     # audited scope, reporting-basis, original XBRL, or debt completeness.
     asset=candidate.get("Total_Assets_Cr")
