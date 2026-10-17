@@ -17,6 +17,16 @@ from nse_official_annual_pdf_auto_index import baseline_coverage
 ROOT = data_root()
 LEDGER = 'legacy_xbrl_verification.csv'
 RUN_STATUS = 'legacy_xbrl_run_status.csv'
+YIELD_WINDOW = 50
+YIELD_MIN_SOURCE_DOWNLOADS = 30
+YIELD_MIN_STRUCTURAL_RATIO = 0.90
+STRUCTURAL_REASONS = frozenset({
+    'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',
+    'XML_SYMBOL_MISMATCH_OR_MISSING',
+    'YEAR_END_BALANCE_SHEET_CONTEXT_NOT_VERIFIED',
+    'XML_BASIS_MISSING_OR_CONFLICTING',
+})
+
 
 
 def write_rows(path, rows, fields=None):
@@ -49,6 +59,44 @@ def candidate_priority(symbol, financial_year, baseline_present,
     return 5
 
 
+def original_xml_source_yield(ledger_rows):
+    """Recent *actual source XML responses* only; not CSV-only candidates.
+
+    A chronic near-100% structural failure rate should halt unattended
+    source collection. This does not deem missing years absent or mark
+    old PDF comparatives as independent audited XBRL.
+    """
+    source_reads=[
+        r for r in ledger_rows
+        if r.get('Parser_Version') == VERSION
+        and len(r.get('Source_SHA256','')) == 64
+        and r.get('Checked_At_UTC')
+    ]
+    source_reads.sort(key=lambda r:r.get('Checked_At_UTC',''))
+    recent=source_reads[-YIELD_WINDOW:]
+    rejected=sum(r.get('Reason') in STRUCTURAL_REASONS for r in recent)
+    successful=sum(
+        r.get('Status') in ('VERIFIED','VERIFIED_COMPLETE',
+                             'VERIFIED_INCOMPLETE')
+        and not r.get('Reason') for r in recent
+    )
+    pause=(
+        len(recent)>=YIELD_MIN_SOURCE_DOWNLOADS
+        and rejected/len(recent)>=YIELD_MIN_STRUCTURAL_RATIO
+        and successful==0
+    )
+    return {
+        'Source_Yield_Recent_XML_Responses':len(recent),
+        'Source_Yield_Recent_Structural_Rejects':rejected,
+        'Source_Yield_Recent_Verified':successful,
+        'Source_Yield_Unattended_Pause_Recommended':pause,
+        'Source_Yield_Pause_Reason':(
+            'RECENT_ORIGINAL_NSE_XML_STRUCTURAL_REJECT_RATE_TOO_HIGH'
+            if pause else ''
+        ),
+    }
+
+
 def download(session, url):
     if not legacy.official_xbrl_link(url):
         raise ValueError('OFFICIAL_XML_URL_REQUIRED')
@@ -65,12 +113,14 @@ def download(session, url):
 
 
 def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep,
-            require_preflight=False, plan_only=False):
+            require_preflight=False, plan_only=False, respect_yield_guard=False):
     root = Path(root)
     if not 1 <= limit <= 500:
         raise ValueError('Limit must be 1..500')
     if plan_only and not require_preflight:
         raise ValueError('OFFLINE_PLAN_REQUIRES_FRESH_OFFICIAL_SOURCE_PREFLIGHT')
+    if respect_yield_guard and not require_preflight:
+        raise ValueError('UNATTENDED_SOURCE_YIELD_GUARD_REQUIRES_OFFICIAL_PREFLIGHT')
     manifest, _ = legacy.build(root)  # Rebuild from baselines/index; do not trust an edited manifest.
     candidates = [r for r in manifest if r['Recovery_Status'] == 'PENDING_INDEPENDENT_XBRL_REVIEW']
     total_index_candidates=len(candidates)
@@ -96,7 +146,9 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
             if (r['Symbol'],r['Financial_Year'],r['Source_URL']) in approved
         ]
     history = legacy.csv_rows(root/'annual_historical_results.csv')
-    ledger = {r['Source_URL']: r for r in legacy.csv_rows(root/LEDGER)}
+    original_attempt_rows=legacy.csv_rows(root/LEDGER)
+    ledger = {r['Source_URL']: r for r in original_attempt_rows}
+    yield_health=original_xml_source_yield(original_attempt_rows)
     baseline_present, baseline_complete = baseline_coverage(root)
     verified_old_years = legacy.verified_legacy_years(root)
     candidates.sort(key=lambda r: (
@@ -134,7 +186,30 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
             ],
             'XML_Network_Requests':0,'Original_XBRL_Facts_Verified':0,
             'Strict_Fundamental_Passes_Added':0,'Orders':'DISABLED',
+            **yield_health,
         }
+    if respect_yield_guard and yield_health[
+            'Source_Yield_Unattended_Pause_Recommended']:
+        # Deliberately NO HTTP session, XML download, ledger mutation
+        # or source financial promotion in an unattended low-yield run.
+        status=dict(
+            Checked_At_UTC=stamp,
+            Candidate_Symbol_Years=len(candidates),
+            Original_Index_Candidates_Before_Preflight=total_index_candidates,
+            Excluded_By_Current_Source_Preflight=
+                total_index_candidates-len(candidates),
+            Independent_Source_Preflight_Required=True,
+            Attempted=0,Added_Verified=0,Added_Six_Core_Complete=0,
+            Status='UNATTENDED_ORIGINAL_XML_SOURCE_ZERO_YIELD_PAUSED',
+            Remaining_Candidates=len(candidates),Last_Error='',
+            Parser_Version=VERSION,
+            Attempted_Unverified_This_Run=0,
+            Context_Diagnostic_Reason_Counts_JSON='{}',
+            Next_Action='REVIEW_ALTERNATE_OFFICIAL_AUDITED_ANNUAL_SOURCES',
+            **yield_health,
+        )
+        write_rows(root/RUN_STATUS,[status])
+        return status
     own_session = session is None
     session = session or requests.Session()
     if own_session:
@@ -144,7 +219,8 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
         Excluded_By_Current_Source_Preflight=total_index_candidates-len(candidates),
         Independent_Source_Preflight_Required=require_preflight,
         Attempted=0, Added_Verified=0, Added_Six_Core_Complete=0, Status='COMPLETED_BOUNDED_RUN',
-        Remaining_Candidates=len(candidates), Last_Error='', Parser_Version=VERSION)
+        Remaining_Candidates=len(candidates), Last_Error='', Parser_Version=VERSION,
+        **yield_health)
     indexes = {}
     added = []
     context_rejection_reasons = Counter()
@@ -261,9 +337,12 @@ def main():
         help='Fail closed unless original source index and last attempt are independently safe')
     parser.add_argument('--plan-only',action='store_true',
         help='No HTTP requests; preview source-safe four-year research priorities')
+    parser.add_argument('--respect-yield-guard',action='store_true',
+        help='Pause unattended original XML download when recent sources overwhelmingly fail strict annual checks')
     args=parser.parse_args()
     print(collect(limit=args.limit,require_preflight=args.require_preflight,
-                  plan_only=args.plan_only))
+                  plan_only=args.plan_only,
+                  respect_yield_guard=args.respect_yield_guard))
 
 
 if __name__ == '__main__': main()
