@@ -8,6 +8,7 @@ Only symbols whose two-year annual data quality is already PASS are considered.
 from __future__ import annotations
 
 from datetime import date
+import hashlib
 from pathlib import Path
 import math
 import pandas as pd
@@ -20,6 +21,25 @@ FY24 = ROOT / "FY2425.csv"
 FY25 = ROOT / "NSE_FY2025-26_Consolidated_Fundamentals.csv"
 OUTPUT = ROOT / "fast_fundamental_shortlist.csv"
 SUMMARY = ROOT / "fast_fundamental_screen_summary.csv"
+
+def source_sha256(path: Path) -> str:
+    if not path.is_file() or path.is_symlink():
+        return ""
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for part in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(part)
+    return h.hexdigest()
+
+
+def source_hashes() -> dict[str, str]:
+    return {
+        "Annual_Quality_SHA256": source_sha256(QUALITY),
+        "FY2024_25_SHA256": source_sha256(FY24),
+        "FY2025_26_SHA256": source_sha256(FY25),
+        "Fast_Shortlist_SHA256": source_sha256(OUTPUT),
+    }
+
 
 CORE = [
     "Revenue_Operations_Cr",
@@ -90,6 +110,7 @@ def main() -> None:
             "Fast_Fundamental_Pass_Count": 0,
             "Status": "WAITING_FOR_VERIFIED_TWO_YEAR_ANNUAL_QUALITY",
             "Scope": "PROVISIONAL_LOWER_CONFIDENCE_RESEARCH_ONLY",
+            **source_hashes(),
         }]).to_csv(SUMMARY, index=False)
         print("Fast fundamental screen waiting for verified two-year annual quality.")
         return
@@ -173,6 +194,7 @@ def main() -> None:
         "Verified_Two_Year_Universe": len(verified),
         "Rows_Assessed": len(report),
         "Fast_Fundamental_Pass_Count": len(passed),
+        **source_hashes(),
         "Status": "PROVISIONAL_SCREEN_COMPLETE",
         "Scope": "PROVISIONAL_LOWER_CONFIDENCE_RESEARCH_ONLY",
         "Criteria_Note": (
