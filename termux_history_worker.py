@@ -223,6 +223,45 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
+    def run_managed_research_child(command, log, timeout_seconds):
+        """Run bounded research subprocess with stop/timeout process-group cleanup."""
+        nonlocal active_child
+        if stopping:
+            return None
+        active_child = subprocess.Popen(
+            command, cwd=CODE_ROOT, env=env, stdout=log,
+            stderr=subprocess.STDOUT, start_new_session=True,
+        )
+        timed_out = False
+        try:
+            deadline = time.monotonic() + timeout_seconds
+            while not stopping and active_child.poll() is None:
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
+                time.sleep(0.5)
+            if active_child.poll() is None:
+                try:
+                    os.killpg(active_child.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    active_child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(active_child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    active_child.wait()
+            result = active_child.returncode
+            if timed_out:
+                log.write('[managed research] time budget reached; retry on next cycle\n')
+                log.flush()
+                return None
+            return result
+        finally:
+            active_child = None
+
     env = dict(os.environ)
     env.pop('UPSTOX_ANALYTICS_TOKEN', None)
     env['SMS_ENABLED'] = '0'
@@ -265,18 +304,18 @@ def main() -> int:
                 with log_path.open('a', encoding='utf-8', buffering=1) as log:
                     log.write('\n=== automatic all-mainboard research cycle ===\n')
                     log.flush()
-                    backfill = subprocess.run(
+                    backfill_code = run_managed_research_child(
                         [sys.executable, str(CODE_ROOT/'nse_mainboard_history_backfill.py'),
                          '--days', '60', '--max-minutes', '12'],
-                        cwd=CODE_ROOT, env=env, stdout=log,
-                        stderr=subprocess.STDOUT, timeout=13*60, check=False,
+                        log, 13*60,
                     )
-                    log.write('=== raw EOD finished; technical radar starts ===\\n')
+                    log.write('=== raw EOD finished; technical radar starts ===\n')
                     log.flush()
-                    radar = subprocess.run(
-                        [sys.executable, str(CODE_ROOT/'nse_mainboard_technical_radar.py')],
-                        cwd=CODE_ROOT, env=env, stdout=log,
-                        stderr=subprocess.STDOUT, timeout=5*60, check=False,
+                    radar_code = (
+                        run_managed_research_child(
+                            [sys.executable, str(CODE_ROOT/'nse_mainboard_technical_radar.py')],
+                            log, 5*60,
+                        ) if not stopping else None
                     )
                 backfill_state = json.loads(
                     (runtime/'mainboard_raw_research_history_status.json').read_text(
@@ -287,8 +326,8 @@ def main() -> int:
                         encoding='utf-8')
                 )
                 discovery_cycle = {
-                    'state': 'RESEARCH_CYCLE_COMPLETED' if backfill.returncode == 0 and
-                             radar.returncode == 0 else 'RESEARCH_CYCLE_PARTIAL',
+                    'state': 'RESEARCH_CYCLE_COMPLETED' if backfill_code == 0 and
+                             radar_code == 0 else 'RESEARCH_CYCLE_PARTIAL',
                     'backfill': backfill_state.get('state', 'UNKNOWN'),
                     'archive_days_added': int(backfill_state.get(
                         'archive_days_added_this_run') or 0),
