@@ -36,7 +36,9 @@ from nse_legacy_annual_official_auto_index import (
     LEDGER as OLD_INDEX_LEDGER,COOLDOWN,ONE_SAFE_REPROBE_DELAY,
     DIAGNOSTIC_VERSION,
 )
-from research_monitor.discovered_annual_universe import verified_discovered_symbols
+from research_monitor.discovered_annual_universe import (
+    verified_discovered_symbols,DiscoveredUniverseUnavailable,
+)
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
@@ -219,6 +221,10 @@ def snapshot(root:Path,*,now=None):
             comparative.add(sym)
 
     historical=read_table(root/HISTORY)
+    history_by_symbol_year=defaultdict(list)
+    for saved in historical:
+        if saved.get("Financial_Year") in YEARS and saved.get("Symbol") in issuer:
+            history_by_symbol_year[(saved["Symbol"],saved["Financial_Year"])].append(saved)
     original_ledger={r.get("Symbol"):r for r in read_table(root/OLD_INDEX_LEDGER)
                      if r.get("Symbol") in issuer}
     rows=[]
@@ -229,7 +235,7 @@ def snapshot(root:Path,*,now=None):
         api_state,next_safe=api_cooldown(original_ledger,sym,now)
         for year in YEARS:
             key=(sym,year)
-            original,gap=choose_original(historical,sym,year)
+            original,gap=choose_original(history_by_symbol_year.get(key,[]),sym,year)
             has_six=bool(original and all(
                 decimal_value(original.get(field)) is not None
                 for field in METRICS))
@@ -333,7 +339,7 @@ def snapshot(root:Path,*,now=None):
 def main():
     try:
         result=snapshot(data_root())
-    except (CoverageBlocked,SectionReviewBlocked,
+    except (CoverageBlocked,SectionReviewBlocked,DiscoveredUniverseUnavailable,
             OSError,ValueError,csv.Error) as exc:
         result={
             "state":"OFFLINE_LEGACY_EVIDENCE_QUEUE_BLOCKED",
