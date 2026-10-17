@@ -234,6 +234,73 @@ class AnnualPDFPriorComparativeTests(unittest.TestCase):
         self.assertFalse((self.root/OUTPUT).exists())
         self.assert_untouched()
 
+    def test_incomplete_current_numeric_evidence_is_deferred_not_blocked(self):
+        # Matches a genuine section-reviewed report whose six source
+        # amounts cannot yet pass arithmetic/date/unit verification.
+        self.current.update({
+            "Review_State":"INCOMPLETE_OR_AMBIGUOUS_SOURCE_NUMBERS_REVIEW_REQUIRED",
+            "Candidate_Core_Fields":"0",
+        })
+        for key in CORE:
+            self.current.pop(key,None)
+        self.write_sources()
+        result=run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertEqual(result["state"],
+                         "ORIGINAL_NSE_PDF_PRIOR_YEAR_COMPARATIVE_REVIEW_UPDATED")
+        self.assertEqual(result["reports_reviewed_this_run"],0)
+        self.assertEqual(result["reports_deferred_incomplete_current_numeric_evidence"],1)
+        self.assertEqual(result["new_six_field_comparative_candidates"],0)
+        self.assertEqual(result["deferred_incomplete_source_preview"][0]["symbol"],
+                         "20MICRONS")
+        self.assertFalse((self.root/OUTPUT).exists())
+        self.assert_untouched()
+
+    def test_incomplete_new_pdf_does_not_block_complete_other_pdf(self):
+        incomplete_receipt={
+            **self.receipt,
+            "Symbol":"SYNTHETIC2",
+            "Official_Report_URL":"https://nsearchives.nseindia.com/annual_reports/AR_999_SYNTHETIC2_2023_2024_A_1.pdf",
+        }
+        incomplete_entry={"ISIN":"INE900A01019"}
+        incomplete_section={**self.section,**incomplete_receipt}
+        incomplete_current={
+            **self.current,**incomplete_receipt,
+            "ISIN":incomplete_entry["ISIN"],
+            "Review_State":"INCOMPLETE_OR_AMBIGUOUS_SOURCE_NUMBERS_REVIEW_REQUIRED",
+            "Candidate_Core_Fields":"0",
+        }
+        for key in CORE:
+            incomplete_current.pop(key,None)
+        save_csv(self.root/LATEST_OUTPUT,SECTION_FIELDS,
+                 [self.section,incomplete_section])
+        save_csv(self.root/CURRENT_OUTPUT,CURRENT_FIELDS,
+                 [self.current,incomplete_current])
+        with patch("nse_annual_pdf_prior_year_comparatives.checked_sources",
+                   return_value=[
+                       (incomplete_receipt,incomplete_entry,self.path),
+                       (self.receipt,self.entry,self.path),
+                   ]):
+            result=run(self.root,max_files=2,now=NOW,reader_cls=Reader)
+        self.assertEqual(result["reports_reviewed_this_run"],1)
+        self.assertEqual(result["new_six_field_comparative_candidates"],1)
+        self.assertEqual(result["reports_deferred_incomplete_current_numeric_evidence"],1)
+        self.assertEqual(len(self.read_candidates()),1)
+        self.assertEqual(self.read_candidates()[0]["Symbol"],"20MICRONS")
+        self.assertEqual(result["strict_fundamental_passes_added"],0)
+        self.assert_untouched()
+
+    def test_incomplete_label_cannot_hide_cached_numeric_source_values(self):
+        self.current.update({
+            "Review_State":"INCOMPLETE_OR_AMBIGUOUS_SOURCE_NUMBERS_REVIEW_REQUIRED",
+            "Candidate_Core_Fields":"0",
+        })
+        self.write_sources()  # Still contains six present-year values.
+        with self.assertRaisesRegex(
+                SectionReviewBlocked,"INCOMPLETE_CURRENT_PDF_SOURCE_STATE_CONFLICT"):
+            run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertFalse((self.root/OUTPUT).exists())
+        self.assert_untouched()
+
     def test_bounded_batch_never_triggers_network_or_trade(self):
         with self.assertRaisesRegex(ValueError,"MAX_FILES"):
             run(self.root,max_files=3,reader_cls=Reader)
