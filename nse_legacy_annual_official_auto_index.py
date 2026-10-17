@@ -41,7 +41,10 @@ INDEX_FIELDS=(
     "XBRL URL","Broadcast Date","Source_API","NSE_Original_Row_SHA256",
     "Indexed_At_UTC",
 )
-LEDGER_FIELDS=("Symbol","Checked_At_UTC","State","Rows_Indexed","Reason")
+LEDGER_FIELDS=("Symbol","Checked_At_UTC","State","Rows_Indexed","Reason",
+               "Diagnostic_Version")
+DIAGNOSTIC_VERSION="legacy-nse-response-diagnostic-v2"
+ONE_SAFE_REPROBE_DELAY=timedelta(minutes=10)
 MAX_SYMBOLS=3
 COOLDOWN=timedelta(hours=20)
 MAX_RESPONSE_BYTES=1_800_000
@@ -152,7 +155,12 @@ def source_metadata(row,symbol,isin,*,now):
 
 
 def query(session,symbol):
-    """One documented NSE index request; do not bypass 403/429 or retry."""
+    """At most one request; sanitized, distinguish network/HTML/JSON faults.
+
+    Raw URL token/cookies, response HTML, body content and exception
+    strings are NEVER written to logs. A source problem is not a missing
+    XBRL record and is never a reason to weaken audited-fact checks.
+    """
     if not SYMBOL.fullmatch(symbol):
         raise LegacyIndexUnavailable("INVALID_COMPANY_SYMBOL")
     try:
@@ -161,27 +169,47 @@ def query(session,symbol):
             headers={"Referer":LANDING,"Accept":"application/json, text/plain, */*"},
             allow_redirects=False,timeout=(12,30),
         )
-        status=response.status_code
-        if status in (403,429):
-            raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_ACCESS_BLOCKED_"+str(status))
-        if status!=200:
-            raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_HTTP_"+str(status))
-        if len(response.content)>MAX_RESPONSE_BYTES:
-            raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_RESPONSE_TOO_LARGE")
+    except requests.exceptions.SSLError as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_TLS_ERROR") from exc
+    except requests.exceptions.ConnectTimeout as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_CONNECT_TIMEOUT") from exc
+    except requests.exceptions.ReadTimeout as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_READ_TIMEOUT") from exc
+    except requests.exceptions.ProxyError as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_PROXY_ERROR") from exc
+    except requests.exceptions.ConnectionError as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_CONNECTION_ERROR") from exc
+    except requests.RequestException as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_REQUEST_ERROR") from exc
+
+    status=response.status_code
+    if status in (403,429):
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_ACCESS_BLOCKED_"+str(status))
+    if status!=200:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_HTTP_"+str(status))
+    body=response.content
+    if len(body)>MAX_RESPONSE_BYTES:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_RESPONSE_TOO_LARGE")
+    if not body:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_EMPTY_200_RESPONSE")
+    # HTTP 200 with an HTML challenge is NOT a valid NSE source index.
+    # Never save or display its content, headers or redirect destination.
+    content_type=str(getattr(response,"headers",{}).get("Content-Type","")).lower()
+    if "text/html" in content_type or body.lstrip()[:1]==b"<":
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_HTML_INSTEAD_OF_JSON")
+    try:
         data=response.json()
-        if isinstance(data,list):
-            rows=data
-        elif isinstance(data,dict) and isinstance(data.get("data"),list):
-            rows=data["data"]
-        else:
-            raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_SCHEMA_CHANGED")
-        if len(rows)>MAX_ROWS_PER_SYMBOL or not all(isinstance(r,dict) for r in rows):
-            raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_ROWS_UNBOUNDED")
-        return rows
-    except (requests.RequestException,ValueError) as exc:
-        if isinstance(exc,LegacyIndexUnavailable):
-            raise
-        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR") from exc
+    except (ValueError,requests.RequestException) as exc:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_INVALID_JSON_200_RESPONSE") from exc
+    if isinstance(data,list):
+        rows=data
+    elif isinstance(data,dict) and isinstance(data.get("data"),list):
+        rows=data["data"]
+    else:
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_SCHEMA_CHANGED")
+    if len(rows)>MAX_ROWS_PER_SYMBOL or not all(isinstance(r,dict) for r in rows):
+        raise LegacyIndexUnavailable("OFFICIAL_NSE_OLD_RESULTS_ROWS_UNBOUNDED")
+    return rows
 
 
 def prioritized_symbols(root,verified):
@@ -219,9 +247,19 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         if old:
             try:
                 checked=datetime.fromisoformat(old["Checked_At_UTC"])
-                if (checked.tzinfo is not None
-                    and timedelta(0)<=now-checked<=COOLDOWN):
-                    continue
+                age=(now-checked if checked.tzinfo is not None else None)
+                if age is not None and timedelta(0)<=age<=COOLDOWN:
+                    # One diagnostically improved re-probe of the previously
+                    # ambiguous *non-403/429* error, after a 10 minute rest.
+                    # Only a pre-v2 ledger can qualify. v2 entries retain
+                    # normal 20-hour cooldown even if their probe fails.
+                    one_safe_probe=(
+                        old.get("State")=="INDEX_DISCOVERY_BLOCKED"
+                        and old.get("Reason")=="OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR"
+                        and not old.get("Diagnostic_Version")
+                        and ONE_SAFE_REPROBE_DELAY<=age)
+                    if not one_safe_probe:
+                        continue
             except (ValueError,KeyError,TypeError):
                 pass
         eligible.append(symbol)
@@ -271,7 +309,8 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
                 latest[symbol]=dict(Symbol=symbol,
                     Checked_At_UTC=now.astimezone(timezone.utc).isoformat(),
                     State="OFFICIAL_NSE_INDEX_CANDIDATES_ONLY",
-                    Rows_Indexed=len(approved),Reason="")
+                    Rows_Indexed=len(approved),Reason="",
+                    Diagnostic_Version=DIAGNOSTIC_VERSION)
                 counts["checked"]+=1
             except LegacyIndexUnavailable as exc:
                 reason=str(exc)
@@ -279,7 +318,7 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
                 latest[symbol]=dict(Symbol=symbol,
                     Checked_At_UTC=now.astimezone(timezone.utc).isoformat(),
                     State="INDEX_DISCOVERY_BLOCKED",Rows_Indexed=0,
-                    Reason=reason)
+                    Reason=reason,Diagnostic_Version=DIAGNOSTIC_VERSION)
                 if "ACCESS_BLOCKED" in reason:
                     counts["access_blocked"]=True
                 state="OFFICIAL_NSE_OLD_ANNUAL_INDEX_PARTIAL_OR_BLOCKED"
@@ -297,6 +336,8 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         "checked_at_utc":now.astimezone(timezone.utc).isoformat(),
         "state":state,
         "verified_issuer_symbols":len(symbols),
+        "response_diagnostic_version":DIAGNOSTIC_VERSION,
+        "api_calls_made_this_run":counts["checked"]+len(errors),
         "symbols_requested_this_run":min(max_symbols,len(eligible)),
         "symbols_fetched_this_run":counts["checked"],
         "symbols_remaining_after_this_run":max(0,len(eligible)-counts["checked"]),
