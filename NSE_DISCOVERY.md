@@ -156,3 +156,59 @@ IMPORTANT: this does NOT fill FY2022-23 or FY2023-24 into
 annual_historical_results.csv. No future-company bulk PDF ingestion or
 unattended review is implemented; manual source and row validation still
 needed. No strict fundamental/company trading eligibility is changed.
+
+## Automatically monitored new-company technical radar (17 October 2026)
+
+The **existing supervised Termux history worker** now runs additional
+bounded jobs on each cycle after its original NSE history collection:
+- nse_mainboard_history_backfill.py --days 60 --max-minutes 12
+- nse_mainboard_technical_radar.py
+
+The new backfill writes to a **different** private SQLite database
+(runtime/mainboard_raw_research_history.sqlite). It saves **all** original
+NSE EQ bhavcopy rows, not just the original 1,254-stock fundamental universe,
+so new EQ companies are already present in earlier downloaded archive days.
+It processes the newest missing complete-market days first, then gradually
+reaches back to January 2020. Progress is resumable after power/network
+interruptions, day-completion and provenance are recorded transactionally,
+and NSE HTTP 403/429 is never bypassed or silently counted as success.
+
+Only **current NSE mainboard** constituents from the separately validated
+NSE Equity/SME catalog enter the scanner. The radar monitors bar counts,
+last completed close, 63-session raw return, 50/200-day trend, previous
+30-session raw high, abnormal volume and 20-session raw turnover.
+Existing four-year verified annual history and strict-screen statuses are
+shown beside technical observations, not retrospectively assumed.
+
+IMPORTANT: This archive is **NOT adjusted for bonus, splits, mergers,
+demergers, dividends, rights or other corporate events**, and the current
+mainboard list is not proof of historical listing membership. Apparent
+breakouts caused by corporate-action changes can be false. Therefore the
+entire radar remains *candidate discovery/research only* and is never passed
+to the pre-existing adjusted-OHLCV, independent TRI, strict fundamental,
+backtest or owner-YES/NO paper proposal pipeline. There is no return or
+profitability guarantee and zero real orders.
+
+Reports in the private NSE_DATA_DIR:
+- runtime/mainboard_raw_research_history_status.json
+- runtime/nse_mainboard_auto_research_radar_status.json
+- nse_mainboard_auto_research_radar.csv (all current mainboard members)
+
+The Termux supervisor must actually be **running** for scheduled loops; no
+script can run while Android is powered off or the process is stopped.
+Check with:
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    bash termux_backend.sh restart
+    cat ~/nse-fundamentals-data/runtime/nse_mainboard_auto_research_radar_status.json
+
+**Outstanding blockers for fully hands-off audited onboarding:** 2022–23
+and 2023–24 full-year source documents must be reliably discovered, tied
+to symbol/ISIN, audited/consolidated basis, publication date, report
+comparatives, units and cash flow, and independently reconciled. The old
+quarter-only original XBRL must not become annual data by relabeling it.
+The separate, curated 20MICRONS PDF pilot is *review-only* and cannot be
+generalized into automatically verified financial facts without more source
+validation. Further needed: corporate-action-adjusted archive, correct
+historical universe/backtests, independent NIFTY 50 TRI, and forward paper
+validation. Strict trade eligibility is never weakened.
