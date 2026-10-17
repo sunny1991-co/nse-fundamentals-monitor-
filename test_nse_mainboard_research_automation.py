@@ -101,7 +101,7 @@ class ResearchAutomationTests(unittest.TestCase):
         dates=pd.bdate_range(end="2026-10-16",periods=270)
         result=[]
         for i,dt in enumerate(dates):
-            close=100*(1.0015**i)
+            close=100*(1.003**i)
             v=volume*1.5 if i==len(dates)-1 else volume
             result.append((dt.date().isoformat(),close*.995,close*1.002,close*.99,close,v))
         return result
