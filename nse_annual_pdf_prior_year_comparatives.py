@@ -28,7 +28,7 @@ from nse_mainboard_discovery import write_csv_atomic
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
-VERSION="prior-year-comparative-candidate-v2-revalidated-current-section"
+VERSION="prior-year-comparative-candidate-v3-split-section"
 OUTPUT="nse_annual_pdf_prior_year_comparative_candidates.csv"
 STATUS="runtime/nse_annual_pdf_prior_year_comparative_status.json"
 MAX_FILES=2
