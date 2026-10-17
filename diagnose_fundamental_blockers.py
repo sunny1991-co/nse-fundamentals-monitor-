@@ -2,6 +2,7 @@
 """Read-only audit of strict annual fundamental screening and source coverage."""
 from research_monitor.paths import data_root
 import csv
+import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -39,6 +40,12 @@ def main():
     for year in sorted(by_year):
         print(f"{year}: {dict(by_year[year])}")
 
+    print("\nRequired four-year annual evidence (missing does NOT mean weak business):")
+    for fiscal_year in ("2022-23", "2023-24", "2024-25", "2025-26"):
+        counts = by_year[fiscal_year]
+        print(f"{fiscal_year}: {counts['verified']} NSE-verified annual rows "
+              f"of {counts['rows']} stored history rows")
+
     print("\nAnnual unverified filing reasons:")
     annual_failures = Counter()
     for row in rows("annual_historical_unverified.csv"):
@@ -66,6 +73,19 @@ def main():
     errors = Counter(x.get("Error", "") for x in sectors if x.get("Lookup_Status") != "OK")
     for error, count in errors.most_common(5):
         print(f"{count:5}  {error or 'UNSPECIFIED_ERROR'}")
+
+    print("\nSeparate official broad-index industry reference (NOT strict sector):")
+    ref = rows("nse_totalmarket_industry_reference.csv")
+    strict_universe = {x.get("Symbol", "").strip().upper() for x in report}
+    overlap = sum(1 for x in ref if x.get("Symbol", "").strip().upper() in strict_universe)
+    try:
+        status = json.loads((ROOT/"runtime"/"nse_totalmarket_industry_reference_status.json").read_text())
+    except (OSError, ValueError, TypeError):
+        status = {}
+    print(f"Reference rows: {len(ref)}; matches annual universe: {overlap}; "
+          f"download state: {status.get('state', 'NOT_YET_RUN')}")
+    print("This is NOT the NSE four-tier company sector classification; "
+          "strict annual and trade screens remain unchanged.")
 
     print("\nQuality summary:")
     for row in rows("annual_fundamental_quality_summary.csv"):
