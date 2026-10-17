@@ -265,15 +265,15 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
             "200,200,200,200,section-review-2-adaptive,"
             "2026-10-17T09:55:00+00:00"
         )
-        (self.root/OUTPUT).write_text(header+"\\n"+old_row+"\\n")
+        (self.root/OUTPUT).write_text(header+"\n"+old_row+"\n")
         report=run(self.root,max_files=1,now=NOW,reader_cls=FakeReader)
         self.assertEqual(report["reports_reviewed_this_run"],1)
         self.assertEqual(report["previous_review_records"],1)
         self.assertEqual(report["current_version_review_records"],1)
         self.assertEqual(report["latest_review_csv"],LATEST_OUTPUT)
         self.assertEqual(report["most_recent_current_review"]["physical_pdf_pages"],
-                         {"auditor":124,"balance_sheet":125,
-                          "profit_and_loss":126,"cash_flow":127})
+                         {"auditor":"124","balance_sheet":"125",
+                          "profit_and_loss":"126","cash_flow":"127"})
         with (self.root/OUTPUT).open() as f:
             history=list(csv.DictReader(f))
         with (self.root/LATEST_OUTPUT).open() as f:
