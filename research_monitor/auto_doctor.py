@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from urllib.error import URLError
 from typing import Any
 
@@ -69,7 +69,14 @@ def dashboard_ok(*,probe=None)->bool:
     if probe is not None:
         return bool(probe())
     try:
-        with urlopen("http://127.0.0.1:8787/healthz",timeout=1.5) as response:
+        # The server binds to 127.0.0.1 but Flask's TRUSTED_HOSTS only
+        # permits 'localhost' (APP_HOST). Connecting by numeric loopback
+        # without this Host header produces HTTP 400 for a healthy server.
+        # Keep the TCP destination fixed to loopback; never follow a remote
+        # host or a user-provided URL.
+        request = Request("http://127.0.0.1:8787/healthz",
+                          headers={"Host": "localhost"})
+        with urlopen(request, timeout=1.5) as response:
             return response.status==200
     except (OSError,URLError,ValueError):
         return False
@@ -162,10 +169,14 @@ def recoverable(issues:list[dict],journal:dict,*,epoch:float)->tuple[list[str],d
                    isinstance(t,(int,float)) and 0<=epoch-float(t)<=RESTART_WINDOW_SECONDS]
             if (len(prior)<MAX_RESTARTS_PER_COMPONENT_PER_WINDOW
                 and (not prior or epoch-prior[-1]>=RESTART_COOLDOWN_SECONDS)):
-                actions.append(comp)
-                history[comp]=prior+[epoch]
-                # Once a repair is attempted, issue needs a NEW confirmation.
-                updated.pop(key,None)
+                # Supervisor intentionally restarts at most ONE child per
+                # cycle. Do not spend restart budgets for other components
+                # until their recovery is actually selected next cycle.
+                if not actions:
+                    actions.append(comp)
+                    history[comp]=prior+[epoch]
+                    # Once a repair is attempted, require NEW confirmation.
+                    updated.pop(key,None)
     # Remove resolved incident counters on every healthy check.
     return actions,{
         "incidents":updated,
