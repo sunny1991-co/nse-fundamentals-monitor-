@@ -28,7 +28,7 @@ from research_monitor.schedule import atomic_status
 OUTPUT="nse_annual_pdf_section_review.csv"  # append-safe VERSIONED history view
 LATEST_OUTPUT="nse_annual_pdf_section_review_latest.csv"  # current engine only
 STATUS="runtime/nse_annual_pdf_section_review_status.json"
-VERSION="section-review-4-consolidated-statement-layouts"
+VERSION="section-review-5-split-consolidated-balance-sheet"
 MAX_FILES=2
 MAX_SCAN_PAGES=90
 MAX_PAGES=700
@@ -178,6 +178,36 @@ def locate_sections(reader,year):
                           and bool(re.search(
                               r"\btotal\s+\(?-?\d[\d,]*\.\d{2}\)?\s+\(?-?\d[\d,]*\.\d{2}\)?\b",
                               t,re.I)))))
+        # Some NSE original PDFs print ASSETS and EQUITY/LIABILITIES
+        # on two *adjacent* pages (e.g. 63MOONS FY2023-24). The first
+        # page must be a consolidated balance sheet with both assets
+        # subtotals and its two-year TOTAL ASSETS. The NEXT page must
+        # explicitly be its CONSOLIDATED BALANCE SHEET (CONTD.), carry
+        # equity/liability rows and have BOTH printed closing totals
+        # equal to the first page. No numbers get promoted by this step.
+        if not balance and bs.search(t) and i+1<count:
+            amount=r"(\\(?-?\\d[\\d,]*\\.\\d{2}\\)?)"
+            asset_pair=re.search(
+                r"\\bTOTAL\\s+ASSETS\\s+"+amount+r"\\s+"+amount+r"\\b",t,re.I)
+            has_asset_rows=(bool(re.search(r"\\bTOTAL\\s+NON[-\\s]*CURRENT\\s+ASSETS\\b",t,re.I))
+                            and bool(re.search(r"\\bTOTAL\\s+CURRENT\\s+ASSETS\\b",t,re.I)))
+            if asset_pair and has_asset_rows and str(2000+int(year[-2:])) in t:
+                continuation=get_page(i+1)
+                is_consolidated_continued=bool(re.search(
+                    r"\\bCONSOLIDATED\\s+BALANCE\\s+SHEET\\s*\\(\\s*CONT(?:D\\.?|INUED)\\s*\\)",
+                    continuation,re.I))
+                closing=re.search(
+                    r"\\bTOTAL\\s+EQUITY\\s+AND\\s+LIABILITIES\\s+"+
+                    amount+r"\\s+"+amount+r"\\b",continuation,re.I)
+                if (is_consolidated_continued
+                    and str(2000+int(year[-2:])) in continuation
+                    and re.search(r"\\bEQUITY\\s+AND\\s+LIABILITIES\\b",continuation,re.I)
+                    and re.search(r"\\bEQUITY\\s+SHARE\\s+CAPITAL\\b",continuation,re.I)
+                    and re.search(r"\\bTOTAL\\s+EQUITY\\b",continuation,re.I)
+                    and closing
+                    and tuple(x.replace(",","") for x in asset_pair.groups())==
+                        tuple(x.replace(",","") for x in closing.groups())):
+                    balance=True
         profits=(bool(pnl.search(t))
                  and bool(re.search(r"\brevenue\s+from\s+operations\b",t,re.I))
                  and bool(re.search(
