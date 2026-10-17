@@ -663,3 +663,57 @@ claiming complete PDF candidates: production PDF text layout is not
 equivalent to any synthetic fixture. Even a successful PDF candidate remains
 `Audited_Consolidated_Facts_Verified=false` until separately reconciled
 against reliable annual NSE filing/XBRL context.
+
+## Source-bound original NSE annual PDF vs NSE audited XBRL crosscheck (read-only)
+
+The production Termux FY2023–24 **20MICRONS** PDF numeric extraction now
+yielded **six source-row candidates**, and INR-lakh unit, both printed
+fiscal-year columns, internal balance sheet arithmetic and profit-tax
+arithmetic all passed. The PDF still has
+`Audited_Consolidated_Facts_Verified=false`, as it should: the PDF alone
+does not meet the software's original consolidated NSE XBRL verification
+policy.
+
+`nse_annual_pdf_xbrl_crosscheck.py` is a separate offline automatic gap
+detector/reviewer. After the normal original-NSE-XBRL annual catch-up step,
+it re-attests current NSE mainboard ISIN, archived NSE PDF receipt/URL,
+its exact *on-disk* SHA256, the current v3 audited consolidated section
+locator, and the v2 numeric reviewer evidence. It **only** reads eligible
+candidate rows with six candidate values and valid unit/period/arithmetic
+markers. Old incomplete review versions are never silently promoted.
+It seeks an independently original-NSE-source-verified, audited,
+consolidated exact FY 2022–23 or FY 2023–24 entry in
+`annual_historical_results.csv` for the **same symbol and fiscal year**.
+The separate original NSE XBRL pipeline verified that data against its
+official filing index and annual consolidated XBRL fact contexts before
+saving it. However, this offline reconciliation does *not* redownload or
+freshly re-audit that XML and should never be described as a new XBRL
+filing verification.
+
+Results are explicitly distinct:
+- `ORIGINAL_NSE_XBRL_HISTORY_NOT_AVAILABLE` — no original audited XBRL
+  row for that symbol/year in private local history
+- `ORIGINAL_NSE_XBRL_HISTORY_NOT_SOURCE_VERIFIED` — source row exists
+  but lacks enough original provenance or audit/basis verification
+- `AMBIGUOUS_XBRL_REVISIONS_OR_CONFLICTING_NUMERIC_FACTS` — two original
+  XBRL sources with the same latest filing day or conflicting metric values
+- `PDF_VS_XBRL_DIFFERENCE_REVIEW_REQUIRED` — values differ more than
+  narrow format/rounding tolerance (including different net profit,
+  equity attribution or accounting definition); do not auto-correct
+- `PDF_VS_XBRL_PARTIAL_FIELD_EVIDENCE` — official XBRL missing a field
+- `ALL_SIX_NUMERIC_VALUES_CLOSE_SOURCE_REVIEW_ONLY` — the *numbers*
+  match nearby source-verified XBRL numbers, but source scope, total
+  vs attributable equity, and reporting revisions still need review.
+
+Private read-only report: `nse_annual_pdf_vs_xbrl_source_review.csv`
+and `runtime/nse_annual_pdf_vs_xbrl_source_review_status.json`.
+The tool neither edits official annual/quarterly financial CSVs nor
+promotes any strict annual PASS, backtest, watchlist, SMS or broker order.
+It automatically runs within supervised Termux maintenance **after**
+original audited XBRL annual history intake and requires **no paid AI**.
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_xbrl_crosscheck.py --max-files 1
+
+If this returns `ORIGINAL_NSE_XBRL_HISTORY_NOT_AVAILABLE` for
+20MICRONS FY2023-24, that's the accurate next blocker, NOT permission
+to use a PDF candidate or an Upstox vendor value as verified XBRL.
