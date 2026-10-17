@@ -96,6 +96,36 @@ class OfficialGrossTRIImportTests(unittest.TestCase):
                 self.assertFalse((self.root/OUTPUT_META).exists())
                 self.assertFalse((self.root/CANDIDATE_CSV).exists())
 
+    def test_http_302_diagnostics_keep_private_redirect_location_out(self):
+        moved=response(code=302)
+        moved.headers={"Location":"https://somewhere.invalid/secret?key=private-key"}
+        result,client=self.fetch(moved)
+        self.assertEqual(result["state"],"OFFICIAL_REDIRECT_NOT_FOLLOWED")
+        self.assertEqual(result["http_status"],302)
+        self.assertEqual(result["redirect_class"],"OTHER_REDIRECT_NOT_FOLLOWED")
+        self.assertNotIn("private-key",json.dumps(result))
+        self.assertFalse((self.root/OUTPUT_CSV).exists())
+        self.assertFalse((self.root/CANDIDATE_CSV).exists())
+        self.assertFalse(client.post.call_args.kwargs["allow_redirects"])
+
+    def test_500_diagnostics_are_distinct_from_rejected_redirect(self):
+        result,_=self.fetch(response(code=500))
+        self.assertEqual(result["state"],"OFFICIAL_HTTP_ERROR_UNVERIFIED")
+        self.assertEqual(result["http_status"],500)
+        self.assertTrue(result["response_url_matches_official_endpoint"])
+        self.assertFalse((self.root/CANDIDATE_CSV).exists())
+
+    def test_http_200_wrong_response_url_remains_blocked(self):
+        result,_=self.fetch(response(code=200,url="https://elsewhere.invalid/tri"))
+        self.assertEqual(result["state"],"OFFICIAL_RESPONSE_URL_MISMATCH_UNVERIFIED")
+        self.assertEqual(result["http_status"],200)
+        self.assertFalse(result["response_url_matches_official_endpoint"])
+
+    def test_http_403_is_reported_without_following(self):
+        result,_=self.fetch(response(code=403))
+        self.assertEqual(result["state"],"OFFICIAL_ACCESS_BLOCKED_403")
+        self.assertEqual(result["http_status"],403)
+
     def test_bad_source_does_not_overwrite_prior_good_candidate(self):
         accepted,_=self.fetch()
         original=(self.root/CANDIDATE_CSV).read_bytes()
