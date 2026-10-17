@@ -242,6 +242,7 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
     ledger=csv_rows(root/LEDGER)
     latest={r.get("Symbol"):r for r in ledger}
     eligible=[]
+    deferred=[]
     for symbol in symbols:
         old=latest.get(symbol)
         if old:
@@ -259,6 +260,16 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
                         and not old.get("Diagnostic_Version")
                         and ONE_SAFE_REPROBE_DELAY<=age)
                     if not one_safe_probe:
+                        # An eligible time is informative, NOT a new request.
+                        # Leave full issuer backlog visible during cooldown.
+                        earliest=(
+                            checked+ONE_SAFE_REPROBE_DELAY
+                            if (old.get("State")=="INDEX_DISCOVERY_BLOCKED"
+                                and old.get("Reason")==
+                                    "OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR"
+                                and not old.get("Diagnostic_Version"))
+                            else checked+COOLDOWN)
+                        deferred.append((symbol,earliest))
                         continue
             except (ValueError,KeyError,TypeError):
                 pass
@@ -268,7 +279,11 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
     counts=dict(checked=0,new_index_rows=0,new_verified_facts=0,
                 access_blocked=False,source_xml_downloads=0)
     errors=[]
-    state="OFFICIAL_NSE_OLD_ANNUAL_INDEX_UPDATED"
+    state=("OFFICIAL_NSE_OLD_ANNUAL_INDEX_COOLDOWN_NO_REQUEST"
+           if deferred and not eligible
+           else "OFFICIAL_NSE_OLD_ANNUAL_INDEX_NO_VERIFIED_ISSUERS"
+           if not symbols
+           else "OFFICIAL_NSE_OLD_ANNUAL_INDEX_UPDATED")
     try:
         for symbol in eligible[:max_symbols]:
             try:
@@ -340,7 +355,18 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         "api_calls_made_this_run":counts["checked"]+len(errors),
         "symbols_requested_this_run":min(max_symbols,len(eligible)),
         "symbols_fetched_this_run":counts["checked"],
-        "symbols_remaining_after_this_run":max(0,len(eligible)-counts["checked"]),
+        "symbols_deferred_by_cooldown":len(deferred),
+        "next_eligible_at_utc":(
+            min(earliest for _,earliest in deferred)
+            .astimezone(timezone.utc).isoformat()
+            if deferred else None
+        ),
+        # Include deferred issuers; a zero-request run is NOT completion.
+        "symbols_remaining_after_this_run":(
+            len(deferred)+max(
+                0,len(eligible)-counts["checked"]-len(errors)
+            )
+        ),
         "new_official_old_annual_xbrl_links_indexed":counts["new_index_rows"],
         "recovered_audited_xbrl_facts":0,
         "requires_separate_original_xbrl_source_verification":True,
