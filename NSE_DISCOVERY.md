@@ -420,3 +420,61 @@ extraction, independent reconciliations, units, comparable fiscal periods
 and source quality verification still require a separate fail-closed step.
 It NEVER appends facts to annual_historical_results.csv, approves strict
 four-year fundamentals, promotes a trade strategy, trades, or alerts.
+
+## Unattended project health doctor and optional AI diagnosis
+
+The EXISTING Termux Supervisor owns the worker processes and now runs a
+separate bounded `research_monitor.auto_doctor` health diagnostic about
+every **two minutes**. No extra market subscriptions are required.
+It observes:
+- market worker's verified exchange-calendar and quote research loop
+- separate official adjusted and all-EQ raw EOD history worker
+- NSE annual/quarterly, sector, and PDF-section daily research worker
+- private Upstox vendor-reference worker
+- MFA-only localhost Dashboard via the fixed /healthz endpoint
+- known NSE API blocks, archived PDF source-review blocks and free disk
+
+**Safe repair actually performed automatically:** if a child is confirmed
+stale in two spaced consecutive health checks AND its supervised process has
+existed at least 10 minutes, terminate only that known subprocess group.
+The independently tested Termux Supervisor restarts it on the next cycle,
+retaining stored research and its own cooldown. At most **two automatic
+stale-worker restarts per component in any six-hour window**, each at least
+30 minutes apart. Process crashes were already auto-restarted by Supervisor.
+
+A legitimately long market analysis receives a 3-hour grace period;
+history, maintenance and vendor jobs get their separate conservative time
+budgets. NSE 403/429 API denials, missing or stale source facts, issuer/sector
+ambiguity, bad archival hashes and insufficient disk **never** trigger a
+blind restart, deletion, authorization bypass, fabricated annual values or
+automatic live trading. Those are persistent explicit issues needing
+operator/data-source/code review. The doctor does NOT run git pull or execute
+unreviewed AI-generated commands. It cannot fix an offline phone or restore
+network/provider access by itself.
+
+Private machine-readable outputs:
+- runtime/project_auto_doctor_status.json — last scan and incident codes
+- runtime/project_auto_doctor_recovery_journal.json — capped durable repairs
+- project_status.py — includes automatic_project_doctor_state and issue count
+
+**Optional actual OpenAI model diagnostic (NOT enabled by default)**:
+Set NSE_AI_DOCTOR_ENABLE=1 and an **independent paid OpenAI API**
+OPENAI_API_KEY locally in your private environment only after explicit
+user cost/privacy acceptance. ChatGPT Plus does not supply an API key.
+It sends **only sanitized issue types and component labels**, never raw
+financial datasets, phone paths, account details or bearer tokens, to the
+Responses API with store=false. Limited to one attempt per hour and a
+six-hour repeat cooldown for the same incidents. It can write concise
+advice but does NOT generate/exe cute arbitrary terminal commands, GitHub
+merges, brokerage instructions or any privileged action. All actual
+automated repairs remain deterministic, pretested and capped.
+
+To install new supervisor code after PR merge:
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    bash termux_backend.sh restart
+    cat ~/nse-fundamentals-data/runtime/project_auto_doctor_status.json
+
+Under Android process kill, powered-off phone, loss of data connectivity or
+unavailable external APIs, an on-device guardian cannot operate. Truly
+always-on operation would require separate cloud hosting and credentials.

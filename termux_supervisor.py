@@ -21,6 +21,10 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
+from research_monitor.auto_doctor import (
+    evaluate as auto_doctor_evaluate,
+    INTERVAL_SECONDS as AUTO_DOCTOR_INTERVAL,
+)
 
 AUTH_KEYS = ('APP_SECRET_KEY','APP_PASSWORD_HASH','APP_TOTP_SECRET','APP_AUTH_DB')
 
@@ -261,10 +265,12 @@ def main() -> int:
                     )
 
                 children = {}
+                child_births = {}
                 for name in ('worker', 'history', 'research', 'upstox_reference', 'dashboard'):
                     child = start_named(name)
                     if child is not None:
                         children[name] = child
+                        child_births[name] = time.time()
 
                 def publish(state='RUNNING', **extra):
                     atomic_status(status_path, {
@@ -289,6 +295,7 @@ def main() -> int:
 
                 publish()
                 last_publish = time.monotonic()
+                last_doctor = time.monotonic()
                 restart_history: dict[str, list[float]] = {}
                 while not stopping:
                     failed_name = next(
@@ -322,11 +329,38 @@ def main() -> int:
                             children.pop(failed_name, None)
                         else:
                             children[failed_name] = replacement
+                            child_births[failed_name] = time.time()
                         publish('RUNNING', last_restarted_process=failed_name)
                         last_publish = time.monotonic()
                         continue
 
                     now_tick = time.monotonic()
+                    if now_tick-last_doctor >= AUTO_DOCTOR_INTERVAL:
+                        last_doctor = now_tick
+                        try:
+                            diagnosis, recovery = auto_doctor_evaluate(
+                                root, children, child_births)
+                            if recovery:
+                                # Terminate ONLY a known managed child.
+                                # The existing tested supervisor lifecycle
+                                # restarts it with backoff next loop.
+                                name = recovery[0]
+                                target = children.get(name)
+                                if target is not None and target.poll() is None:
+                                    log.write(
+                                        f'{time.strftime("%Y-%m-%dT%H:%M:%S%z")} '
+                                        f'auto-doctor safe recovery: {name} stale\n'
+                                    )
+                                    log.flush()
+                                    terminate_child(target)
+                        except (OSError, ValueError, TypeError,
+                                KeyError, RuntimeError) as exc:
+                            # A doctor's own failure must NEVER kill the
+                            # supervisor or its independent market workers.
+                            log.write(
+                                f'auto-doctor diagnostic error: {type(exc).__name__}\n'
+                            )
+                            log.flush()
                     if now_tick-last_publish >= 10:
                         publish()
                         last_publish = now_tick
