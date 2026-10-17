@@ -998,3 +998,76 @@ One-off Termux inspection after GitHub update:
 A `new_two_year_comparisons=1` result confirms the **offline PDF
 research comparison**, not an audited XBRL screen pass. Re-running
 is idempotent while the SHA256 and parser versions are unchanged.
+
+## Mainboard-wide FY2022–23/FY2023–24 NSE source-gap queue (offline)
+
+The previously implemented NSE original annual report work reached **one**
+source-bound 20MICRONS report with complete FY2023–24 current-year and
+FY2022–23 comparative-year PDF numeric candidates, plus a research-only
+two-year comparison. These results are **not independently source-verified
+old NSE XBRL financial history or a four-year strict screen PASS**.
+The original old NSE API had a real `READ_TIMEOUT` in Termux, and its
+issuer cooldown must not be reset or bypassed.
+
+`nse_legacy_annual_evidence_queue.py` now produces **two rows per
+currently officially attested EQ NSE mainboard company**, one for each
+missing audited legacy year. Its
+`nse_legacy_annual_source_evidence_queue.csv` report includes exact
+symbol/ISIN, whether the company belongs to the tracked annual FY
+baseline, a research-priority order and the next evidence step.
+
+Stages are mutually exclusive:
+- `NO_LOCAL_LEGACY_SOURCE_INDEX_YET`: old NSE source index needed
+- `OFFICIAL_PDF_INDEX_LINKS_ONLY`: original annual PDF link indexed;
+  the privately cached archived report needs downloading
+- `ORIGINAL_PDF_CACHED_SOURCE_RECEIPT`: archived original PDF receipt,
+  identity, expected private path and size checked, **not PDF bytes
+  rehashed by this inventory**
+- `PDF_CONSOLIDATED_STATEMENT_PAGES_CANDIDATE`: reviewed source auditor,
+  consolidated balance sheet, P&L, and cash flow physical pages
+- `PDF_SIX_CORE_NUMERIC_CANDIDATES_ONLY`: original NSE PDF report
+  current-column numbers extracted and arithmetic checked, **not XBRL**
+- `LATER_ANNUAL_PDF_PRIOR_FY_COMPARATIVE_ONLY`: FY2022–23 appeared as
+  the comparative (second) year column in a **FY2023–24** NSE report;
+  NEVER an original independent FY2022–23 audited XBRL filing
+- `ORIGINAL_XBRL_INDEX_LINKS_ONLY`: official old audited consolidated
+  annual XBRL URL is listed, but **XML content unverified**
+- `ORIGINAL_XBRL_CONFLICTING_REVISIONS`: same-date original filings
+  disagree or need independent version review
+- `LOCAL_ORIGINAL_XBRL_INCOMPLETE_CORE`: saved independently verified
+  source row lacks one or more of the six core fundamentals
+- `LOCAL_ORIGINAL_XBRL_SIX_CORE_ROW`: saved local source-verification
+  flags and all six values present (does not imply a freshly verified
+  NSE XML this run, a strict 4-year PASS or a trading qualification)
+
+The mainboard membership must pass the existing strict original NSE
+EQ+ISIN/current status validation. Archived report receipts must match
+official issuer/ISIN and indexed NSE annual PDF originals; current
+numeric candidates and prior-year comparatives require their matching
+reviewer versions, matching original PDF URL/SHA receipt and review
+safety flags. Only strict NSE original XBRL source-record validation
+flags can count as locally previously verified XML rows. Nothing in
+this inventory independently re-downloads the source XML/PDF or
+overrides the existing audited accounting controls.
+
+Next API permissible time, if an issuer has an active old-NSE source
+cooldown, is derived from its existing, untouched ledger.
+No requests are made, no phone SMS, and no paid AI or broker action.
+The reports are:
+`nse_legacy_annual_source_evidence_queue.csv` and
+`runtime/nse_legacy_annual_source_evidence_queue_status.json`.
+The bounded, offline inventory runs daily **after** original XBRL
+history collection and source diagnostics.
+
+Run from Termux without requesting NSE:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_annual_evidence_queue.py
+
+The mainboard totals, the baseline-tracked current-company counts,
+and the number of pending FY rows come from the private actual
+dataset; **they are not invented or forced to equal 1,254**.
+No historical fundamental files, strict annual screens, strategies,
+trade watchlists or broker orders change; `Trade_Eligible=false`
+and `Orders=DISABLED` for every row.
