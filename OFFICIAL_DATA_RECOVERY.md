@@ -464,3 +464,52 @@ The actual local mainboard PDF-index and prior-year comparative counts
 may be small. Report these honestly; **do not infer they have all been
 archived or source-audited**. The PDF plan does not initiate a large
 download or bypass older original XML access blocks.
+
+## Safe next step: first six already-indexed original NSE annual PDFs
+
+The Termux source queue on 2026-10-17T14:01:50Z confirmed
+2,344 current official mainboard EQ issuers and 4,688 FY22–23/FY23–24
+issuer-years. There are **6 companies with existing original
+FY2023–24 NSE annual PDF archive links, awaiting archive receipts**,
+one 20MICRONS two-year *PDF candidate* source comparison, one issuer
+requiring other official archive evidence, and 2,336 issuer records
+without an indexed old original NSE annual PDF yet.
+Of the same current mainboard snapshot, 1,227 have both newer FY
+research baseline rows with six numeric fields; this does **not**
+imply those 1,227 passed independent four-year XBRL scrutiny.
+
+The existing original annual PDF cached-index mode is the preferred
+next bounded source stage. It reads only the previously indexed
+original NSE Annual Report PDF metadata, requires current attested
+NSE EQ symbol/ISIN and original `nsearchives.nseindia.com`
+archive URL, respects filesystem/storage limits and records PDF
+candidate receipts. It does not query the NSE Annual Report
+metadata API, the old NSE Financial Results API, or alter broker
+orders / strict fundamentals.
+
+The CLI `--cached-index-only` now **defaults to NO PDF downloads**.
+Call explicitly with `--download 0` for clarity:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 0
+
+This reports exact pending PDF link/receipt counts and the next
+issuer/FY source pairs, with zero HTTP sessions. When the source
+allows it, a separately intentional *single source PDF request* is:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 1
+
+Even a successful archived PDF does not verify financial facts.
+The original PDF physical statement sections, source evidence rows,
+comparable source labels and annual numbers require further
+independent review before *research-only* inclusion. The already
+implemented same-PDF comparative amounts are never silently
+promoted to original older-year audited XBRL.
+
+Among equal research-priority links, **the FY2023–24 report is
+archived before FY2022–23**, because one FY2023–24 document can also
+provide the printed FY2022–23 comparative column for research.
+The annual metadata API's original 20-hour 403/429 cooldown
+timestamp is retained under its own status; any cached-index source
+validation error or archive 403 is reported in the SEPARATE
+cached-index status instead and **cannot reset the original
+NSE API cooldown**. Tests cover these cases.
