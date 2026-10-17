@@ -399,3 +399,68 @@ If `validated_indexed_pdf_links_pending_archive=0`, no source PDF
 is requested. This is a source-intake fallback, **not** a method to
 invent old full-year fundamentals, skip original NSE audit statements,
 or claim more complete historical coverage. Trading remains DISABLED.
+
+## PDF-first official NSE old-year source recovery after confirmed XML zero yield
+
+The actual 2026-10-17 Termux dry-run confirmed 2,652 old original-XBRL
+INDEX candidates, 590 excluded by strict index source preflight and
+2,062 source-index-metadata-ready items. Across the last 50 *real XML
+responses* in the source verification ledger, **50 were rejected and 0
+were verified**. This is a source format and provenance blocker,
+NOT evidence that any company's revenue/profit/borrowings are zero,
+nor that all 2,062 remaining original XMLs are invalid.
+
+The separate official NSE Annual Report archive offers a plausible
+alternative original document source for 2022–23 and 2023–24.
+A 2023–24 report often also contains **comparative FY2022–23**
+consolidated figures; however, any such older-year column remains a
+**later-document PDF research candidate, not independently verified
+old-year original NSE XBRL facts or a strict annual PASS**.
+
+`nse_legacy_pdf_first_recovery_queue.py` is a fully **offline**
+actionable plan for all current, attested NSE mainboard EQ issuers,
+joined by exact symbol and ISIN to the independently recomputed
+two-FY evidence queue. It prioritizes baseline-tracked symbols with
+two six-core newer-FY rows, then source work for already indexed
+or saved original PDFs. Its individual actions distinguish:
+- originally indexed 2023–24 official NSE Annual Report PDF requiring
+  a bounded archived PDF retrieval
+- cached original FY2023–24 NSE PDF requiring consolidated statement
+  source-page/numeric review
+- existing FY2023–24 PDF current-year figures requiring cautious
+  FY2022–23 comparative extraction from original same report
+- both FY2022–23 and FY2023–24 PDF candidates obtained for *research
+  only* but separate original audited sources still needed for strict
+  multi-year fundamental review
+- missing indexed PDF source after a prior annual metadata lookup,
+  requiring an alternative independently authenticated official
+  annual-report archive rather than pretending no annual report exists
+- original annual report metadata lookups for issuers not yet
+  source-indexed, conditional on official NSE API access and cooldown
+
+Outputs are
+`nse_legacy_pdf_first_recovery_queue.csv` and
+`runtime/nse_legacy_pdf_first_recovery_status.json`.
+They contain only current source eligibility and *what to research
+next*, not predicted stock price, a recommendation, audited-fact
+promotion, or a broker action. Existing old XML verification yield
+guard, 20-hour original API denial cooldown, independent issuer+ISIN
+checks and strict trading gates are preserved. Daily Termux
+maintenance runs this new read-only plan after original NSE source
+gap inventory. No HTTP sessions or API calls are made.
+
+The existing `nse_official_annual_pdf_auto_index.py` also now
+prefers baseline-tracked companies when prior lookup time and
+six-core newer-FY coverage are otherwise tied (previously this
+comparison inadvertently preferred an untracked issuer).
+
+Manual no-network check:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_pdf_first_recovery_queue.py
+
+The actual local mainboard PDF-index and prior-year comparative counts
+may be small. Report these honestly; **do not infer they have all been
+archived or source-audited**. The PDF plan does not initiate a large
+download or bypass older original XML access blocks.
