@@ -1,5 +1,6 @@
 """Offline regressions for source-attested official NSE OLD annual XBRL discovery."""
 import csv
+import requests
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,7 +9,7 @@ from unittest.mock import patch
 
 from nse_legacy_annual_official_auto_index import (
     API,LEDGER,LEDGER_FIELDS,STATUS,run,source_metadata,LegacyIndexUnavailable,
-    official_link,
+    official_link,query,DIAGNOSTIC_VERSION,
 )
 import nse_legacy_annual_recovery as legacy
 
@@ -67,6 +68,7 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
         temp=TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
+        (self.root/LEDGER).parent.mkdir(parents=True,exist_ok=True)
         # The collector never changes source fundamentals, watchlists
         # or brokerage settings.
         (self.root/"annual_historical_results.csv").write_text("DO_NOT_CHANGE")
@@ -195,6 +197,113 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
             annual_row(financialYear="01-Apr-2022 To 31-Mar-2023"),
             SYMBOL,ISIN,now=NOW))
         self.protected()
+
+    def test_opaque_old_failure_gets_only_one_delayed_diagnostic_reprobe(self):
+        # Local user saw ambiguous NETWORK_OR_JSON_ERROR. A legacy ledger
+        # can have exactly one more request under the new diagnostic code,
+        # never an immediate rapid-fire attempt or unblock of HTTP 403.
+        previous={
+            "Symbol":SYMBOL,"Checked_At_UTC":(
+                NOW-timedelta(minutes=12)).isoformat(),
+            "State":"INDEX_DISCOVERY_BLOCKED","Rows_Indexed":0,
+            "Reason":"OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR",
+        }
+        with (self.root/LEDGER).open("w",newline="") as f:
+            writer=csv.DictWriter(f,fieldnames=list(previous))
+            writer.writeheader()
+            writer.writerow(previous)
+        session=FakeSession([annual_row()])
+        summary=run(self.root,max_symbols=1,now=NOW,session=session,pause=lambda _:None)
+        self.assertEqual(summary["api_calls_made_this_run"],1)
+        self.assertEqual(summary["new_official_old_annual_xbrl_links_indexed"],1)
+        self.assertEqual(len(session.calls),1)
+        repeat_session=FakeSession([])
+        repeat=run(self.root,max_symbols=1,now=NOW+timedelta(minutes=2),
+                   session=repeat_session,pause=lambda _:None)
+        self.assertEqual(repeat["api_calls_made_this_run"],0)
+        self.assertEqual(len(repeat_session.calls),0)
+        with (self.root/LEDGER).open(newline="") as f:
+            item=next(csv.DictReader(f))
+        self.assertEqual(item["Diagnostic_Version"],DIAGNOSTIC_VERSION)
+        self.protected()
+
+    def test_previous_error_not_reprobed_too_soon_or_when_403(self):
+        for age,reason in [
+            (timedelta(minutes=2),"OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR"),
+            (timedelta(hours=3),"OFFICIAL_NSE_OLD_RESULTS_ACCESS_BLOCKED_403"),
+        ]:
+            with self.subTest(age=age,reason=reason):
+                with (self.root/LEDGER).open("w",newline="") as f:
+                    writer=csv.DictWriter(f,fieldnames=[
+                        "Symbol","Checked_At_UTC","State","Rows_Indexed","Reason"])
+                    writer.writeheader()
+                    writer.writerow({
+                        "Symbol":SYMBOL,
+                        "Checked_At_UTC":(NOW-age).isoformat(),
+                        "State":"INDEX_DISCOVERY_BLOCKED",
+                        "Rows_Indexed":0,
+                        "Reason":reason,
+                    })
+                session=FakeSession([annual_row()])
+                result=run(self.root,max_symbols=1,now=NOW,session=session,pause=lambda _:None)
+                self.assertEqual(result["api_calls_made_this_run"],0)
+                self.assertEqual(session.calls,[])
+        self.protected()
+
+    def test_200_html_not_json_and_bad_json_are_separate_safe_errors(self):
+        class BadResponse:
+            status_code=200
+            headers={"Content-Type":"text/html; charset=utf-8"}
+            content=b"<html>EXPOSED_TOKEN_SHOULD_NOT_BE_REPORTED</html>"
+            def json(self):
+                raise ValueError("HTML response contains EXPOSED_TOKEN_SHOULD_NOT_BE_REPORTED")
+        class BadJSON:
+            status_code=200
+            headers={"Content-Type":"application/json"}
+            content=b"not actually json SECRET_SHOULD_NOT_LEAK"
+            def json(self):
+                raise ValueError("SECRET_SHOULD_NOT_LEAK")
+        class TestSession:
+            def __init__(self,response):
+                self.response=response
+                self.calls=0
+            def get(self,*args,**kwargs):
+                self.calls+=1
+                return self.response
+        for response,reason in [
+            (BadResponse(),"OFFICIAL_NSE_OLD_RESULTS_HTML_INSTEAD_OF_JSON"),
+            (BadJSON(),"OFFICIAL_NSE_OLD_RESULTS_INVALID_JSON_200_RESPONSE"),
+        ]:
+            with self.subTest(reason=reason):
+                session=TestSession(response)
+                with self.assertRaises(LegacyIndexUnavailable) as context:
+                    query(session,SYMBOL)
+                self.assertEqual(str(context.exception),reason)
+                self.assertNotIn("SECRET",str(context.exception))
+                self.assertNotIn("EXPOSED_TOKEN",str(context.exception))
+                self.assertEqual(session.calls,1)
+
+    def test_network_timeout_tls_and_connection_separately_classified(self):
+        class ThrowSession:
+            def __init__(self,exc):
+                self.exc=exc
+                self.calls=0
+            def get(self,*args,**kwargs):
+                self.calls+=1
+                raise self.exc
+        for exc,reason in [
+            (requests.exceptions.ConnectTimeout("leaky-host"),"CONNECT_TIMEOUT"),
+            (requests.exceptions.ReadTimeout("leaky-host"),"READ_TIMEOUT"),
+            (requests.exceptions.SSLError("secret-ip"),"TLS_ERROR"),
+            (requests.exceptions.ConnectionError("host secret"),"CONNECTION_ERROR"),
+        ]:
+            with self.subTest(reason=reason):
+                session=ThrowSession(exc)
+                with self.assertRaisesRegex(LegacyIndexUnavailable,reason) as context:
+                    query(session,SYMBOL)
+                self.assertNotIn("secret",str(context.exception).lower())
+                self.assertNotIn("leaky",str(context.exception).lower())
+                self.assertEqual(session.calls,1)
 
     def test_bounds_fail_closed(self):
         with self.assertRaisesRegex(ValueError,"MAX_SYMBOLS"):

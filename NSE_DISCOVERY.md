@@ -771,3 +771,47 @@ A useful result would show
 **NOT** imply `recovered_audited_xbrl_facts` greater than zero.
 `access_blocked_without_retry=true` or a changed/empty official API
 must be reported as a blocker rather than fixed by weakening source gates.
+
+## Old FY23/24 NSE API failure diagnostics (v2, 2026-10-17)
+
+Actual 20MICRONS Termux old NSE results discovery yielded
+`OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR`. This was a
+single **ambiguous** error category: it did not establish whether NSE
+returned HTTP 200 with an HTML bot/challenge page, malformed JSON, a
+connection/timeout/TLS problem, or a host-side network interruption.
+It must never be interpreted as "the company did not file XBRL."
+
+The diagnostic v2 **retains the same one official endpoint request**
+with no bypass, no login cookie harvesting and no automatic retries.
+Its safe status codes differentiate:
+- `OFFICIAL_NSE_OLD_RESULTS_HTML_INSTEAD_OF_JSON` — 200 with HTML
+  instead of NSE filing data, possible server error/challenge
+- `OFFICIAL_NSE_OLD_RESULTS_INVALID_JSON_200_RESPONSE` — body non-HTML
+  but invalid JSON
+- `OFFICIAL_NSE_OLD_RESULTS_EMPTY_200_RESPONSE` — 200 without data
+- `OFFICIAL_NSE_OLD_RESULTS_CONNECT_TIMEOUT`,
+  `OFFICIAL_NSE_OLD_RESULTS_READ_TIMEOUT`,
+  `OFFICIAL_NSE_OLD_RESULTS_CONNECTION_ERROR`,
+  `OFFICIAL_NSE_OLD_RESULTS_TLS_ERROR`,
+  `OFFICIAL_NSE_OLD_RESULTS_PROXY_ERROR` — separate transport failures
+- `OFFICIAL_NSE_OLD_RESULTS_HTTP_NNN` — other non-200 HTTP status
+- `OFFICIAL_NSE_OLD_RESULTS_ACCESS_BLOCKED_403/429` — no retry or
+  bypass; respect the existing 20-hour source cooldown.
+
+Only a **previously recorded legacy generic** error may be re-probed
+**once** after a minimum 10-minute delay, using the newer diagnostic.
+After this v2 attempt the normal 20-hour per-company cooldown again
+applies, even if the error persists. NSE response bodies, cookies and
+exception messages are NOT recorded; ledger only stores a safe
+classification and diagnostic version. All source index and original
+XBRL auditing controls remain unchanged. In Termux:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_annual_official_auto_index.py --max-symbols 1
+
+If `symbols_requested_this_run=0`, source cooldown is still active;
+do not delete the ledger or issue multiple manual NSE requests.
+If a source failure is classified, it is diagnostic, not recovery:
+`new_official_old_annual_xbrl_links_indexed=0` means no new link
+was indexed, not that no older official XBRL exists.
