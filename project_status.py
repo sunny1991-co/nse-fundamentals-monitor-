@@ -176,6 +176,7 @@ def snapshot(root: Path | None = None) -> dict:
     minute_chart = read_json(runtime / "live_chart_research_status.json")
     legacy_pdf_pilot = read_json(runtime / "annual_report_pdf_pilot_status.json")
     archived_pdf_sections = read_json(runtime / "nse_annual_pdf_section_review_status.json")
+    archived_pdf_numeric = read_json(runtime / "nse_annual_pdf_numeric_evidence_status.json")
     sector_reference = read_json(runtime / "nse_totalmarket_industry_reference_status.json")
     history = read_json(runtime / "nse_eod_history_status.json")
     daily = history.get("daily") or {}
@@ -349,6 +350,13 @@ def snapshot(root: Path | None = None) -> dict:
         "automatic_archived_annual_pdf_unreviewed": int_value(
             archived_pdf_sections.get("candidate_reports_remaining",0)),
         "automatic_archived_annual_pdf_source_facts_verified": 0,
+        "automatic_archived_annual_pdf_numeric_candidate_state": (
+            archived_pdf_numeric.get("state","NOT_STARTED")),
+        "automatic_archived_annual_pdf_numeric_candidates_this_run": int_value(
+            archived_pdf_numeric.get("new_complete_six_field_candidate_reports",0)),
+        "automatic_archived_annual_pdf_numeric_candidates_total": int_value(
+            archived_pdf_numeric.get("total_numeric_candidate_reports",0)),
+        "automatic_archived_annual_pdf_numeric_strict_passes": 0,
         "official_coarse_sector_reference_state": sector_reference.get(
             "state","NOT_STARTED"),
         "official_coarse_sector_reference_is_full_4_tier": False,
