@@ -186,24 +186,24 @@ def locate_sections(reader,year):
         # equity/liability rows and have BOTH printed closing totals
         # equal to the first page. No numbers get promoted by this step.
         if not balance and bs.search(t) and i+1<count:
-            amount=r"(\\(?-?\\d[\\d,]*\\.\\d{2}\\)?)"
+            amount=r"(\(?-?\d[\d,]*\.\d{2}\)?)"
             asset_pair=re.search(
-                r"\\bTOTAL\\s+ASSETS\\s+"+amount+r"\\s+"+amount+r"\\b",t,re.I)
-            has_asset_rows=(bool(re.search(r"\\bTOTAL\\s+NON[-\\s]*CURRENT\\s+ASSETS\\b",t,re.I))
-                            and bool(re.search(r"\\bTOTAL\\s+CURRENT\\s+ASSETS\\b",t,re.I)))
+                r"\bTOTAL\s+ASSETS\s+"+amount+r"\s+"+amount+r"\b",t,re.I)
+            has_asset_rows=(bool(re.search(r"\bTOTAL\s+NON[-\s]*CURRENT\s+ASSETS\b",t,re.I))
+                            and bool(re.search(r"\bTOTAL\s+CURRENT\s+ASSETS\b",t,re.I)))
             if asset_pair and has_asset_rows and str(2000+int(year[-2:])) in t:
                 continuation=get_page(i+1)
                 is_consolidated_continued=bool(re.search(
-                    r"\\bCONSOLIDATED\\s+BALANCE\\s+SHEET\\s*\\(\\s*CONT(?:D\\.?|INUED)\\s*\\)",
+                    r"\bCONSOLIDATED\s+BALANCE\s+SHEET\s*\(\s*CONT(?:D\.?|INUED)\s*\)",
                     continuation,re.I))
                 closing=re.search(
-                    r"\\bTOTAL\\s+EQUITY\\s+AND\\s+LIABILITIES\\s+"+
-                    amount+r"\\s+"+amount+r"\\b",continuation,re.I)
+                    r"\bTOTAL\s+EQUITY\s+AND\s+LIABILITIES\s+"+
+                    amount+r"\s+"+amount+r"\b",continuation,re.I)
                 if (is_consolidated_continued
                     and str(2000+int(year[-2:])) in continuation
-                    and re.search(r"\\bEQUITY\\s+AND\\s+LIABILITIES\\b",continuation,re.I)
-                    and re.search(r"\\bEQUITY\\s+SHARE\\s+CAPITAL\\b",continuation,re.I)
-                    and re.search(r"\\bTOTAL\\s+EQUITY\\b",continuation,re.I)
+                    and re.search(r"\bEQUITY\s+AND\s+LIABILITIES\b",continuation,re.I)
+                    and re.search(r"\bEQUITY\s+SHARE\s+CAPITAL\b",continuation,re.I)
+                    and re.search(r"\bTOTAL\s+EQUITY\b",continuation,re.I)
                     and closing
                     and tuple(x.replace(",","") for x in asset_pair.groups())==
                         tuple(x.replace(",","") for x in closing.groups())):
