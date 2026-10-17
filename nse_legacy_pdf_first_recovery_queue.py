@@ -31,7 +31,6 @@ OUTPUT="nse_legacy_pdf_first_recovery_queue.csv"
 STATUS="runtime/nse_legacy_pdf_first_recovery_status.json"
 FIELDS=[
     "Symbol","ISIN","Company","Baseline_Tracked",
-    "FY2024_25_Baseline_Row_Present","FY2025_26_Baseline_Row_Present",
     "Two_Newer_FYs_Baseline_Row_Count",
     "Two_Newer_FYs_Six_Core_Row_Count_Not_Four_Year_Pass",
     "FY2022_23_Source_Stage","FY2023_24_Source_Stage",
@@ -71,6 +70,10 @@ def stage_next(fy22,fy23,verified22,verified23,previous):
         return 0,"REVIEW_ORIGINAL_FY2023_24_NSE_PDF_CONSOLIDATED_PAGES"
     if pdf23=="OFFICIAL_NSE_PDF_URL_INDEXED":
         return 0,"ARCHIVE_ALREADY_INDEXED_OFFICIAL_FY2023_24_PDF_WHEN_SOURCE_PERMITTED"
+    if pdf22=="CURRENT_FY_SIX_PDF_CORE_CANDIDATES_UNVERIFIED":
+        return 1,"FY2022_23_PDF_NUMERICS_RESEARCH_ONLY_PRIORITIZE_SEPARATE_FY2023_24_SOURCE"
+    if pdf22=="SOURCE_CONSOLIDATED_FINANCIAL_PAGES_FOUND":
+        return 1,"EXTRACT_SOURCE_FY2022_23_PDF_ONLY_WHEN_PARSER_SUPPORTED"
     if pdf22=="OFFICIAL_NSE_PDF_URL_INDEXED":
         return 1,"ARCHIVE_ALREADY_INDEXED_OFFICIAL_FY2022_23_PDF_WHEN_SOURCE_PERMITTED"
     if pdf22=="ORIGINAL_SOURCE_PDF_CACHED_RECEIPT":
@@ -135,10 +138,6 @@ def snapshot(root,*,now=None):
             "Symbol":symbol,"ISIN":company["ISIN"],
             "Company":company["Company"],
             "Baseline_Tracked":company.get("Baseline_Tracked","false"),
-            "FY2024_25_Baseline_Row_Present":
-                "true" if present.get(symbol,0)>=1 else "false",
-            "FY2025_26_Baseline_Row_Present":
-                "unknown_per_year_see_two_fy_total",
             "Two_Newer_FYs_Baseline_Row_Count":present.get(symbol,0),
             "Two_Newer_FYs_Six_Core_Row_Count_Not_Four_Year_Pass":
                 complete.get(symbol,0),
