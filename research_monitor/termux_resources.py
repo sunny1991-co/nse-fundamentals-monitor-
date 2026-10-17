@@ -25,6 +25,7 @@ CAPS = {
     "legacy_annual_verify": (1, 2),
     "sector_refresh": (100, 200),
     "quarterly_refresh": (150, 300),
+    "fast_track_two_year_eod_research": (40, 100),
 }
 ONE_PDF_STEPS = {
     "archived_pdf_section_review",
@@ -39,6 +40,7 @@ CAP_FLAG = {
     "legacy_annual_verify": "--limit",
     "sector_refresh": "--limit",
     "quarterly_refresh": "--limit",
+    "fast_track_two_year_eod_research": "--max-symbols",
 }
 
 
