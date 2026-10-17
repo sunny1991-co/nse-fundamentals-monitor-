@@ -225,6 +225,52 @@ class PDFTwoYearResearchTests(unittest.TestCase):
         self.assertFalse((self.root/OUTPUT).exists())
         self.untouched()
 
+    def test_stale_v3_and_current_v4_numeric_same_pdf_not_ambiguous(self):
+        # Actual Termux PDF review upgraded physical statement-page rules,
+        # retaining the v3 numeric evidence alongside newly re-verified v4.
+        stale={**self.current,
+               "Section_Review_Version":"section-review-3-statement-table-cues"}
+        write_rows(self.root/CURRENT_OUTPUT,CURRENT_FIELDS,
+                   [stale,self.current])
+        status=run(self.root,now=NOW,max_files=1,reader_cls=Reader)
+        self.assertEqual(status["new_two_year_comparisons"],1)
+        self.assertEqual(status["current_version_comparison_records"],1)
+        row=self.read_result()[0]
+        self.assertEqual(row["Current_PDF_Section_Review_Version"],
+                         SECTION_VERSION)
+        self.assertEqual(row["Prior_Revenue_Operations_Cr"],"701.6872")
+        self.assertEqual(row["Current_Revenue_Operations_Cr"],"777.4929")
+        self.assertEqual(row["Source_Audited_Annual_XBRL_Passes_Added"],"0")
+        self.assertEqual(row["Orders"],"DISABLED")
+        self.untouched()
+
+    def test_obsolete_comparison_version_preserved_but_current_revalidated(self):
+        initial=run(self.root,now=NOW,max_files=1,reader_cls=Reader)
+        self.assertEqual(initial["new_two_year_comparisons"],1)
+        archived=dict(self.read_result()[0],
+                      Two_Year_Research_Version="source-locked-pdf-two-year-yoy-research-v1")
+        write_rows(self.root/OUTPUT,FIELDS,[archived])
+        latest=run(self.root,now=NOW,max_files=1,reader_cls=Reader)
+        self.assertEqual(latest["new_two_year_comparisons"],1)
+        self.assertEqual(latest["total_two_year_comparisons"],2)
+        self.assertEqual(latest["current_version_comparison_records"],1)
+        self.assertEqual(latest["prior_version_comparison_records_preserved"],1)
+        self.assertEqual({r["Two_Year_Research_Version"]
+                          for r in self.read_result()},
+                         {VERSION,"source-locked-pdf-two-year-yoy-research-v1"})
+        again=run(self.root,now=NOW,max_files=1,reader_cls=Reader)
+        self.assertEqual(again["new_two_year_comparisons"],0)
+        self.untouched()
+
+    def test_duplicate_current_section_version_still_fails_closed(self):
+        write_rows(self.root/CURRENT_OUTPUT,CURRENT_FIELDS,
+                   [self.current,self.current])
+        with self.assertRaisesRegex(PDFComparisonBlocked,
+                                    "AMBIGUOUS_DUPLICATE_CURRENT_VERSION_SOURCE_ROW"):
+            run(self.root,now=NOW,max_files=1,reader_cls=Reader)
+        self.assertFalse((self.root/OUTPUT).exists())
+        self.untouched()
+
     def test_duplicate_source_versions_fail_not_random_choose(self):
         write_rows(self.root/PRIOR_OUTPUT,PRIOR_FIELDS,[self.prior,self.prior])
         with self.assertRaisesRegex(PDFComparisonBlocked,"AMBIGUOUS_DUPLICATE"):
