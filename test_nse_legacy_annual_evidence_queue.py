@@ -197,6 +197,20 @@ class LegacyEvidenceQueueTests(unittest.TestCase):
         self.assertEqual(previous["Source_Stage"],"NO_LOCAL_LEGACY_SOURCE_INDEX_YET")
         self.assert_protected()
 
+    def test_legacy_index_file_cannot_smuggle_mismatched_fiscal_end(self):
+        path=self.root/"nse_legacy_financial_results_2023-24.csv"
+        save(path,["Symbol","Period Ended","Audited / Unaudited",
+                   "Consolidated / Non-Consolidated","Period","XBRL URL"],[{
+            "Symbol":SECOND,"Period Ended":"2023-03-31",
+            "Audited / Unaudited":"Audited",
+            "Consolidated / Non-Consolidated":"Consolidated",
+            "Period":"Annual","XBRL URL":XBRL,
+        }])
+        snapshot(self.root,now=NOW)
+        self.assertEqual(self.rows()[(SECOND,"2023-24")]["Source_Stage"],
+                         "NO_LOCAL_LEGACY_SOURCE_INDEX_YET")
+        self.assert_protected()
+
     def test_wrong_isin_pdf_candidate_never_counted(self):
         self.numeric["ISIN"]=SECOND_ISIN
         save(self.root/NUMERIC_OUTPUT,ROW_FIELDS,[self.numeric])
