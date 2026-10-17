@@ -173,7 +173,10 @@ def choose_symbols(root:Path, now:datetime, limit:int)->list[dict]:
                            s,row))
     # Untracked EQ companies always prioritized, but older checks rotate
     # predictably so no company gets permanent starvation.
-    candidates.sort(key=lambda x:(x[0],x[1],x[2]))
+    # Never let an untracked subset starve the tracked universe: once
+    # previously unvisited symbols are indexed they move behind every
+    # never-visited symbol. Within equal timestamps prioritize discoveries.
+    candidates.sort(key=lambda x:(x[1],x[0],x[2]))
     return [x[3] for x in candidates[:limit]]
 
 
