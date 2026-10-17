@@ -6,6 +6,8 @@ import hashlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from collections import Counter
+import json
 import requests
 import nse_annual_history as annual
 import nse_legacy_annual_recovery as legacy
@@ -145,6 +147,7 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
         Remaining_Candidates=len(candidates), Last_Error='', Parser_Version=VERSION)
     indexes = {}
     added = []
+    context_rejection_reasons = Counter()
     try:
         for candidate in candidates[:limit]:
             url = candidate['Source_URL']; name = candidate['Index_File']
@@ -172,6 +175,37 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
                 body=fetch(session,url)
                 entry['Source_SHA256']=hashlib.sha256(body).hexdigest()
                 row, reason=verify(record,url,body)
+                if row is None and reason in (
+                    'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',
+                    'YEAR_END_BALANCE_SHEET_CONTEXT_NOT_VERIFIED',
+                ):
+                    # Reuse EXACTLY the downloaded XML bytes; never send a
+                    # second NSE request just to diagnose a rejected context.
+                    # No source numeric values, issuer identifiers, arbitrary
+                    # XML strings, or URLs from XML enter this diagnosis.
+                    try:
+                        from nse_legacy_context_diagnostic import inspect
+                        result=inspect(
+                            body,symbol=candidate['Symbol'],
+                            fiscal_end=candidate['Fiscal_Year_End'])
+                        diagnosis=result['reason']
+                        count=result['counters']
+                        entry['Context_Diagnostic_Reason']=diagnosis
+                        entry['Context_Exact_Annual_Duration_Count']=count[
+                            'exact_april_march_duration_contexts']
+                        entry['Context_Strict_Annual_Duration_Count']=count[
+                            'strict_duration_eligible_contexts']
+                        entry['Context_Year_End_Instant_Count']=count[
+                            'year_end_instant_contexts']
+                        entry['Context_Quarter_Length_Ending_Fiscal_End_Count']=sum(
+                            p['contexts'] for p in result[
+                                'reported_duration_windows_ending_at_fiscal_end']
+                            if p['classification']=='QUARTER_LENGTH_NOT_ANNUAL')
+                    except (ValueError,TypeError,KeyError,IndexError):
+                        # The original audited-fact rejection is authoritative.
+                        diagnosis='CONTEXT_DIAGNOSTIC_UNAVAILABLE'
+                        entry['Context_Diagnostic_Reason']=diagnosis
+                    context_rejection_reasons[diagnosis]+=1
                 if row is not None:
                     # Never overwrite another independently verified source/revision.
                     if any(r.get('Symbol') == row['Symbol'] and r.get('Fiscal_Year_End') == row['Fiscal_Year_End'] for r in history):
@@ -209,7 +243,13 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
             write_rows(root/'annual_historical_results.csv',history)
         if ledger:
             write_rows(root/LEDGER,list(ledger.values()))
+        # "Remaining_Candidates" includes previously attempted but
+        # unsuccessful evidence gaps. Distinguish never-attempted count:
+        # a rejected original XML must NOT be mistaken for verified.
         status['Remaining_Candidates']=len(candidates)-status['Added_Verified']
+        status['Attempted_Unverified_This_Run']=status['Attempted']-status['Added_Verified']
+        status['Context_Diagnostic_Reason_Counts_JSON']=json.dumps(
+            dict(sorted(context_rejection_reasons.items())),sort_keys=True)
         write_rows(root/RUN_STATUS,[status])
     return status
 
