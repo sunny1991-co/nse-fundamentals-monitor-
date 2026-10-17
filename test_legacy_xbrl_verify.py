@@ -3,7 +3,7 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 import requests
 from research_monitor.legacy_xbrl import verify
 from nse_legacy_xbrl_verify import collect, download
@@ -115,6 +115,59 @@ class LegacyCollectionTests(unittest.TestCase):
         collect(self.root,session=Mock(),fetch=lambda *_:fixture().replace(b'2022-04-01',b'2023-01-01'),pause=lambda _:None)
         self.assertFalse((self.root/'annual_historical_results.csv').exists())
         self.assertIn('EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',(self.root/'legacy_xbrl_verification.csv').read_text())
+
+    def test_enforced_preflight_quarantines_recent_403_and_q4_xml(self):
+        # The preflight's immutable source-ready facts, not index labels,
+        # must determine which URLs an unattended verifier can download.
+        from nse_legacy_xbrl_preflight import OUTPUT as READY
+        ready=self.root/READY
+        ready.write_text(
+            'Symbol,Financial_Year,Official_XBRL_Source_URL,'
+            'Source_Review_State,Metadata_Ready_For_XML,'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+',PREVIOUS_SOURCE_ATTEMPT_COOLDOWN,false,false\n'
+        )
+        fetch=Mock(return_value=fixture())
+        with patch('nse_legacy_xbrl_preflight.snapshot') as snapshot:
+            result=collect(self.root,session=Mock(),fetch=fetch,
+                           require_preflight=True,pause=lambda _:None)
+        snapshot.assert_called_once()
+        self.assertEqual(result['Original_Index_Candidates_Before_Preflight'],1)
+        self.assertEqual(result['Excluded_By_Current_Source_Preflight'],1)
+        self.assertEqual(result['Candidate_Symbol_Years'],0)
+        self.assertEqual(result['Attempted'],0)
+        self.assertEqual(result['Added_Verified'],0)
+        self.assertEqual(fetch.call_count,0)
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
+
+    def test_enforced_preflight_allows_exact_safe_old_year_url_only(self):
+        from nse_legacy_xbrl_preflight import OUTPUT as READY
+        (self.root/READY).write_text(
+            'Symbol,Financial_Year,Official_XBRL_Source_URL,'
+            'Source_Review_State,Metadata_Ready_For_XML,'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+',READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW,true,false\n'
+        )
+        fetch=Mock(return_value=fixture())
+        with patch('nse_legacy_xbrl_preflight.snapshot'):
+            result=collect(self.root,session=Mock(),fetch=fetch,
+                           require_preflight=True,pause=lambda _:None)
+        self.assertTrue(result['Independent_Source_Preflight_Required'])
+        self.assertEqual(result['Candidate_Symbol_Years'],1)
+        self.assertEqual(result['Attempted'],1)
+        self.assertEqual(result['Added_Verified'],1)
+        self.assertEqual(fetch.call_count,1)
+        self.assertIn('TEST',(self.root/'annual_historical_results.csv').read_text())
+
+    def test_missing_official_preflight_never_falls_back_to_unsafe_download(self):
+        fetch=Mock(return_value=fixture())
+        with patch('nse_legacy_xbrl_preflight.snapshot',
+                   side_effect=ValueError('CURRENT_NSE_EQ_CATALOG_UNATTESTED')):
+            with self.assertRaisesRegex(ValueError,'UNATTESTED'):
+                collect(self.root,session=Mock(),fetch=fetch,
+                        require_preflight=True,pause=lambda _:None)
+        self.assertEqual(fetch.call_count,0)
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
 
     def test_redirect_not_followed(self):
         response=Mock(status_code=302)
