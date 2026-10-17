@@ -1,5 +1,5 @@
 """Offline NSE annual-report metadata and bounded candidate-PDF regressions."""
-from datetime import datetime,timezone
+from datetime import datetime,timedelta,timezone
 import csv
 import json
 from pathlib import Path
@@ -241,7 +241,7 @@ class OfficialAnnualAutoIndexTests(unittest.TestCase):
         self.assertEqual(first["state"],"NSE_OFFICIAL_ANNUAL_INDEX_ACCESS_BLOCKED")
         self.assertEqual(provider.api_calls,1)
         original=(self.root/STATUS).read_bytes()
-        expiry=(self.now+__import__("datetime").timedelta(hours=20)).isoformat()
+        expiry=(self.now+timedelta(hours=20)).isoformat()
         self.assertEqual(source_access_cooldown(
             self.root,self.now+__import__("datetime").timedelta(hours=2)),expiry)
         # Even explicitly re-invoked with a brand-new mock session, the
