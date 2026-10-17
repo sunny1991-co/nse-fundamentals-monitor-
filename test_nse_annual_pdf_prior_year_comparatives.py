@@ -1,6 +1,7 @@
 """Synthetic, source-bound NSE annual report prior-FY column validations."""
 import csv
 from datetime import datetime,timezone
+from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
