@@ -262,6 +262,7 @@ case "${1:-status}" in
   stop) stop_backend ;;
   restart) stop_backend; start_backend ;;
   status) show_status ;;
+  resources) "$PYTHON_BIN" -m research_monitor.termux_resources ;;
   once) run_once ;;
   fast-fundamentals) run_fast_fundamentals ;;
   backup) run_backup ;;
@@ -273,7 +274,7 @@ case "${1:-status}" in
   install-boot) install_boot ;;
   uninstall-boot) uninstall_boot ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|once|fast-fundamentals|backup|restore-backup|recover|full-restore|maintenance|init-data|install-boot|uninstall-boot}"
+    echo "Usage: $0 {start|stop|restart|status|resources|once|fast-fundamentals|backup|restore-backup|recover|full-restore|maintenance|init-data|install-boot|uninstall-boot}"
     exit 2
     ;;
 esac
