@@ -250,3 +250,27 @@ financial figures or new trade signals are ever fabricated by this collector.
 New listings that have less than four complete reporting years remain
 research-only. Neither manual owner approval nor live broker orders are
 turned on automatically by any part of this system.
+
+
+## Project Status: legacy adjusted EOD vs automatic all-mainboard raw research
+
+After the supervised worker has run:
+
+    cd ~/nse-fundamentals-monitor-
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python project_status.py
+
+The old remaining_archive_days field covers only the previous
+corporate-action-adjusted EOD collector. Zero remaining there does NOT
+mean the distinct 2,344-stock raw research archive has finished.
+
+Use automatic_mainboard_unadjusted_archive_days_complete and
+automatic_mainboard_unadjusted_archive_days_pending separately.
+automatic_mainboard_radar_state and automatic_official_annual_pdf_index_state
+show distinct research phases. official_coarse_sector_reference_state may
+be OK while official_sector_rows remains 0 because broad index Industry
+is NOT the full official issuer-level four-tier sector mapping.
+
+automatic_mainboard_raw_breakout_candidates counts RAW price patterns,
+not validated strategy signals, trade eligibility, probability of profit,
+or Groww execution permission. The new research pipeline cannot authorize
+orders, modify the adjusted trading files or trigger automatic SMS.
