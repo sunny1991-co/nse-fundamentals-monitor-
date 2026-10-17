@@ -35,6 +35,35 @@ class ContextDiagnosticUnitTests(unittest.TestCase):
         self.assertEqual(verify(RECORD,URL,bad)[1],
                          "EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED")
 
+    def test_real_context_period_dates_are_reported_without_fact_promotion(self):
+        original = inspect(fixture(), symbol="TEST", fiscal_end="2023-03-31")
+        self.assertEqual(original["reported_duration_windows_ending_at_fiscal_end"], [
+            {"start_date": "2022-04-01", "end_date": "2023-03-31",
+             "calendar_days": 365, "contexts": 1,
+             "classification": "EXACT_EXPECTED_APRIL_MARCH_ANNUAL"},
+        ])
+        quarter = inspect(
+            fixture().replace(b"2022-04-01", b"2023-01-01"),
+            symbol="TEST", fiscal_end="2023-03-31",
+        )
+        self.assertEqual(quarter["reported_duration_windows_ending_at_fiscal_end"], [
+            {"start_date": "2023-01-01", "end_date": "2023-03-31",
+             "calendar_days": 90, "contexts": 1,
+             "classification": "QUARTER_LENGTH_NOT_ANNUAL"},
+        ])
+        self.assertFalse(quarter["verified_financial_facts"])
+        self.assertNotIn("Revenue_Operations_Cr",quarter)
+
+    def test_mismatched_full_length_is_diagnostic_not_annual_approval(self):
+        mismatched = fixture().replace(b"2022-04-01", b"2022-04-02")
+        actual = inspect(mismatched, symbol="TEST", fiscal_end="2023-03-31")
+        periods = actual["reported_duration_windows_ending_at_fiscal_end"]
+        self.assertEqual(periods[0]["calendar_days"], 364)
+        self.assertEqual(periods[0]["classification"],
+                         "ANNUAL_LENGTH_BUT_NOT_EXPECTED_APRIL_MARCH")
+        self.assertEqual(actual["reason"], "EXACT_ANNUAL_DURATION_MISSING")
+        self.assertIsNone(verify(RECORD, URL, mismatched)[0])
+
     def test_company_identifier_scheme_failure_is_distinct_from_dates(self):
         bad=fixture().replace(
             b"http://www.nseindia.com/NSESymbol",

@@ -44,3 +44,30 @@ Official source access failures stop the run; 403/429 is not bypassed.
 Once a source format difference is identified, assess its legitimacy against
 actual XML taxonomies before making any verifier changes. Existing strict
 screens remain blocked and do not consume diagnostic findings as trade signals.
+
+
+## Original XML reporting windows (17 October 2026)
+
+The first 4 original legacy XML diagnostics (20MICRONS and 21STCENMGM,
+both FY 2022-23 and 2023-24) all have March 31 duration endpoints but
+zero exact April 1–March 31 duration contexts, despite matching NSE entity
+schemes and consolidated XML report-basis facts. This is NOT proof of
+verified annual facts or proof that annual filings do not exist elsewhere.
+
+The updated diagnostic exposes only original ISO start/end dates, inclusive
+calendar-day lengths and grouped context counts for durations ending at
+March 31. Structural categories distinguish quarter-like, half-year-like,
+nine-month, and annual-length-but-not-exact-year periods. This does not
+relax the strict annual verifier or return financial numbers.
+
+After updating Termux, re-run the existing max-four original XML diagnostic:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_context_diagnostic.py --max-files 4
+
+Look at the reported_duration_windows_ending_at_fiscal_end field. If original
+XML contains only quarter/other nonannual durations, the checked documents
+cannot qualify as full-year audited-consolidated filings. An authenticated
+annual report or annual financial XBRL is a separate primary source to
+locate and verify. Never sum guessed quarters or waive period and unit gates.

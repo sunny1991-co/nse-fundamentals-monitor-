@@ -87,6 +87,9 @@ def inspect(body, *, symbol, fiscal_end):
     contexts = [node for node in facts if local(node.tag) == "context"]
     scheme_counts = Counter()
     count = Counter()
+    # Only ISO dates explicitly present in original XBRL context periods;
+    # no financial numbers, entity secrets, URLs, or ticker guesses.
+    observed_ending_periods = Counter()
     symbol_facts = {
         (n.text or "").strip().upper()
         for n in facts if local(n.tag) == "Symbol"
@@ -120,6 +123,8 @@ def inspect(body, *, symbol, fiscal_end):
             count["duration_contexts"] += 1
             if dates["endDate"] == end:
                 count["duration_ending_at_fiscal_end"] += 1
+                if dates["startDate"] <= end:
+                    observed_ending_periods[dates["startDate"]] += 1
             if dates["startDate"] == start and dates["endDate"] == end:
                 count["exact_april_march_duration_contexts"] += 1
                 if canonical:
@@ -164,9 +169,32 @@ def inspect(body, *, symbol, fiscal_end):
         reason = "ANNUAL_CONTEXT_PRESENT_BUT_XML_SYMBOL_FACT_NOT_ATTESTED"
     else:
         reason = "BASIC_CONTEXT_CONDITIONS_PRESENT_ADDITIONAL_AUDIT_REQUIRED"
+    observed_ranges = []
+    for from_day, frequency in sorted(observed_ending_periods.items()):
+        calendar_days = (end - from_day).days + 1
+        if from_day == start:
+            classification = "EXACT_EXPECTED_APRIL_MARCH_ANNUAL"
+        elif 330 <= calendar_days <= 400:
+            classification = "ANNUAL_LENGTH_BUT_NOT_EXPECTED_APRIL_MARCH"
+        elif 60 <= calendar_days <= 120:
+            classification = "QUARTER_LENGTH_NOT_ANNUAL"
+        elif 150 <= calendar_days <= 220:
+            classification = "HALF_YEAR_LENGTH_NOT_ANNUAL"
+        elif 240 <= calendar_days <= 310:
+            classification = "NINE_MONTH_LENGTH_NOT_ANNUAL"
+        else:
+            classification = "OTHER_DURATION_NOT_VERIFIED_AS_ANNUAL"
+        observed_ranges.append({
+            "start_date": from_day.isoformat(),
+            "end_date": end.isoformat(),
+            "calendar_days": calendar_days,
+            "contexts": frequency,
+            "classification": classification,
+        })
     return {
         "reason": reason,
         "context_total": len(contexts),
+        "reported_duration_windows_ending_at_fiscal_end": observed_ranges,
         "counters": dict(count),
         "identifier_scheme_classes": dict(sorted(scheme_counts.items())),
         "xml_symbol_fact_matches": symbol_facts == {symbol},
