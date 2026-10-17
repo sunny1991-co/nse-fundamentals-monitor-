@@ -22,17 +22,51 @@ jobs:
           NSE_DATA_DIR: ${{ runner.temp }}/nse-tri-unreviewed
         run: |
           mkdir -p "$NSE_DATA_DIR"
-          python nifty50_tri_official_import.py --fetch
           python - <<'PY'
-          import json,os
+          import json,os,requests
           from pathlib import Path
-          d=Path(os.environ['NSE_DATA_DIR'])
-          a=json.loads((d/'runtime/nifty50_tri_acquisition_status.json').read_text())
-          print('Official fetch status:',a['state'])
-          print('Official HTTP status:',a.get('http_status'))
-          print('Official redirect classification:',a.get('redirect_class'))
-          print('Unreviewed official candidate rows:',a.get('candidate_rows',0))
-          print('Auto attested:',a['promoted_to_verified_benchmark'])
+          from urllib.parse import urlsplit
+          from nifty50_tri_official_import import SOURCE_PAGE,ENDPOINT,fetch_candidate
+          d=Path(os.environ["NSE_DATA_DIR"])
+          s=requests.Session()
+          first=s.get(SOURCE_PAGE,headers={
+              "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+              "Accept":"text/html,application/xhtml+xml",
+          },allow_redirects=False,timeout=25)
+          print("Official landing page status:",first.status_code)
+          loc=first.headers.get("Location","")
+          if loc:
+              p=urlsplit(loc)
+              print("Official landing redirect class:",
+                    ("SAME_HOST" if p.hostname == "www.niftyindices.com" else "OTHER_HOST"),
+                    "path:",p.path[:120])
+          if first.status_code == 200:
+              report=fetch_candidate(d,session=s)
+          else:
+              # Existing fetch remains a single official POST, never follows redirect.
+              report=fetch_candidate(d,session=s)
+          print("POST result status:",report.get("state"))
+          print("POST HTTP:",report.get("http_status"))
+          print("Official candidate rows:",report.get("candidate_rows",0))
+          print("Auto attested:",report["promoted_to_verified_benchmark"])
+          # Investigate redirect destination to distinguish a moved endpoint
+          # from an anti-abuse or login page. Print no query or response body.
+          post_payload={
+              "cinfo":("{'name':'NIFTY 50','startDate':'01-Jan-2017',"
+                       "'endDate':'16-Oct-2026','indexName':'NIFTY 50'}")
+          }
+          r=s.post(ENDPOINT,json=post_payload,headers={
+              "User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+              "Referer":SOURCE_PAGE,
+              "Content-Type":"application/json; charset=UTF-8",
+              "X-Requested-With":"XMLHttpRequest",
+              "Accept":"application/json",
+          },timeout=25,allow_redirects=False)
+          print("Separate official endpoint response:",r.status_code)
+          to=urlsplit(r.headers.get("Location",""))
+          print("POST redirect host classification:",
+                "OFFICIAL" if to.hostname=="www.niftyindices.com" else "OTHER_OR_NO_HOST")
+          print("POST redirect path only:",to.path[:120])
           PY
       - name: Keep only the official unreviewed result for owner retrieval
         if: always()
