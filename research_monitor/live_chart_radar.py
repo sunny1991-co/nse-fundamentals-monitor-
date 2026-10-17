@@ -140,12 +140,12 @@ def normalize_candles(raw,symbol,now):
         if (stamp.astimezone(IST).date()!=day or
             not(0<lo<=min(op,cl)<=max(op,cl)<=hi) or vol<0):
             raise ChartUnavailable("INVALID_CURRENT_SESSION_EQUITY_CANDLE")
+        if stamp>now:
+            raise ChartUnavailable("FUTURE_CANDLE")
         # A full minute's OHLCV is accepted only when COMPLETE; never
         # use an in-progress candle as a validated chart breakout.
         if stamp+timedelta(minutes=1)>now:
             continue
-        if stamp>now:
-            raise ChartUnavailable("FUTURE_CANDLE")
         key=stamp.astimezone(timezone.utc).isoformat()
         if key in selected:
             raise ChartUnavailable("DUPLICATE_CANDLE_TIMESTAMP")
