@@ -20,6 +20,7 @@ load_dotenv(CODE_ROOT/'.env', interpolate=False)
 
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
+from research_monitor.termux_resources import memory_snapshot, adaptive_command
 
 STEPS = [
     # Research only; no trade/shortlist auto-promotion.
@@ -223,15 +224,40 @@ def main() -> int:
 
     results = []
     local_failure = False
+    memory_deferred = False
+    last_memory = None
     with log_path.open('a', encoding='utf-8', buffering=1) as log:
         log.write('\n=== maintenance '+datetime.now(timezone.utc).isoformat()+' ===\n')
         for name, command, timeout in STEPS:
+            # Only launch the NEXT independent research subprocess if
+            # available Android/cgroup memory is safely above reserve.
+            # Never terminate the market worker, supervisor, or dashboard.
+            last_memory = memory_snapshot()
+            if not last_memory["heavy_research_allowed"]:
+                memory_deferred = True
+                log.write(f'\n[{name}] deferred due to memory: '
+                          f'{last_memory["state"]}\n')
+                results.append({"step":name,"state":"DEFERRED_LOW_RAM",
+                                "returncode":None})
+                atomic_status(status_path, {
+                    "updated_at":datetime.now(timezone.utc).isoformat(),
+                    "state":"MEMORY_PRESSURE_DEFERRED",
+                    "current_or_last_step":name,
+                    "steps":results,
+                    "memory_profile":last_memory,
+                    "upstox":"INTENTIONALLY_DEFERRED",
+                    "orders":"MANUAL_ONLY",
+                })
+                break
+            effective_command = adaptive_command(
+                name, command, last_memory["tier"])
             started = datetime.now(timezone.utc).isoformat()
-            log.write(f'\n[{name}] start {started}\n')
+            log.write(f'\n[{name}] start {started} '
+                      f'RAM tier {last_memory["tier"]}\n')
             log.flush()
             try:
                 completed = subprocess.run(
-                    command, cwd=CODE_ROOT, env=env, stdout=log,
+                    effective_command, cwd=CODE_ROOT, env=env, stdout=log,
                     stderr=subprocess.STDOUT, timeout=timeout, check=False,
                 )
                 code = completed.returncode
@@ -253,14 +279,17 @@ def main() -> int:
                 'state': 'RUNNING',
                 'current_or_last_step': name,
                 'steps': results,
+                'memory_profile': last_memory,
                 'upstox': 'INTENTIONALLY_DEFERRED',
                 'orders': 'MANUAL_ONLY',
             })
 
     final = {
         'updated_at': datetime.now(timezone.utc).isoformat(),
-        'state': 'LOCAL_STEP_FAILURE' if local_failure else 'COMPLETED',
+        'state': ('MEMORY_PRESSURE_DEFERRED' if memory_deferred
+                  else 'LOCAL_STEP_FAILURE' if local_failure else 'COMPLETED'),
         'steps': results,
+        'memory_profile': last_memory,
         'evidence': summary(root),
         'upstox': 'INTENTIONALLY_DEFERRED',
         'orders': 'MANUAL_ONLY',
