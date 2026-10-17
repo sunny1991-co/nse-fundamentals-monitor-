@@ -156,7 +156,7 @@ def tick(root=ROOT, now=None):
             root, now=now, open_session=(state=="LIVE_MONITORING")
         )
         status['automatic_live_chart_state']=chart.get('state','UNAVAILABLE')
-        status['automatic_live_chart_companies']=len(chart.get('charts',[]))
+        status['automatic_live_chart_companies']=chart.get('charts_count',len(chart.get('charts',[])))
     except (OSError,ValueError,TypeError,AttributeError,RuntimeError):
         status['automatic_live_chart_state']='READ_ONLY_CHART_SOURCE_UNAVAILABLE'
         status['automatic_live_chart_companies']=0
