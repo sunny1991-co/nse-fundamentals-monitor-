@@ -386,12 +386,18 @@ def run(root,*,max_files=1,now=None,reader_cls=None)->dict:
         if r.get("Review_Version")==SECTION_VERSION
     }
     previous=records(root/OUTPUT)
+    # The numeric parser version alone is insufficient: a new section
+    # reviewer may change physical statement pages for the SAME original
+    # PDF SHA. Preserve old evidence, but re-open source against the latest
+    # section-version page locators before treating numbers as current.
     existing={(r.get("Symbol"),r.get("Financial_Year"),r.get("PDF_SHA256"),
-              r.get("Numeric_Review_Version")):r for r in previous}
+              r.get("Numeric_Review_Version"),
+              r.get("Section_Review_Version")):r for r in previous}
     pending=[]
     blocked=[]
     for receipt,entry,path in sources:
-        key=(receipt["Symbol"],receipt["Financial_Year"],receipt["PDF_SHA256"],VERSION)
+        key=(receipt["Symbol"],receipt["Financial_Year"],receipt["PDF_SHA256"],
+             VERSION,SECTION_VERSION)
         if key in existing:
             continue
         check=(receipt["Symbol"],receipt["Financial_Year"],
@@ -442,7 +448,8 @@ def run(root,*,max_files=1,now=None,reader_cls=None)->dict:
         complete+=details["state"]=="COMPLETE_SOURCE_ROW_CANDIDATES_NOT_AUDIT_VERIFIED"
     rows=sorted(existing.values(),key=lambda r:(
         r.get("Symbol",""),r.get("Financial_Year",""),
-        r.get("PDF_SHA256",""),r.get("Numeric_Review_Version","")))
+        r.get("PDF_SHA256",""),r.get("Numeric_Review_Version",""),
+        r.get("Section_Review_Version","")))
     if rows:
         write_csv_atomic(root/OUTPUT,ROW_FIELDS,rows)
     result={

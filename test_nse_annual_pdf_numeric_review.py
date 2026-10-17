@@ -318,6 +318,32 @@ class AnnualPDFNumericEvidenceTests(unittest.TestCase):
             "Candidate_Core_Fields"],"6")
         self.assert_protected()
 
+    def test_changed_section_review_rechecks_identical_pdf_and_keeps_history(self):
+        first=run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertEqual(first["new_reports_read"],1)
+        old_rows=self.read_output()
+        self.assertEqual(len(old_rows),1)
+        # Simulate a historical v3 review record of the SAME immutable PDF;
+        # the active section-review has moved to v4. A stale numeric row
+        # must not suppress fresh source-page verification for v4.
+        old_rows[0]["Section_Review_Version"]="section-review-3-statement-table-cues"
+        with (self.root/OUTPUT).open("w",newline="") as handle:
+            writer=csv.DictWriter(handle,fieldnames=list(old_rows[0]))
+            writer.writeheader()
+            writer.writerows(old_rows)
+        result=run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertEqual(result["new_reports_read"],1)
+        rows=self.read_output()
+        self.assertEqual(len(rows),2)
+        self.assertEqual({r["Section_Review_Version"] for r in rows},
+                         {"section-review-3-statement-table-cues",SECTION_VERSION})
+        current=next(r for r in rows if r["Section_Review_Version"]==SECTION_VERSION)
+        self.assertEqual(current["Candidate_Core_Fields"],"6")
+        self.assertEqual(current["Strict_Fundamental_Pass"],"false")
+        self.assertEqual(run(self.root,max_files=1,now=NOW,reader_cls=Reader)[
+            "new_reports_read"],0)
+        self.assert_protected()
+
     def test_unit_or_date_ambiguity_quarantines_all_numeric_candidates(self):
         for cls in (NoUnits,WrongYearOrder):
             with self.subTest(cls=cls.__name__):
