@@ -942,3 +942,59 @@ After GitHub pull, a manual run uses only the cached local PDF:
 If this source PDF's text layout changes or any prior-year arithmetic
 fails, the review must remain incomplete. It does not prove an FY22–23
 original XBRL filing is present.
+
+## Source-locked FY2022–23 -> FY2023–24 PDF fundamental trend (research only)
+
+The user's original 20MICRONS FY2023–24 annual PDF review and its second,
+FY2022–23 comparative column both produced **six numeric source
+candidates**. The old NSE Financial Results API still has a 20-hour
+source READ_TIMEOUT cooldown and **no original FY2022–23 or
+FY2023–24 XBRL source row has been independently recovered yet**.
+These six+six PDF candidates nevertheless permit a transparent
+RESEARCH-ONLY report of same-PDF year-on-year changes.
+
+`nse_annual_pdf_two_year_research.py` operates purely offline.
+It calls the same NSE mainboard/ISIN, original annual PDF URL and private
+source receipt gates, rehashes the actual PDF bytes, recomputes both
+source columns at the v3 independently located auditor/consolidated
+balance sheet/P&L/cash flow section pages and checks that **all six
+current-year and six comparative-year values match the previously
+stored candidate CSV rows exactly**. No edited CSV can authorize a
+growth figure when its original PDF differs. It rejects ambiguous
+current/prior source versions and missing report sections.
+
+For each of the six tracked values it reports:
+`Prior_<Metric>`, `Current_<Metric>`,
+`Absolute_Change_<Metric>`, `YoY_Percent_<Metric>` and an
+interpretation flag. Growth percentages are deliberately **blank**
+when a prior-year value is zero or negative, e.g. turnaround
+from loss to profit; this avoids spurious growth percentages.
+It additionally calculates two research descriptors from the PDF
+observations, profit margin and borrowings/equity, with no ROE,
+ROCE, buy/sell score, shortlisting or profit forecast.
+
+Output and runtime status:
+`nse_annual_pdf_two_year_research_comparison.csv`,
+`runtime/nse_annual_pdf_two_year_research_status.json`.
+The bounded daily supervisor runs this **after** original FY2023–24
+numeric PDF review and FY2022–23 comparative extraction. Neither
+an NSE API call nor any paid AI subscription is needed.
+The separate original audited NSE XBRL verifier is still required
+before either financial year can count toward strict screening.
+
+Labels in every research row explicitly state that **both** columns
+are original NSE report PDF *candidates*, neither original audited NSE
+XBRL-verified facts. There is no promotion to:
+`annual_historical_results.csv`, `annual_fundamental_quality_report.csv`,
+final shortlist, SMS alerts, strategy backtest, broker or live orders.
+`Investment_Signal=NONE_RESEARCH_ONLY` and `Orders=DISABLED`.
+
+One-off Termux inspection after GitHub update:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_two_year_research.py --max-files 1
+
+A `new_two_year_comparisons=1` result confirms the **offline PDF
+research comparison**, not an audited XBRL screen pass. Re-running
+is idempotent while the SHA256 and parser versions are unchanged.
