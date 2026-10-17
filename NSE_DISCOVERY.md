@@ -1071,3 +1071,75 @@ dataset; **they are not invented or forced to equal 1,254**.
 No historical fundamental files, strict annual screens, strategies,
 trade watchlists or broker orders change; `Trade_Eligible=false`
 and `Orders=DISABLED` for every row.
+
+## 2,515 old NSE original-XBRL **index-link** candidate rows: preflight
+
+Actual user Termux output from 2026-10-17T11:20:29Z:
+2,344 currently attested NSE mainboard EQ companies; 1,597 tagged as
+baseline-tracked in the local mainboard catalog; 4,688
+company-year rows for FY2022–23+FY2023–24. **2,515** have
+old NSE archived Annual/Audited/Consolidated XBRL URL metadata;
+**2,172** have no old-year local source index, **one** is an
+official annual PDF index URL stage. These are source STAGES,
+not downloaded/verifiable original XML facts.
+
+The old NSE metadata may say "Annual" and "Audited, Consolidated",
+but the actual linked XML sometimes only reports a 4th-quarter
+(January–March) context. It cannot be promoted as full April–March
+audited facts; the strict `nse_legacy_xbrl_verify.py` XML
+context/issuer/unit verifier must independently decide.
+
+`nse_legacy_xbrl_preflight.py` audits the OLD source-index metadata
+**offline before** the legacy XML verification step in Termux.
+Its scope is the currently NSE-attested EQ companies **within the
+existing FY2024–25 / FY2025–26 baseline manifests**; it is not
+an assertion that all 2,515 index-link stages are independently
+ready. It checks an exact singular official NSE XML HTTPS host/path,
+explicit issuer, symbol, Annual / Audited / Consolidated period and
+March 31 financial year-end, an actual official source index
+Broadcast Date not earlier than year-end, conflicting same issuer
+revisions or shared XML link across symbol-years and the
+existing private legacy XML verifier ledger. A prior 403, 429 or
+network failure remains on a **20-hour safety cooldown**; a
+previously rejected XML annual-report context must not be blindly
+repeated just because the CSV label looks yearly.
+
+`nse_legacy_xbrl_index_preflight.csv` and
+`runtime/nse_legacy_xbrl_index_preflight_status.json`
+distinguish:
+- `READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW`: the
+  **metadata** allows independent original XML review, not a
+  verified audited fact
+- `SOURCE_INDEX_PUBLICATION_DATE_MISSING_OR_AMBIGUOUS` /
+  `SOURCE_INDEX_ROW_OR_PUBLICATION_AMBIGUOUS`: cannot establish
+  original publication from the current index
+- `PREVIOUS_SOURCE_ATTEMPT_COOLDOWN`: respect prior source failure
+- `EARLIER_XML_CONTEXT_OR_SCHEMA_REJECTION`: e.g. original
+  XBRL already found quarter-only, needs a *different*
+  verified annual source, not a repeat of the same XML
+- `MULTIPLE_OFFICIAL_XBRL_REVISIONS_NEED_REVIEW`,
+  `SHARED_OR_AMBIGUOUS_XML_SOURCE_URL`: source revision or issuer
+  identity ambiguous; do not pick randomly
+- `NO_USABLE_OLD_ANNUAL_XBRL_INDEX_IN_TRACKED_BASELINE`:
+  no suitable old-year indexed source in local tracked scope
+- `LOCAL_HISTORY_VERIFIED_FLAG_NOT_RECHECKED`:
+  a source-verification status already exists; this tool does
+  not download/revalidate original XML.
+
+The main `nse_legacy_annual_source_evidence_queue.csv` also has
+an **Independent_PDF_Evidence_Stage** column, so an XBRL index URL
+taking source-priority stage no longer conceals the existing
+20MICRONS FY2023–24 six-core PDF candidates or its FY2022–23
+comparative-year PDF candidates. Counts by BOTH independent
+source-stage and PDF-stage appear in the queue status. Such source
+candidate values remain unverified for strict fundamentals.
+
+Do **not** manually remove source ledgers to reset cooldown,
+or infer new audit completeness from this offline snapshot. No API
+calls, paid AI calls, strict fundamental promotions, watchlist
+changes or broker trades.
+
+Termux diagnostic after updating GitHub:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_preflight.py
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_annual_evidence_queue.py
