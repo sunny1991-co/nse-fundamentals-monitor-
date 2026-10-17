@@ -169,7 +169,7 @@ class FastTrackResearchTests(unittest.TestCase):
         # A changed quality file invalidates a previously generated
         # provisional shortlist, even if counts still happen to agree.
         p=self.root/"annual_fundamental_quality_report.csv"
-        p.write_text(p.read_text()+"\\n")
+        p.write_text(p.read_text()+"\n")
         with self.assertRaisesRegex(
                 fast.FastTrackBlocked,"PROVISIONAL_SCREEN_SOURCE_CHANGED_REBUILD_REQUIRED"):
             self.invoke()
@@ -181,7 +181,7 @@ class FastTrackResearchTests(unittest.TestCase):
         # mainboard equity if its current official listing has disappeared.
         p=self.root/"annual_fundamental_quality_report.csv"
         with p.open("a") as handle:
-            handle.write("DELISTED,PASS\\n")
+            handle.write("DELISTED,PASS\n")
         shortlist=self.root/"fast_fundamental_shortlist.csv"
         with shortlist.open() as f:
             original=list(csv.DictReader(f))
