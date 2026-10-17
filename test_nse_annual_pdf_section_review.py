@@ -12,8 +12,8 @@ from nse_official_annual_pdf_auto_index import (
     PDF_DIR, PDF_LOG, OUTPUT as PDF_INDEX, PDF_FIELDS, OUTPUT_FIELDS,
 )
 from nse_annual_pdf_section_review import (
-    SectionReviewBlocked,run,inspect_pdf,STATUS,OUTPUT,MAX_SCAN_PAGES,
-    VERSION,page_indices,dense_financial_band,
+    SectionReviewBlocked,run,inspect_pdf,STATUS,OUTPUT,LATEST_OUTPUT,
+    MAX_SCAN_PAGES,VERSION,page_indices,dense_financial_band,
 )
 
 
@@ -248,6 +248,42 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
             rows=list(csv.DictReader(handle))
         self.assertEqual({r["Review_Version"] for r in rows},
                          {"section-review-1",VERSION})
+        self.assert_protected()
+
+    def test_old_review_is_preserved_but_current_view_excludes_stale_pages(self):
+        # A former v2 false positive listed all four sections at page 200.
+        # It must remain audit history while a separate CURRENT-version view
+        # contains only verified-source v3 candidate page locators.
+        header=(
+            "Symbol,ISIN,Financial_Year,Official_Report_URL,PDF_SHA256,"
+            "Auditor_Page_1based,Consolidated_Balance_Sheet_Page_1based,"
+            "Consolidated_Profit_Loss_Page_1based,"
+            "Consolidated_Cash_Flow_Page_1based,Review_Version,Reviewed_At_UTC"
+        )
+        old_row=(
+            f"{SYMBOL},{ISIN},2022-23,{URL},{self.receipt[0]['PDF_SHA256']},"
+            "200,200,200,200,section-review-2-adaptive,"
+            "2026-10-17T09:55:00+00:00"
+        )
+        (self.root/OUTPUT).write_text(header+"\n"+old_row+"\n")
+        report=run(self.root,max_files=1,now=NOW,reader_cls=FakeReader)
+        self.assertEqual(report["reports_reviewed_this_run"],1)
+        self.assertEqual(report["previous_review_records"],1)
+        self.assertEqual(report["current_version_review_records"],1)
+        self.assertEqual(report["latest_review_csv"],LATEST_OUTPUT)
+        self.assertEqual(report["most_recent_current_review"]["physical_pdf_pages"],
+                         {"auditor":124,"balance_sheet":125,
+                          "profit_and_loss":126,"cash_flow":127})
+        with (self.root/OUTPUT).open() as f:
+            history=list(csv.DictReader(f))
+        with (self.root/LATEST_OUTPUT).open() as f:
+            current=list(csv.DictReader(f))
+        self.assertEqual(len(history),2)
+        self.assertEqual(len(current),1)
+        self.assertEqual(current[0]["Review_Version"],VERSION)
+        self.assertEqual(current[0]["Auditor_Page_1based"],"124")
+        self.assertEqual(history[0]["Auditor_Page_1based"],"200")
+        self.assertEqual(report["financial_facts_added"],0)
         self.assert_protected()
 
     def test_20microns_fy2324_separate_true_pages_not_section_index(self):

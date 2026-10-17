@@ -25,7 +25,8 @@ from research_monitor.discovered_annual_universe import verified_discovered_symb
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
-OUTPUT="nse_annual_pdf_section_review.csv"
+OUTPUT="nse_annual_pdf_section_review.csv"  # append-safe VERSIONED history view
+LATEST_OUTPUT="nse_annual_pdf_section_review_latest.csv"  # current engine only
 STATUS="runtime/nse_annual_pdf_section_review_status.json"
 VERSION="section-review-3-statement-table-cues"
 MAX_FILES=2
@@ -316,6 +317,32 @@ def run(root,max_files=MAX_FILES,now=None,reader_cls=None):
         r.get("Symbol",""),r.get("Financial_Year",""),r.get("PDF_SHA256","")))
     if rows:
         write_csv_atomic(root/OUTPUT,FIELDS,rows)
+
+    # Keep immutable prior-version review evidence. Publishing a SECOND,
+    # version-scoped current view prevents the archived v2 false-positive
+    # for 20MICRONS (four sections at page 200) from being misread as the
+    # active v3 result by 'head -n 2'. Never select an older row as current.
+    current_rows=[r for r in rows if r.get("Review_Version")==VERSION]
+    write_csv_atomic(root/LATEST_OUTPUT,FIELDS,current_rows)
+    most_recent=sorted(
+        current_rows,key=lambda r:(
+            r.get("Reviewed_At_UTC",""),
+            r.get("Symbol",""),r.get("Financial_Year",""),
+        )
+    )[-1] if current_rows else None
+    last_reviewed={
+        "symbol":most_recent.get("Symbol",""),
+        "financial_year":most_recent.get("Financial_Year",""),
+        "review_version":most_recent.get("Review_Version",""),
+        "state":most_recent.get("Section_Review_State",""),
+        "physical_pdf_pages":{
+            "auditor":most_recent.get("Auditor_Page_1based",""),
+            "balance_sheet":most_recent.get("Consolidated_Balance_Sheet_Page_1based",""),
+            "profit_and_loss":most_recent.get("Consolidated_Profit_Loss_Page_1based",""),
+            "cash_flow":most_recent.get("Consolidated_Cash_Flow_Page_1based",""),
+        },
+        "audited_financial_facts_verified":False,
+    } if most_recent else None
     result={
         "checked_at_utc":now.astimezone(timezone.utc).isoformat(),
         "state":"PDF_SECTION_REVIEW_PARTIAL" if failures else "OFFICIAL_ARCHIVED_PDF_SECTION_REVIEW_UPDATED",
@@ -323,6 +350,11 @@ def run(root,max_files=MAX_FILES,now=None,reader_cls=None):
         "reports_reviewed_this_run":processed,
         "candidate_reports_remaining":max(0,len(candidates)-processed),
         "previous_review_records":len(rows)-processed,
+        "current_review_version":VERSION,
+        "current_version_review_records":len(current_rows),
+        "versioned_historical_reviews_preserved":True,
+        "latest_review_csv":LATEST_OUTPUT,
+        "most_recent_current_review":last_reviewed,
         "reports_blocked_this_run":failures,
         "errors":errors,
         "source_text_scans_are_partial":True,
