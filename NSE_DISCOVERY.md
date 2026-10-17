@@ -95,7 +95,8 @@ source or truncated catalog causes an error, not an unverified fallback.
 The extractor filters NSE official filing-index records by FY March 31,
 audited, consolidated, publication date, then verifies the XBRL reporting
 basis and annual contexts. It appends only verified records to
-annual_historical_results.csv in the private NSE_DATA_DIR. Previously
+annual_historical_results.csv in the private NSE_DATA_DIR, with bounded
+progress at runtime/nse_annual_discovered_catchup_status.json. Previously
 verified data is cached; blocked documents remain retryable. The original
 FY2425.csv and NSE_FY2025-26_Consolidated_Fundamentals.csv stay unchanged.
 
