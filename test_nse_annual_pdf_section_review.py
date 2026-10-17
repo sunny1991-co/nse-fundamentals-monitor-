@@ -33,13 +33,19 @@ class FakePage:
         if self.i==0:
             return "Annual Report "+self.year+" of TESTEQ Limited"
         if self.i==123:
-            return "Independent Auditor’s Report Opinion We have audited Consolidated Financial Statements"
+            return ("Independent Auditor’s Report Opinion We have audited "
+                    "Consolidated Financial Statements. Basis for Opinion")
         if self.i==124:
-            return "Consolidated Balance Sheet as at 31 March 2023 (in lakhs)"
+            return ("Consolidated Balance Sheet as at 31 March 2023 (in lakhs) "
+                    "Total Assets 110.00 Total Equity and Liabilities 110.00")
         if self.i==125:
-            return "Consolidated Statement of Profit and Loss for year ended 31 March 2023"
+            return ("Consolidated Statement of Profit and Loss for year ended "
+                    "31 March 2023 Revenue from Operations 110.00 "
+                    "Profit for the period 10.00")
         if self.i==126:
-            return "Consolidated Cash Flow Statement for year ended 31 March 2023"
+            return ("Consolidated Cash Flow Statement for year ended 31 March 2023 "
+                    "Cash Flow from Operating Activities 8.00 "
+                    "Cash Flow from Investing Activities -2.00")
         return "Directors and statutory disclosures"
 
 
@@ -59,10 +65,15 @@ class FakeSparseGapPage:
         if self.index==0:
             return "Annual Report 2022-23 of TESTEQ Limited"
         labels={
-            205:"Independent Auditor's Report on Consolidated Financial Statements",
-            206:"Consolidated Balance Sheet for 31 March 2023",
-            207:"Consolidated Statement of Profit and Loss",
-            208:"Consolidated Cash Flow Statement",
+            205:("Independent Auditor's Report on Consolidated Financial "
+                 "Statements. Opinion We have audited the Group. Basis for Opinion"),
+            206:("Consolidated Balance Sheet for 31 March 2023 "
+                 "TOTAL ASSETS 1,000.00 TOTAL EQUITY AND LIABILITIES 1,000.00"),
+            207:("Consolidated Statement of Profit and Loss "
+                 "Revenue from Operations 500.00 Profit for the year 100.00"),
+            208:("Consolidated Cash Flow Statement "
+                 "Cash Flow from Operating Activities 100.00 "
+                 "Cash Flow from Investing Activities -40.00"),
         }
         return labels.get(self.index,"Directors statutory disclosures")
 
@@ -71,6 +82,54 @@ class FakeSparseGapReader(FakeReader):
     def __init__(self,stream,strict=True):
         super().__init__(stream,strict=strict)
         self.pages=[FakeSparseGapPage(i) for i in range(280)]
+
+
+class FakeTwentyMicronsFinancialSectionPage:
+    """Synthetic PDF layout matching observed 20MICRONS page placement."""
+    def __init__(self,i):
+        self.i=i
+
+    def extract_text(self):
+        if self.i==0:
+            return "20 MICRONS Annual Report 2023-24"
+        if self.i==199:
+            # Original scanner falsely reported all four headings at
+            # physical page 200, which is ONLY a contents/section index.
+            return ("178 Consolidated Independent Auditor's Report "
+                    "186 Consolidated Balance Sheet "
+                    "187 Consolidated Statement of Profit and Loss "
+                    "188 Consolidated Cash Flow Statement")
+        if self.i==200:
+            # Physical PDF page 201: actual auditor's report.
+            return ("Independent Auditor's Report On Consolidated Financial "
+                    "Statements. Opinion We have audited the accompanying "
+                    "Consolidated Financial Statements. Basis for Opinion.")
+        if self.i==208:
+            return ("Consolidated Balance Sheet as at 31 March 2024 "
+                    "TOTAL ASSETS 58979.79 TOTAL EQUITY AND LIABILITIES 58979.79")
+        if self.i==209:
+            return ("Consolidated Statement of Profit and Loss for the year ended "
+                    "31 March 2024 Revenue from Operations 77749.29 "
+                    "Profit for the period 5616.03")
+        if self.i==210:
+            return ("Consolidated Statement of Cash Flow for 31 March 2024 "
+                    "Cash Flow from Operating Activities 5444.34 "
+                    "Cash Flow from Investing Activities -1988.19")
+        return "Statutory reports and notes."
+
+
+class FakeTwentyMicronsFinancialReader(FakeReader):
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages=[FakeTwentyMicronsFinancialSectionPage(i) for i in range(281)]
+
+
+class FakeSectionIndexOnlyReader(FakeReader):
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages=[FakeTwentyMicronsFinancialSectionPage(i) for i in range(281)]
+        for i in (200,208,209,210):
+            self.pages[i]=FakePage(-1)
 
 
 class FakeWrongFY(FakeReader):
@@ -189,6 +248,55 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
             rows=list(csv.DictReader(handle))
         self.assertEqual({r["Review_Version"] for r in rows},
                          {"section-review-1",VERSION})
+        self.assert_protected()
+
+    def test_20microns_fy2324_separate_true_pages_not_section_index(self):
+        # Reproduction of 20MICRONS official FY23/24 NSE PDF:
+        # section INDEX at page 200 and actual statements at 201/209/210/211.
+        self.receipt[0]["Financial_Year"]="2023-24"
+        self.index[0]["Financial_Year"]="2023-24"
+        csv_write(self.root/PDF_LOG,PDF_FIELDS,self.receipt)
+        csv_write(self.root/PDF_INDEX,OUTPUT_FIELDS,self.index)
+        # This mock keeps the original file URL solely to test source matching;
+        # it does not fabricate NSE data or affect real archives.
+        report=run(self.root,max_files=1,now=NOW,
+                   reader_cls=FakeTwentyMicronsFinancialReader)
+        self.assertEqual(report["reports_reviewed_this_run"],1)
+        with (self.root/OUTPUT).open() as f:
+            row=next(csv.DictReader(f))
+        self.assertEqual([
+            row["Auditor_Page_1based"],
+            row["Consolidated_Balance_Sheet_Page_1based"],
+            row["Consolidated_Profit_Loss_Page_1based"],
+            row["Consolidated_Cash_Flow_Page_1based"],
+        ],["201","209","210","211"])
+        self.assertNotIn("200",[
+            row["Auditor_Page_1based"],
+            row["Consolidated_Balance_Sheet_Page_1based"],
+            row["Consolidated_Profit_Loss_Page_1based"],
+            row["Consolidated_Cash_Flow_Page_1based"],
+        ])
+        self.assertEqual(row["Section_Review_State"],
+                         "CANDIDATE_SECTIONS_LOCATED_SOURCE_AUDIT_STILL_REQUIRED")
+        self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
+        self.assertEqual(report["financial_facts_added"],0)
+        self.assertEqual(report["strict_annual_passes_added"],0)
+        self.assert_protected()
+
+    def test_contents_index_only_cannot_claim_four_financial_statements(self):
+        self.receipt[0]["Financial_Year"]="2023-24"
+        self.index[0]["Financial_Year"]="2023-24"
+        csv_write(self.root/PDF_LOG,PDF_FIELDS,self.receipt)
+        csv_write(self.root/PDF_INDEX,OUTPUT_FIELDS,self.index)
+        run(self.root,max_files=1,now=NOW,reader_cls=FakeSectionIndexOnlyReader)
+        with (self.root/OUTPUT).open() as f:
+            row=next(csv.DictReader(f))
+        self.assertEqual(row["Section_Review_State"],
+                         "INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW")
+        self.assertEqual(row["Auditor_Page_1based"],"")
+        self.assertEqual(row["Consolidated_Balance_Sheet_Page_1based"],"")
+        self.assertEqual(row["Consolidated_Profit_Loss_Page_1based"],"")
+        self.assertEqual(row["Consolidated_Cash_Flow_Page_1based"],"")
         self.assert_protected()
 
     def test_wrong_annual_year_cannot_satisfy_candidate_review(self):

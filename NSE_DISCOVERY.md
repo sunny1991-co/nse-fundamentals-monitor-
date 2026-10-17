@@ -508,3 +508,30 @@ The search is still intentionally partial: other report layouts, images,
 missing text extraction, standalone/consolidated ambiguity, period, monetary
 unit and auditor scope must be independently verified. Locating a likely
 section is never evidence of an audited numeric financial fact.
+
+## Critical FY2023-24 20MICRONS PDF page-index false positive
+
+Verified the exact original [NSE archived FY23-24 20MICRONS PDF](https://nsearchives.nseindia.com/annual_reports/AR_24150_20MICRONS_2023_2024_20062024104857.pdf)
+(281 physical pages). The earlier section locator reported all four
+candidate financial sections at **physical PDF page 200**. This is a
+**consolidated-section INDEX** listing four later reports, not four actual
+statements. The actual PDF locations were identified as:
+- Physical PDF page **201**: Independent Consolidated Auditor's Report
+- Physical PDF page **209**: Consolidated Balance Sheet
+- Physical PDF page **210**: Consolidated Statement of Profit and Loss
+- Physical PDF page **211**: Consolidated Statement of Cash Flow
+
+v3 page section locator now requires independent *statement-local* evidence:
+auditor's explicit 'we have audited' and basis/opinion language; a balance
+sheet with total assets and equity/liabilities; a P&L with operations revenue
+and a profit row; and a cash flow statement with actual operating + investing
+activity rows. Each of the four candidate sections must reside on distinct
+physical pages. Page-index headings and auditor narrative lists are rejected
+without supporting statement rows.
+
+Already processed v2 receipts automatically get a **v3 source-preserving
+re-review**, and synthetic unit tests reproduce the exact false-positive
+20MICRONS layout. Findings are still bounded partial text locations, NEVER
+attested numeric facts, and the strict NSE XBRL/paper/real-order gates remain
+unchanged. Other companies' statement formats might require separate
+review before this locator can reliably identify their pages.
