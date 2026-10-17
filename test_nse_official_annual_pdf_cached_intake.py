@@ -2,7 +2,7 @@
 import csv
 import json
 import tempfile
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -93,7 +93,7 @@ class CachedOfficialPDFIntakeTests(unittest.TestCase):
         self.assertFalse((self.root/PDF_LOG).exists())
         self.assertTrue((self.root/CACHED_STATUS).exists())
         self.assertEqual(source_access_cooldown(self.root,NOW),
-                         (NOW.replace(hour=8)+__import__("datetime").timedelta(hours=24)).isoformat())
+                         (NOW+timedelta(hours=20)).isoformat())
         self.untouched()
 
     def test_cached_direct_one_pdf_download_no_metadata_api_or_fact_promotion(self):
