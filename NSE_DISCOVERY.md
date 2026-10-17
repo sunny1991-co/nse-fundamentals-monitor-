@@ -563,3 +563,66 @@ After `git pull --ff-only`, one bounded run updates both views:
 In case no new PDF requires review, the latest view is still regenerated
 from existing current-version records, without redownloading or adding
 unverified financial facts.
+
+## Automated original-NSE FY22/FY23 annual PDF row-level number candidates (NO PASS)
+
+`nse_annual_pdf_numeric_review.py` now runs **after** the section-page
+review in daily supervised Termux research maintenance, bounded to two
+already downloaded official NSE PDFs per cycle. Requires fresh official
+current mainboard EQ identity, source-index/ISIN/receipt attestation, exact
+original PDF SHA256 at extraction time and v3 section-page identity on
+a distinct auditor, consolidated balance sheet, P&L and cash flow page.
+It uses no online AI model or API subscription.
+
+For each qualified PDF, the independent text-only reviewer reads **only**
+the four located source pages and records line-level evidence for:
+revenue from operations, profit for the period (not attributable owners),
+basic EPS, total equity (as printed, excluding separately reported NCI),
+total assets, and non-current + current **financial borrowings** (excluding
+lease liabilities unless a later approved debt policy includes them).
+It records date/unit evidence, both raw debt rows, fiscal-year page numbers,
+and optional NCI. Units must explicitly be INR lakhs on the two accounting
+statement pages, and column dates (31 March of current and prior FY) must
+appear in the correct order. All direct source row candidates require
+exactly TWO decimal year columns on the same text-extraction line.
+Balance sheet totals, noncurrent/current asset components,
+equity + separate NCI + liabilities, and profit-before-tax less taxes
+are checked with a **0.03 lakh rounding allowance**. Ambiguous rows, missing
+units, switched FY columns or arithmetic conflicts leave all six candidate
+amounts blank and add specific review issues.
+
+On the observed FY2023-24 20MICRONS report's actual section pages,
+the *source row candidates* (not NSE-approved XBRL facts) include:
+- Revenue from operations: INR 77,749.29 lakh = INR 777.4929 crore
+- Group net profit for period: INR 5,616.03 lakh = INR 56.1603 crore
+- Basic EPS: INR 15.89 per share
+- Total printed equity (before separate NCI): INR 35,295.37 lakh =
+  INR 352.9537 crore; NCI separately INR 1.1440 crore
+- Total assets: INR 58,979.79 lakh = INR 589.7979 crore
+- Borrowings: INR 1,241.25 + 10,320.78 lakh =
+  INR 115.6203 crore, excluding separate lease liabilities.
+
+No result is a strict audited four-year annual fact or trading approval:
+even when **all six candidate cells** pass internal arithmetic, their
+`Audited_Consolidated_Facts_Verified=false`,
+`Strict_Fundamental_Pass=false`, `Orders=DISABLED`.
+Independent original NSE annual XBRL fact reconciliation, audited basis,
+period comparability, notes and a full sector-specific multi-year evidence
+audit are still required. Text PDFs with broken extraction can remain
+review-pending; do not infer missing numbers.
+
+Private outputs:
+- `nse_annual_pdf_numeric_evidence_candidates.csv`: exact physical page,
+  raw line, unit, candidate value and calculated source-math tests
+- `runtime/nse_annual_pdf_numeric_evidence_status.json`
+- `project_status.py`: numeric review candidate counters separately
+  from strict/verified fundamentals.
+
+Manual demonstration after GitHub pull:
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_numeric_review.py --max-files 1
+    cat ~/nse-fundamentals-data/runtime/nse_annual_pdf_numeric_evidence_status.json
+
+The numerical strings above come from the linked NSE original report; the
+Python parser independently re-reads private PDF bytes. If pypdf line ordering
+does not preserve the statement's label and both year columns, do not
+force a PASS: capture the review issue and improve the extractor offline.
