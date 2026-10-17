@@ -10,7 +10,8 @@ from unittest.mock import patch
 from nse_mainboard_discovery import CATALOG
 from nse_official_annual_pdf_auto_index import (
     offline_cached_index_intake,CACHED_STATUS,STATUS,OUTPUT,OUTPUT_FIELDS,
-    PDF_LOG,PDF_DIR,source_access_cooldown,OfficialAnnualPdfUnavailable,
+    PDF_LOG,PDF_DIR,CACHED_ATTEMPTS,CACHED_ATTEMPT_FIELDS,
+    source_access_cooldown,OfficialAnnualPdfUnavailable,
     parse_metadata,acquire_pdfs,main,
 )
 from test_nse_official_annual_pdf_auto_index import MockSession,pdf_bytes
@@ -162,6 +163,108 @@ class CachedOfficialPDFIntakeTests(unittest.TestCase):
         self.assertEqual(out["new_archived_pdf_candidates_this_run"],0)
         self.assertFalse((self.root/PDF_LOG).exists())
         self.untouched()
+
+    def test_404_pdf_link_is_deferred_without_blocking_other_original_pdfs(self):
+        from test_nse_official_annual_pdf_auto_index import MockResponse
+        class Missing2024(MockSession):
+            def get(self,url,**kwargs):
+                if "/annual_reports/" in url and url==PDF_B:
+                    self.pdf_calls+=1
+                    return MockResponse(b"",404)
+                return super().get(url,**kwargs)
+        provider=Missing2024({"data":[]})
+        first=offline_cached_index_intake(self.root,downloads=1,
+                                          now=NOW,session=provider)
+        self.assertEqual(provider.pdf_calls,1)
+        self.assertEqual(first["new_archived_pdf_candidates_this_run"],0)
+        self.assertEqual(first["pdf_archive_requests_this_run"],1)
+        self.assertFalse((self.root/PDF_LOG).exists())
+        with (self.root/CACHED_ATTEMPTS).open(newline="") as handle:
+            first_attempt=next(csv.DictReader(handle))
+        self.assertEqual(first_attempt["Official_Report_URL"],PDF_B)
+        self.assertEqual(first_attempt["Attempt_Result"],"PDF_NOT_FOUND_404")
+        second=offline_cached_index_intake(self.root,downloads=1,
+                                           now=NOW+timedelta(hours=1),
+                                           session=provider)
+        self.assertEqual(provider.pdf_calls,2)
+        self.assertEqual(second["indexed_pdf_links_deferred_by_pdf_source_retry_guard"],1)
+        self.assertEqual(second["new_archived_pdf_candidates_this_run"],1)
+        with (self.root/PDF_LOG).open(newline="") as handle:
+            self.assertEqual(next(csv.DictReader(handle))["Official_Report_URL"],PDF_A)
+        third=offline_cached_index_intake(self.root,downloads=2,
+                                          now=NOW+timedelta(hours=2),
+                                          session=provider)
+        self.assertEqual(third["state"],
+                         "CACHED_NSE_ANNUAL_PDF_DOWNLOAD_RETRY_COOLDOWN_NO_REQUEST")
+        self.assertEqual(third["pdf_archive_requests_this_run"],0)
+        self.assertEqual(provider.pdf_calls,2)
+        self.assertEqual(provider.api_calls,0)
+        self.untouched()
+
+    def test_403_from_one_original_pdf_cools_down_entire_archive_host(self):
+        from test_nse_official_annual_pdf_auto_index import MockResponse
+        class Denied(MockSession):
+            def get(self,url,**kwargs):
+                if "/annual_reports/" in url:
+                    self.pdf_calls+=1
+                    return MockResponse(b"",403)
+                return super().get(url,**kwargs)
+        blocked=Denied({"data":[]})
+        initial=offline_cached_index_intake(self.root,downloads=2,
+                                            now=NOW,session=blocked)
+        self.assertEqual(initial["new_archived_pdf_candidates_this_run"],0)
+        self.assertEqual(initial["pdf_archive_requests_this_run"],1)
+        self.assertEqual(blocked.pdf_calls,1)
+        self.assertFalse((self.root/PDF_LOG).exists())
+        ordinary=MockSession({"data":[]})
+        within=offline_cached_index_intake(
+            self.root,downloads=2,now=NOW+timedelta(hours=2),session=ordinary)
+        self.assertEqual(within["state"],
+                         "CACHED_NSE_ANNUAL_PDF_DOWNLOAD_RETRY_COOLDOWN_NO_REQUEST")
+        self.assertEqual(within["archived_pdf_source_host_cooldown_until_utc"],
+                         (NOW+timedelta(hours=20)).isoformat())
+        self.assertEqual(within["pdf_archive_requests_this_run"],0)
+        self.assertEqual(ordinary.pdf_calls,0)
+        after=offline_cached_index_intake(
+            self.root,downloads=1,now=NOW+timedelta(hours=21),session=ordinary)
+        self.assertEqual(after["pdf_archive_requests_this_run"],1)
+        self.assertEqual(after["new_archived_pdf_candidates_this_run"],1)
+        self.assertEqual(ordinary.pdf_calls,1)
+        self.assertEqual(ordinary.api_calls,0)
+        self.untouched()
+
+    def test_cached_attempt_ledger_identity_forgery_fails_closed_without_http(self):
+        rows=[{
+            "Symbol":"NEW","Financial_Year":"2023-24",
+            "Official_Report_URL":PDF_B,
+            "Original_Metadata_SHA256":"0"*64,
+            "Attempted_At_UTC":NOW.isoformat(),
+            "Attempt_Result":"PDF_NOT_FOUND_404",
+        }]
+        csvwrite(self.root/CACHED_ATTEMPTS,CACHED_ATTEMPT_FIELDS,rows)
+        attempt_before=(self.root/CACHED_ATTEMPTS).read_bytes()
+        session=MockSession({"data":[]})
+        with self.assertRaisesRegex(OfficialAnnualPdfUnavailable,
+                                    "REQUEST_LEDGER_SOURCE_IDENTITY_INVALID"):
+            offline_cached_index_intake(self.root,downloads=2,
+                                        now=NOW,session=session)
+        self.assertEqual(session.pdf_calls,0)
+        self.assertEqual(session.api_calls,0)
+        self.assertEqual((self.root/CACHED_ATTEMPTS).read_bytes(),attempt_before)
+        self.assertFalse((self.root/PDF_LOG).exists())
+        self.untouched()
+
+    def test_daily_supervisor_centralizes_pdf_download_through_one_bounded_step(self):
+        from termux_maintenance import STEPS
+        commands={key:argv for key,argv,_ in STEPS}
+        self.assertIn("official_annual_pdf_source_index",commands)
+        self.assertIn("official_cached_annual_pdf_archive",commands)
+        self.assertEqual(commands["official_annual_pdf_source_index"][-2:],
+                         ["--download","0"])
+        self.assertEqual(commands["official_cached_annual_pdf_archive"][-3:],
+                         ["--cached-index-only","--download","1"])
+        self.assertTrue(all("order" not in " ".join(command).lower()
+                            for command in commands.values()))
 
     def test_cached_index_cli_defaults_to_zero_http_requests(self):
         import sys
