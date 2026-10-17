@@ -90,10 +90,17 @@ def bool_string(v):
     return "true" if v else "false"
 
 
-def index_links(root:Path,filename:str,symbols:dict,*,pdf:bool):
+def index_links(root:Path,filename:str,symbols:dict,*,pdf:bool,expected_fy=None):
     result=defaultdict(set)
     for r in read_table(root/filename):
-        sym,fy=r.get("Symbol"),r.get("Financial_Year")
+        # The legacy source index names are year-scoped CSVs; unlike PDF
+        # metadata, they do not necessarily have a Financial_Year column.
+        # Match the indexed file's FY only when the exact audited year-end
+        # and Annual/Consolidated status independently agree.
+        sym=r.get("Symbol")
+        fy=r.get("Financial_Year") if pdf else expected_fy
+        if (not pdf and r.get("Financial_Year") not in (None,"",expected_fy)):
+            continue
         if sym not in symbols or fy not in YEARS:
             continue
         if pdf:
@@ -182,7 +189,8 @@ def snapshot(root:Path,*,now=None):
     xbrl_links=defaultdict(set)
     for fy in YEARS:
         part=index_links(
-            root,f"nse_legacy_financial_results_{fy}.csv",issuer,pdf=False)
+            root,f"nse_legacy_financial_results_{fy}.csv",
+            issuer,pdf=False,expected_fy=fy)
         for key,links in part.items():
             xbrl_links[key].update(links)
 
