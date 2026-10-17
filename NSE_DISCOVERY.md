@@ -53,3 +53,26 @@ swing_watchlist.json, candidate signals, paper positions, SMS or orders.
 Automatic real orders and SMS approval remain OFF.
 
 Regression tests: python -m unittest test_nse_mainboard_discovery -v
+
+
+## Daily evidence-gaps report (added 17 Oct 2026)
+
+The supervised research maintenance runs nse_discovery_evidence_gaps.py
+immediately after successfully checking the official mainboard/SME catalog.
+It verifies that the official catalog was fetched within the last 48 hours,
+counts the locally present FY 2024-25 / FY 2025-26 rows, references only
+existing strict annual/final-screen booleans, and lists any locally reported
+corporate-action-adjusted price coverage as **unattested**.
+
+Output: nse_mainboard_evidence_gaps.csv in the persistent NSE_DATA_DIR and
+runtime/nse_mainboard_evidence_gaps_status.json. This identifies exactly which
+outside-baseline companies still need audited filings. It does **not** fetch
+missing fundamental documents, backfill old OHLCV, infer returns or expand the
+tradable watchlist. Every Trade_Eligible value remains false.
+
+Manual data-only check:
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_discovery_evidence_gaps.py
+
+Insufficient or stale NSE list evidence blocks publication and preserves the
+last report. The original NSE annual baseline, historical database and strict
+trading signals remain untouched.
