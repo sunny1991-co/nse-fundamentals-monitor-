@@ -43,6 +43,11 @@ class CachedOfficialPDFIntakeTests(unittest.TestCase):
             return_value={"NEW"})
         self.validated.start()
         self.addCleanup(self.validated.stop)
+        self.review_validated=patch(
+            "nse_annual_pdf_section_review.verified_discovered_symbols",
+            return_value={"NEW"})
+        self.review_validated.start()
+        self.addCleanup(self.review_validated.stop)
         source={
             "data":[
                 {"fromYr":2022,"toYr":2023,"fileName":PDF_A},
