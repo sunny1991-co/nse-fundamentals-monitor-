@@ -1,0 +1,87 @@
+# RS Pullback Recovery v1 — NSE mainboard equity, research only
+
+**Designed 17 October 2026.** This long-only swing hypothesis seeks
+strong six-month stock leaders that temporarily dip toward their rising
+20-day exponential moving average, then close back above it with fresh
+volume. It complements an existing *breakout* hypothesis: the entry happens
+on a **recovery from a pullback**, not at the previous 30-session high.
+
+## Frozen rules (do not tune against the observed historical sample)
+
+1. Market filter: official operator-attested **NIFTY 50 total-return index
+   (TRI)** level above EMA200; TRI EMA50 above EMA200; EMA200 rising over
+   20 sessions; benchmark 126-session return positive. Exact session date
+   required; a missing level blocks that day's signal.
+2. Leadership: stock close above EMA50, EMA50 above rising EMA200; stock
+   126-session return at least **12%**, and at least **8 percentage points**
+   above exact-date NIFTY 50 TRI return.
+3. Controlled dip: preceding **8 sessions' lowest low** within 1% above
+   yesterday's EMA20 and no more than 3% under yesterday's EMA50. Previous
+   close below yesterday's EMA20; current close reclaims EMA20 and exceeds
+   yesterday's completed session high, without being more than 6% over EMA20.
+4. Selling-volume drying: preceding 5-session volume average <=90% of the
+   preceding 20-session volume average; recovery-day volume >=110% of that
+   preceding 20-session average. Prior 20-session average turnover at least
+   **₹5 crore/day**.
+5. RSI14 48–69; ATR14 1–6% of close. Preliminary reference stop is the
+   tighter of preceding 8-session low and close−2×ATR (the higher stop),
+   with an initial reference-distance 2–9% of close.
+6. Research execution model: at the **next completed session's open** only
+   if an illustrative fill including slippage is between the signal close
+   and +1%; otherwise skip. Model <=1% of a fictitious independent ₹1 lakh
+   stock account lost at expected initial stop **including Groww delivery
+   fees**, with no guarantee on gaps. Take roughly 50% at 2R, rest at 3R,
+   stop-first on intraday bars, post-target trailing and time exit by 100
+   completed sessions (roughly 1 week to 5 months in intended use).
+7. NSE cash EQ only. **No futures, options, margin or shorting.**
+
+## Research protocol
+
+Run only after the code is merged:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull --ff-only
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --limit 12
+```
+
+The program requires adjustment-attested daily NSE OHLCV and an
+individually source-attested **NIFTY 50 TRI** file, each already held in
+your private data directory. Missing inputs block the whole run, not just
+an individual losing candidate. It tests the new rule against the original
+breakout and Quality Leader Contraction Breakout on **the exact same
+deterministically selected stocks and end-of-history comparison window**,
+with estimated delivery taxes/DP/broker charges, normal and doubled costs,
+slippage, model-stop risk breaches and drawdown.
+
+Research report (private, NOT uploaded to public GitHub):
+
+`$HOME/nse-fundamentals-data/runtime/experiments/rs-pullback-research-v1/comparison.json`
+
+**Important:** The historical data were already inspected when the rule
+was designed. The final 30% of dates is NOT an independent holdout.
+Each stock is modeled as its own single-stock paper account, so the
+reported net position return is **not portfolio CAGR** or a promise of
+portfolio P&L. No historical point-in-time verified fundamentals or
+index membership are available. Repeated strategy selection creates
+overfitting risk. A promising comparison remains only a research lead.
+
+## No automatic trading
+
+The strategy is **NOT** wired into `assistant_signal_pipeline.py` or
+the owner YES/NO workflow, because as of design there are zero strict
+fundamental passes and no forward profitable strategy validation.
+The scanner, real-order boundaries and current live eligibility remain
+unchanged. A future promotion would require independently verified
+current NSE consolidated annual/quarterly + sector facts, contemporary
+quote feeds, broker protective CNC exits, permission and prospective
+cost-positive paper validation.
+
+Research background:
+- Jegadeesh & Titman (1993), *Returns to Buying Winners and Selling
+  Losers*, Journal of Finance, https://doi.org/10.1111/j.1540-6261.1993.tb04702.x
+- Hurst, Ooi & Pedersen (2017), *A Century of Evidence on Trend-Following
+  Investing*, https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing
+
+These publications support the general momentum/trend premise, NOT
+these numerical thresholds or performance of Indian individual-stock
+pullback entries.
