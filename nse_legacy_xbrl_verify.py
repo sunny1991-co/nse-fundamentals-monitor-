@@ -41,12 +41,35 @@ def download(session, url):
         return b''.join(chunks)
 
 
-def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep):
+def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep,
+            require_preflight=False):
     root = Path(root)
     if not 1 <= limit <= 500:
         raise ValueError('Limit must be 1..500')
     manifest, _ = legacy.build(root)  # Rebuild from baselines/index; do not trust an edited manifest.
     candidates = [r for r in manifest if r['Recovery_Status'] == 'PENDING_INDEPENDENT_XBRL_REVIEW']
+    total_index_candidates=len(candidates)
+    if require_preflight:
+        # The official NSE EQ status+catalog, exact source fiscal year,
+        # broadcast date, index revision uniqueness, and existing source
+        # failure ledger MUST all be current. Fail closed on any error.
+        # No network is called during this independently regenerated
+        # read-only source metadata preflight.
+        import nse_legacy_xbrl_preflight as gate
+        gate.snapshot(root)
+        approved={
+            (r.get('Symbol'),r.get('Financial_Year'),
+             r.get('Official_XBRL_Source_URL'))
+            for r in legacy.csv_rows(root/gate.OUTPUT)
+            if r.get('Source_Review_State')==
+                'READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW'
+            and r.get('Metadata_Ready_For_XML')=='true'
+            and r.get('Independent_Audited_Consolidated_Annual_XML_Checked_This_Run')=='false'
+        }
+        candidates=[
+            r for r in candidates
+            if (r['Symbol'],r['Financial_Year'],r['Source_URL']) in approved
+        ]
     history = legacy.csv_rows(root/'annual_historical_results.csv')
     ledger = {r['Source_URL']: r for r in legacy.csv_rows(root/LEDGER)}
     candidates.sort(key=lambda r: (r['Source_URL'] in ledger,
@@ -57,6 +80,9 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
         session.headers.update({'User-Agent':'NSE-fundamentals-research/1.0', 'Accept':'application/xml'})
     stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
     status = dict(Checked_At_UTC=stamp, Candidate_Symbol_Years=len(candidates),
+        Original_Index_Candidates_Before_Preflight=total_index_candidates,
+        Excluded_By_Current_Source_Preflight=total_index_candidates-len(candidates),
+        Independent_Source_Preflight_Required=require_preflight,
         Attempted=0, Added_Verified=0, Added_Six_Core_Complete=0, Status='COMPLETED_BOUNDED_RUN',
         Remaining_Candidates=len(candidates), Last_Error='', Parser_Version=VERSION)
     indexes = {}
@@ -133,8 +159,10 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit',type=int,default=100)
+    parser.add_argument('--require-preflight',action='store_true',
+        help='Fail closed unless original source index and last attempt are independently safe')
     args=parser.parse_args()
-    print(collect(limit=args.limit))
+    print(collect(limit=args.limit,require_preflight=args.require_preflight))
 
 
 if __name__ == '__main__': main()

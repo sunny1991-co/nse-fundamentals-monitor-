@@ -127,3 +127,51 @@ prioritizes their source URLs for verification. The collection status includes
 verified counts during migration is expected and must not be hidden.
 A current source-status version is necessary but not sufficient: individual
 quarterly comparison rows must also carry the current parser version.
+
+## Actual enforcement of old NSE original XBRL source preflight
+
+`nse_legacy_xbrl_preflight.py` now provides an offline source READY/not-READY
+classification, including metadata-only Annual/Audited/Consolidated dates,
+publication time, different issuer/revision links, earlier 403/429 and
+network source cooldowns (20 hours), and XML previously rejected for
+full-April-to-March annual contexts (e.g. Q4-only).
+
+**Important safety closure**: printing a preflight report by itself does
+not restrict an independent downloader. The supervised Termux maintenance
+invocation of `nse_legacy_xbrl_verify.py` now includes
+`--require-preflight`. In that mode the verifier **re-runs**
+the source preflight from official locally-attested NSE EQ catalog and
+source/index records, then intersects its own independently rebuilt
+baseline-issuer/year/source URL manifest with exact
+`READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW` preflight rows
+BEFORE initiating any original XBRL source request.
+
+If NSE's mainboard snapshot is stale, source index is missing its
+broadcast-date evidence, previous NSE download was blocked/recent,
+or old XML was rejected due to quarter-only context, affected source
+URLs are **not re-requested**. If current NSE EQ identity or preflight
+itself fails, the scheduled verifier fails closed and does not
+download original XBRL or write verified financial history. Existing
+backtest/shortlist/trade orders remain unchanged.
+
+Status ledger `legacy_xbrl_run_status.csv` contains
+`Original_Index_Candidates_Before_Preflight`,
+`Excluded_By_Current_Source_Preflight` and
+`Independent_Source_Preflight_Required`, as well as genuine
+attempted and independently verified six-core annual results.
+
+Manual inspection without NSE network:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_preflight.py
+
+Optional small original XML batch, ONLY after checking the ready count
+and respecting source access conditions:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_verify.py --limit 3 --require-preflight
+
+The second command can make up to three archived NSE XML requests
+(if allowed by the independently regenerated ready index).
+It does not use the old Financial Results *metadata API*.
+The original verifier still validates context duration, original
+symbol/entity, audited and consolidated flags, currency and complete
+six-core facts; source index links alone never count as verified.
