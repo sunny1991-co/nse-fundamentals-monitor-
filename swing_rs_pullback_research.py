@@ -229,30 +229,184 @@ def compare(raw, history_sha, nifty50_tri, tri_sha, *, limit=40,
     }
 
 
+HISTORY_INPUTS = ("market_ohlcv.csv", "market_data_metadata.json")
+TRI_INPUTS = ("nifty50_tri_history.csv", "nifty50_tri_history_metadata.json")
+# Diagnostic codes are a fixed allowlist. Never echo arbitrary exception text
+# or private filenames/paths supplied by malformed metadata.
+SAFE_SOURCE_CODES = frozenset({
+    "HISTORY_HASH_MISMATCH",
+    "ADJUSTMENT_AND_SOURCE_ATTESTATION_REQUIRED",
+    "NONEMPTY_DAILY_OHLCV_REQUIRED",
+    "INVALID_OR_EMPTY_SYMBOL",
+    "DAILY_DATE_MUST_BE_YYYY_MM_DD",
+    "NONFINITE_OHLCV",
+    "INVALID_OR_DUPLICATE_OHLCV",
+    "FUTURE_DAILY_BAR",
+    "NO_COMPLETED_DAILY_BARS",
+    "SOURCE_AND_METADATA_REQUIRED",
+    "UNVERIFIED_SOURCE_METADATA",
+    "NIFTY_50_TRI_OFFICIAL_SOURCE_REQUIRED",
+    "BENCHMARK_OHLCV_REQUIRED",
+    "BENCHMARK_DAILY_DATES_REQUIRED",
+    "BAD_OR_DUPLICATE_BENCHMARK",
+})
+
+
+def source_preflight(root, *, history_reader=read_history,
+                     tri_reader=read_nifty50_tri):
+    """Read-only: report the failed data stage before claiming a backtest ran.
+
+    Return (inputs, report). Missing or unauthenticated benchmarks are NEVER
+    substituted with NIFTY price index, downloaded prices or dummy series.
+    """
+    root = data_root() if root is None else root
+    missing_history = [name for name in HISTORY_INPUTS
+                       if not (root/name).is_file()]
+    if missing_history:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "ADJUSTED_NSE_DAILY_EQUITY_HISTORY",
+            "reason_code": "HISTORY_FILES_MISSING",
+            "missing_files": missing_history,
+        }
+    try:
+        bars, digest = history_reader(root)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        code = str(exc)
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "ADJUSTED_NSE_DAILY_EQUITY_HISTORY",
+            "reason_code": (
+                code if code in SAFE_SOURCE_CODES
+                else "HISTORY_INVALID_OR_UNREADABLE"
+            ),
+            "missing_files": [],
+        }
+
+    missing_tri = [name for name in TRI_INPUTS
+                   if not (root/name).is_file()]
+    if missing_tri:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "OFFICIAL_NIFTY_50_TOTAL_RETURN_INDEX",
+            "reason_code": "TRI_FILES_MISSING",
+            "missing_files": missing_tri,
+            "adjusted_history_checked": True,
+        }
+    try:
+        tri, tri_digest = tri_reader(root)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        code = str(exc)
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "OFFICIAL_NIFTY_50_TOTAL_RETURN_INDEX",
+            "reason_code": (
+                code if code in SAFE_SOURCE_CODES
+                else "TRI_INVALID_OR_UNREADABLE"
+            ),
+            "missing_files": [],
+            "adjusted_history_checked": True,
+        }
+    frozen_tri = tri.loc[tri.index <= pd.Timestamp(FROZEN_SAMPLE_END)]
+    if len(frozen_tri) < 260:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "OFFICIAL_NIFTY_50_TOTAL_RETURN_INDEX",
+            "reason_code": "FROZEN_TRI_WARMUP_INSUFFICIENT",
+            "missing_files": [],
+            "adjusted_history_checked": True,
+            "tri_dated_rows_through_frozen_sample": len(frozen_tri),
+            "minimum_tri_rows": 260,
+        }
+
+    frozen = bars.loc[pd.to_datetime(bars.Date) <= pd.Timestamp(FROZEN_SAMPLE_END)]
+    per_symbol_rows = frozen.groupby("Symbol").size()
+    eligible = int((per_symbol_rows >= 1260).sum())
+    if eligible == 0:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "ADJUSTED_NSE_DAILY_EQUITY_HISTORY",
+            "reason_code": "NO_STOCK_WITH_1260_FROZEN_HISTORICAL_BARS",
+            "missing_files": [],
+            "adjusted_history_checked": True,
+            "tri_source_checked": True,
+            "long_history_stocks": 0,
+        }
+    return (bars, digest, tri, tri_digest), {
+        "state": "SOURCE_PREFLIGHT_PASSED_RESEARCH_ONLY",
+        "blocked_stage": None,
+        "reason_code": None,
+        "missing_files": [],
+        "adjusted_history_checked": True,
+        "tri_source_checked": True,
+        "completed_daily_stock_rows": len(bars),
+        "tri_dated_rows": len(tri),
+        "long_history_stocks": eligible,
+        "historical_source_attestation_is_independent_audit": False,
+        "trading_orders": "DISABLED",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=40)
+    parser.add_argument(
+        "--preflight", action="store_true",
+        help="Check existing adjusted NSE history and NIFTY 50 TRI input only",
+    )
     args = parser.parse_args()
     root = data_root()
     out = root/"runtime"/"experiments"/VERSION/"comparison.json"
+    sources, preflight = source_preflight(root)
+
+    if sources is None:
+        report = {
+            "scope": "FROZEN_RS_PULLBACK_SWING_HISTORICAL_EXPLORATORY_ONLY",
+            **preflight,
+            "strategy_profitability_validated": False,
+            "live_eligible": False,
+            "trading_orders": "DISABLED",
+        }
+        if not args.preflight:
+            atomic_status(out, report)
+        print(json.dumps(report, indent=2))
+        return
+
+    if args.preflight:
+        print(json.dumps({
+            "scope": "FROZEN_RS_PULLBACK_SWING_HISTORICAL_EXPLORATORY_ONLY",
+            **preflight, "strategy_profitability_validated": False,
+            "live_eligible": False, "trading_orders": "DISABLED",
+        }, indent=2))
+        return
+
+    bars, digest, tri, tri_digest = sources
     try:
-        bars, digest = read_history(root)
-        tri, tri_digest = read_nifty50_tri(root)
         result = compare(
             bars, digest, tri, tri_digest, limit=args.limit
         )
-    except (FileNotFoundError, OSError, ValueError, TypeError):
-        atomic_status(out, {
+    except (ValueError, TypeError) as exc:
+        code = str(exc)
+        safe_comparison_codes = {
+            "RESEARCH_LIMIT_1_TO_100",
+            "ADJUSTED_PRICE_HISTORY_REQUIRED",
+            "OFFICIAL_NIFTY_50_TRI_REQUIRED",
+            "NIFTY_50_TRI_DATES_INVALID",
+            "NIFTY_50_TRI_LEVELS_INVALID",
+            "HISTORICAL_TRI_WARMUP_INSUFFICIENT",
+            "FROZEN_TRI_WARMUP_INSUFFICIENT",
+        }
+        report = {
             "scope": "FROZEN_RS_PULLBACK_SWING_HISTORICAL_EXPLORATORY_ONLY",
-            "state": "SOURCE_REQUIRED_OR_INVALID",
-            "strategy_validated": False,
-            "live_eligible": False,
-            "trading_orders": "DISABLED",
-        })
-        print(json.dumps({
-            "state": "SOURCE_REQUIRED_OR_INVALID",
-            "live_eligible": False, "orders": "DISABLED"
-        }, indent=2))
+            "state": "RESEARCH_COMPARISON_INVALID_INPUT",
+            "blocked_stage": "RETROSPECTIVE_COMPARISON_INPUT_VALIDATION",
+            "reason_code": code if code in safe_comparison_codes
+                           else "INVALID_BACKTEST_INPUT_OR_COMPUTATION",
+            "strategy_profitability_validated": False,
+            "live_eligible": False, "trading_orders": "DISABLED",
+        }
+        atomic_status(out, report)
+        print(json.dumps(report, indent=2))
         return
     atomic_status(out, result)
     print(json.dumps({

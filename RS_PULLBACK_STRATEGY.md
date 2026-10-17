@@ -44,6 +44,38 @@ cd ~/nse-fundamentals-monitor- && git pull --ff-only
 NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --limit 12
 ```
 
+### If the backtest reports `SOURCE_REQUIRED_OR_INVALID`
+
+Start with the **read-only** source preflight; it does not conduct a backtest
+or generate any trading recommendation:
+
+```bash
+cd ~/nse-fundamentals-monitor- && git pull --ff-only
+NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --preflight
+```
+
+The output identifies `blocked_stage`, a fixed `reason_code`, and any
+missing **public filename** (never private paths or raw exception messages).
+Possible cases:
+
+- `HISTORY_FILES_MISSING`: adjustment-attested NSE equity OHLCV CSV and/or
+  `market_data_metadata.json` are not in the selected `NSE_DATA_DIR`.
+- `TRI_FILES_MISSING`: official NIFTY 50 **Total Return Index**, not NIFTY
+  price index, CSV and/or its separately checked
+  `nifty50_tri_history_metadata.json` are absent.
+- `UNVERIFIED_SOURCE_METADATA`: official benchmark data or its operator
+  provenance SHA256 / source metadata is not independently accepted.
+- `FROZEN_TRI_WARMUP_INSUFFICIENT`: fewer than 260 TRI observations through
+  the already-inspected 2026-10-16 retrospective cutoff.
+- `NO_STOCK_WITH_1260_FROZEN_HISTORICAL_BARS`: no stock has at least
+  1260 adjusted daily bars inside that retrospective sample.
+
+Do **not** create fabricated benchmark values, copy spot NIFTY prices
+into TRI, re-label a provider quote series as official, or edit metadata
+to force the preflight to pass. If a true official series is unavailable,
+the three-way comparison remains blocked and the separately runnable
+existing price-only exploratory comparisons remain research-only.
+
 The program requires adjustment-attested daily NSE OHLCV and an
 individually source-attested **NIFTY 50 TRI** file, each already held in
 your private data directory. Missing inputs block the whole run, not just
