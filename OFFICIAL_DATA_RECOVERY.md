@@ -238,3 +238,52 @@ index CSV rows for the same issuer/year/source URL are
 them in manual source-review and will not download the same source
 under an automated preflight-ready flag. Prior source cooldown,
 historical data and disabled orders are unchanged.
+
+## Distinguishing failed exact-year NSE XML contexts without re-downloading
+
+A real Termux `--limit 3 --require-preflight` run at
+`2026-10-17T12:06:57Z` attempted three original NSE HTTPS XML
+sources: BOSCHLTD FY2022–23, BOSCHLTD FY2023–24 and BPCL FY2022–23.
+All three received `EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED`;
+`Added_Verified=0` and `Added_Six_Core_Complete=0`.
+The source-preflight result before that attempt had 2,652 baseline
+index candidates, 587 blocked from independent XML inspection and
+2,065 metadata-ready. These are NOT 2,065 XML/audited-fact passes.
+
+`EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED` is a composite strict
+source-verifier error, **not proof that every rejected XML has only
+January–March quarter data**. Even where the original XML contains
+an exact April–March period, an unverified NSE issuer identifier scheme,
+standalone-specific context or another unsupported dimension can
+invalidate its use as consolidated annual audited evidence.
+
+For *future* downloads already permitted by original source preflight,
+the strict legacy XML verifier now reuses **the XML bytes it has
+already downloaded** to run the source context diagnostic if the
+original annual duration or year-end balance-sheet check fails.
+It records only safe reason codes and duration/context counts in
+`legacy_xbrl_verification.csv`:
+
+- `Context_Diagnostic_Reason`: precise explanation such as
+  `EXACT_ANNUAL_DURATION_MISSING`,
+  `ANNUAL_DURATION_EXISTS_BUT_CANONICAL_NSE_ENTITY_MISSING`,
+  or `ANNUAL_NSE_ENTITY_CONTEXT_HAS_UNVERIFIED_DIMENSIONS`.
+- Counts for exact annual period, strict eligible annual duration,
+  fiscal-year-end instant and quarter-length duration ending at
+  the fiscal-year-end.
+- `legacy_xbrl_run_status.csv` summarizes these reason counts
+  and distinguishes `Attempted_Unverified_This_Run` from any
+  successful original source XBRL verification.
+
+**No second HTTP request is made for these diagnostics.** No
+rejected annual XML source is automatically retried; the existing
+source preflight skips old context rejections or failed recent access.
+The three BOSCHLTD/BPCL XML bodies from the previous attempt were
+not retained, so the new diagnostic cannot retroactively classify
+those three without an unwanted second source request.
+
+Raw XML text, company/private identifiers, unsupported dimension
+values and numeric facts are not copied into the source diagnostic.
+The original strict annual source rejection code remains unchanged
+and authoritative. Neither PDF candidates nor synthetic annual
+columns become a verified source, and broker orders remain disabled.
