@@ -315,7 +315,9 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
         borrow_check="BOTH_ROW_CANDIDATES_FOUND_UNVERIFIED"
     else:
         borrow_check="MISSING_OR_AMBIGUOUS_SOURCE_ROWS"
-        issue.append("BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS:"+borrow_mode)
+        issue.append("BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS")
+        if borrow_mode=="CONFLICTING_PDF_TEXT_EXTRACTION_MODES":
+            issue.append("BORROWINGS_TEXT_MODES_CONFLICT")
     # Balance arithmetic is ONLY a reasonableness check. It does not verify
     # audited scope, reporting-basis, original XBRL, or debt completeness.
     asset=candidate.get("Total_Assets_Cr")
