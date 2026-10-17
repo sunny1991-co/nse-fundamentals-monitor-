@@ -119,6 +119,12 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'annual_fundamental_quality.py')], 10*60),
     ("fast_fundamental",
      [sys.executable, str(CODE_ROOT/'fast_fundamental_screen.py')], 10*60),
+    # Separate FAST TRACK: current two newer FY verified-quality research
+    # plus adjusted NSE EOD and official NIFTY 50 TRI; never a trade signal.
+    # Phone RAM caps this to 40/100 symbols and rotates batches each run.
+    ("fast_track_two_year_eod_research",
+     [sys.executable, str(CODE_ROOT/'fast_track_two_year_swing_research.py'),
+      '--max-symbols', '300'], 10*60),
     ("final_shortlist",
      [sys.executable, str(CODE_ROOT/'final_fundamental_shortlist.py')], 10*60),
     ("research_swing_assistant_watchlist",
