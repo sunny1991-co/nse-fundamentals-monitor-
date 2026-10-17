@@ -48,6 +48,7 @@ YEARS=("2022-23","2023-24")
 FIELDS=[
     "Symbol","ISIN","Company","Financial_Year","Baseline_Tracked",
     "Research_Priority","Source_Stage","Next_Data_Action",
+    "Independent_PDF_Evidence_Stage",
     "Official_PDF_Index_Links","Official_Cached_PDF_Source_Receipts",
     "Physical_Consolidated_Statement_Section_Ready",
     "PDF_Six_Core_Candidates_Not_XBRL",
@@ -237,6 +238,7 @@ def snapshot(root:Path,*,now=None):
                      if r.get("Symbol") in issuer}
     rows=[]
     counts=Counter()
+    pdf_stage_counts=Counter()
     for sym in sorted(issuer):
         owner=issuer[sym]
         tracked=owner.get("Baseline_Tracked")=="true"
@@ -289,12 +291,29 @@ def snapshot(root:Path,*,now=None):
                     "NO_LOCAL_LEGACY_SOURCE_INDEX_YET",
                     "DISCOVER_OFFICIAL_OLDER_FY_SOURCE_INDEX_WITH_COOLDOWN",7)
             counts[stage]+=1
+            # Keep PDF evidence visible independently of the PRIMARY action.
+            # An already indexed XBRL URL outranks PDF research but must
+            # NEVER make a prior-year comparative or cached PDF disappear.
+            if numeric.get(key):
+                pdf_stage="CURRENT_FY_SIX_PDF_CORE_CANDIDATES_UNVERIFIED"
+            elif prior:
+                pdf_stage="LATER_YEAR_REPORT_PRIOR_FY_COMPARATIVE_ONLY"
+            elif section.get(key):
+                pdf_stage="SOURCE_CONSOLIDATED_FINANCIAL_PAGES_FOUND"
+            elif receipts.get(key):
+                pdf_stage="ORIGINAL_SOURCE_PDF_CACHED_RECEIPT"
+            elif pdf_links.get(key):
+                pdf_stage="OFFICIAL_NSE_PDF_URL_INDEXED"
+            else:
+                pdf_stage="NO_SEPARATE_PDF_EVIDENCE"
+            pdf_stage_counts[pdf_stage]+=1
             rows.append({
                 "Symbol":sym,"ISIN":owner["ISIN"],"Company":owner["Company"],
                 "Financial_Year":year,
                 "Baseline_Tracked":bool_string(tracked),
                 "Research_Priority":priority,
                 "Source_Stage":stage,"Next_Data_Action":action,
+                "Independent_PDF_Evidence_Stage":pdf_stage,
                 "Official_PDF_Index_Links":len(pdf_links.get(key,set())),
                 "Official_Cached_PDF_Source_Receipts":len(receipts.get(key,set())),
                 "Physical_Consolidated_Statement_Section_Ready":
@@ -329,6 +348,7 @@ def snapshot(root:Path,*,now=None):
         "financial_years_per_company":2,
         "company_years_in_queue":len(rows),
         "company_years_by_source_stage":dict(sorted(counts.items())),
+        "company_years_by_independent_pdf_evidence":dict(sorted(pdf_stage_counts.items())),
         "source_attestation_is_from_existing_NSE_local_evidence":True,
         "old_nse_api_calls_made":0,
         "original_pdf_bytes_rehashed_this_run":0,
