@@ -1,2 +1,2 @@
-Checked_At_UTC,Candidate_Symbol_Years,Original_Index_Candidates_Before_Preflight,Excluded_By_Current_Source_Preflight,Independent_Source_Preflight_Required,Attempted,Added_Verified,Added_Six_Core_Complete,Status,Remaining_Candidates,Last_Error,Parser_Version
-2026-10-17T11:59:40+00:00,2652,2652,0,False,100,0,0,COMPLETED_BOUNDED_RUN,2652,EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED,legacy-source-v1
+Checked_At_UTC,Candidate_Symbol_Years,Original_Index_Candidates_Before_Preflight,Excluded_By_Current_Source_Preflight,Independent_Source_Preflight_Required,Attempted,Added_Verified,Added_Six_Core_Complete,Status,Remaining_Candidates,Last_Error,Parser_Version,Attempted_Unverified_This_Run,Context_Diagnostic_Reason_Counts_JSON
+2026-10-17T12:11:31+00:00,2652,2652,0,False,100,0,0,COMPLETED_BOUNDED_RUN,2652,EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED,legacy-source-v1,100,"{""EXACT_ANNUAL_DURATION_MISSING"": 94}"
