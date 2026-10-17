@@ -344,3 +344,58 @@ independently authenticated original full-year audited source and
 associated source/version verification is needed before original
 four-year audit screening can progress. No paid AI or broker
 orders are involved.
+
+## Recover existing official Annual Report PDF links without repeating failed metadata calls
+
+The older NSE Financial Results XBRL XML verification currently suffers
+a persistent structural source zero-yield pause. The **separate official
+Annual Reports PDF archive route** was already available but its
+`nse_official_annual_pdf_auto_index.py` collector normally opens a
+fresh `www.nseindia.com/api/annual-reports` metadata session before
+archiving any report. That can prevent using a previously validated
+official archive PDF link when the metadata endpoint is blocked or slow.
+
+New **cached-index-only** option:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 0
+
+This performs a fresh OFFLINE NSE mainboard EQ/ISIN validation using
+the project's attested local NSE discovery, rechecks every previously
+stored PDF metadata row against original report URL host/path, ticker,
+fiscal year, metadata checksum format, issuer's current official ISIN
+and versioned PDF candidate source label. Existing source receipt paths
+and indexed original PDF source SHA references are crosschecked too.
+It reports the number of original NSE PDF links already archived,
+not-yet-archived links, and the next up to eight research-source
+symbols/years **without creating an HTTP session or modifying the
+original metadata/source receipt ledger**.
+
+If this proves there is at least one *previously indexed and unarchived*
+annual report, a tightly controlled source-document fetch can use:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 1
+
+That command can make **at most one HTTPS request to the exact original
+NSE archive PDF link**. It does not call the Annual Reports metadata
+endpoint or the old Financial Results API, does not refresh metadata
+and cannot bypass a 403/429 returned by the actual PDF archive.
+Each source document is subject to the existing 26 MB per-PDF budget,
+1 GB total local PDF budget, local free-space minimum, PDF headers/EOF
+format, private path, original SHA256 receipt, and full subsequent
+consolidated PDF source page/number review gates. Neither indexed
+metadata nor the PDF itself becomes strict independently verified
+XBRL annual facts or a stock recommendation.
+
+The separate private status
+`runtime/nse_official_annual_pdf_cached_intake_status.json`
+ensures inspecting/archiving already indexed PDFs **never resets the
+original NSE annual metadata API's 20-hour source-access cooldown**
+in `runtime/nse_official_annual_pdf_collector_status.json`.
+The source document download limit now caps **total HTTPS attempts,
+including failed 404s**, rather than only successful PDFs. This
+applies to the pre-existing PDF collector too.
+
+If `validated_indexed_pdf_links_pending_archive=0`, no source PDF
+is requested. This is a source-intake fallback, **not** a method to
+invent old full-year fundamentals, skip original NSE audit statements,
+or claim more complete historical coverage. Trading remains DISABLED.

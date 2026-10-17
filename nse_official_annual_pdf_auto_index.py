@@ -33,6 +33,7 @@ HOST = "nsearchives.nseindia.com"
 OUTPUT = "nse_official_annual_pdf_candidates.csv"
 LEDGER = "runtime/nse_official_annual_pdf_index_ledger.csv"
 STATUS = "runtime/nse_official_annual_pdf_collector_status.json"
+CACHED_STATUS = "runtime/nse_official_annual_pdf_cached_intake_status.json"
 ACCESS_COOLDOWN = timedelta(hours=20)
 PDF_DIR = Path("runtime") / "official_annual_report_pdf_candidates"
 PDF_LOG = "runtime/nse_official_pdf_download_receipts.csv"
@@ -240,9 +241,12 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
                r.get("Official_Report_URL")) for r in receipts}
     size=sum(path.stat().st_size for path in (root/PDF_DIR).glob("*.pdf")) if (root/PDF_DIR).is_dir() else 0
     added=0
+    attempted=0
     state="CANDIDATE_PDFS_ARCHIVED_NOT_FINANCIAL_VERIFIED"
     for item in candidates:
-        if added>=limit:
+        # --download is a HARD original-source HTTP request budget,
+        # not merely the number of documents that happen to succeed.
+        if attempted>=limit:
             break
         if item["Financial_Year"] not in REQUIRED_YEARS:
             continue
@@ -259,6 +263,7 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
             state="LOCAL_DISK_FREE_SPACE_TOO_LOW"
             break
         try:
+            attempted+=1
             payload=public_pdf(session,url)
         except (OfficialAnnualPdfUnavailable,requests.RequestException) as exc:
             if "ACCESS_BLOCKED" in str(exc):
@@ -407,6 +412,128 @@ def offline_pdf_source_plan(root:Path, now:datetime, limit:int)->dict:
     }
 
 
+
+def offline_cached_index_intake(root:Path,*,downloads:int=0,
+                                now:datetime|None=None,session=None)->dict:
+    """Review previously indexed official NSE annual PDF links, no metadata API.
+
+    downloads=0: NO network, HTTP session or saved filing/receipt mutations.
+    downloads=1..2: only previously indexed NSE archive PDF URLs may be
+    requested. Source PDF facts remain RESEARCH ONLY, never audited XBRL.
+    """
+    root=Path(root)
+    now=now or datetime.now(timezone.utc)
+    if now.tzinfo is None or not 0<=downloads<=MAX_DOWNLOADS:
+        raise ValueError("CACHED_OFFICIAL_PDF_LIMIT_OR_CLOCK_INVALID")
+    verified=verified_discovered_symbols(root,now=now)
+    catalog=read_rows(root/CATALOG)
+    if (len(catalog)!=len(verified) or
+        len({r.get("Symbol") for r in catalog})!=len(catalog) or
+        any(r.get("Symbol") not in verified or
+            r.get("Series")!="EQ" or not r.get("ISIN")
+            for r in catalog)):
+        raise OfficialAnnualPdfUnavailable("OFFICIAL_NSE_MAINBOARD_EQ_ISIN_NOT_ATTESTED")
+    owners={r["Symbol"]:r for r in catalog}
+    raw=read_rows(root/OUTPUT)
+    if len(raw)>10000:
+        raise OfficialAnnualPdfUnavailable("CACHED_ANNUAL_PDF_INDEX_TOO_LARGE")
+    unique={}
+    by_url={}
+    for r in raw:
+        sym=r.get("Symbol","")
+        fy=r.get("Financial_Year","")
+        url=r.get("Official_Report_URL","")
+        if sym not in owners or r.get("ISIN")!=owners[sym]["ISIN"]:
+            raise OfficialAnnualPdfUnavailable("CACHED_ANNUAL_PDF_ISSUER_ISIN_CHANGED")
+        if (fy not in REQUIRED_YEARS or not source_pdf(url,sym) or
+            r.get("Verification_State")!=
+                "OFFICIAL_PDF_CANDIDATE_UNAUDITED_NUMERIC_FACTS" or
+            not re.fullmatch(r"[0-9a-f]{64}",r.get("Original_Metadata_SHA256",""))):
+            raise OfficialAnnualPdfUnavailable("CACHED_ANNUAL_PDF_INDEX_SOURCE_UNTRUSTED")
+        try:
+            from_year=int(r.get("From_Year",""))
+            to_year=int(r.get("To_Year",""))
+        except (ValueError,TypeError) as exc:
+            raise OfficialAnnualPdfUnavailable("CACHED_ANNUAL_PDF_FY_INVALID") from exc
+        if (to_year!=from_year+1 or
+            fy!=f"{from_year}-{str(to_year)[-2:]}"):
+            raise OfficialAnnualPdfUnavailable("CACHED_ANNUAL_PDF_FY_NOT_SOURCE_ATTESTED")
+        key=(sym,fy,url)
+        # One source URL must never approve multiple issuer-year records.
+        if key in unique or (url in by_url and by_url[url]!=key):
+            raise OfficialAnnualPdfUnavailable("DUPLICATE_OR_AMBIGUOUS_CACHED_NSE_PDF_URL")
+        unique[key]=r
+        by_url[url]=key
+    receipts=read_rows(root/PDF_LOG)
+    receipt_keys=set()
+    if receipts:
+        from nse_annual_pdf_section_review import checked_sources
+        for receipt,entry,path in checked_sources(root,now):
+            key=(receipt["Symbol"],receipt["Financial_Year"],
+                 receipt["Official_Report_URL"])
+            if key in receipt_keys or key not in unique:
+                raise OfficialAnnualPdfUnavailable(
+                    "CACHED_ANNUAL_PDF_RECEIPT_DUPLICATE_OR_UNINDEXED")
+            receipt_keys.add(key)
+    existing,complete=baseline_coverage(root)
+    remaining=[row for key,row in unique.items() if key not in receipt_keys]
+    remaining.sort(key=lambda r:(
+        annual_source_priority(r["Symbol"],existing,complete),
+        r["Financial_Year"],r["Symbol"],r["Official_Report_URL"]))
+    stamp=now.astimezone(timezone.utc).isoformat()
+    report={
+        "checked_at_utc":stamp,
+        "state":"OFFLINE_CACHED_NSE_ANNUAL_PDF_INDEX_REVIEW_COMPLETE",
+        "official_nse_mainboard_eq_companies":len(owners),
+        "previously_indexed_official_pdf_candidate_links":len(unique),
+        "already_archived_original_pdf_receipts":len(receipt_keys),
+        "validated_indexed_pdf_links_pending_archive":len(remaining),
+        "two_newer_fy_six_field_priority_links_pending_archive":sum(
+            annual_source_priority(r["Symbol"],existing,complete)==0
+            for r in remaining),
+        "next_indexed_pdf_candidates":[{
+            "symbol":r["Symbol"],"financial_year":r["Financial_Year"]}
+            for r in remaining[:8]],
+        "annual_report_metadata_api_calls_this_run":0,
+        "old_financial_results_api_calls_this_run":0,
+        "pdf_archive_request_budget_this_run":downloads,
+        "pdf_archive_requests_this_run":0 if downloads==0 else "UP_TO_BUDGET",
+        "new_archived_pdf_candidates_this_run":0,
+        "pdf_index_is_previous_metadata_not_reverified_xml":True,
+        "pdf_candidate_financials_strict_verified":False,
+        "new_strict_fundamental_passes":0,
+        "orders":"DISABLED",
+    }
+    if not downloads or not remaining:
+        if not remaining:
+            report["state"]="CACHED_NSE_ANNUAL_PDF_INDEX_NO_PENDING_DOCUMENTS"
+        atomic_status(root/CACHED_STATUS,report)
+        return report
+    own=session is None
+    session=session or requests.Session()
+    try:
+        if own:
+            session.headers.update({
+                "User-Agent":"Mozilla/5.0",
+                "Referer":LANDING,"Accept":"application/pdf",
+            })
+        added,state=acquire_pdfs(root,remaining,receipts,session=session,
+                                now=now,limit=downloads)
+        report["state"]="CACHED_NSE_ANNUAL_PDF_SOURCE_ARCHIVE_BOUNDED"
+        report["new_archived_pdf_candidates_this_run"]=added
+        report["pdf_archive_state"]=state
+        report["validated_indexed_pdf_links_pending_archive"]-=added
+        if added:
+            write_csv_atomic(root/PDF_LOG,PDF_FIELDS,receipts)
+    finally:
+        if own:
+            session.close()
+    # Crucial: leave prior metadata API HTTP-403 cooldown in STATUS
+    # untouched. A separate private status tracks this cached-only mode.
+    atomic_status(root/CACHED_STATUS,report)
+    return report
+
+
 def collect(root:Path,*,limit:int=25,downloads:int=1,
             now:datetime|None=None,session=None,plan_only:bool=False)->dict:
     root=Path(root)
@@ -527,10 +654,18 @@ def main()->int:
     ap.add_argument("--download",type=int,default=1)
     ap.add_argument("--plan-only",action="store_true",
                     help="List safe official NSE annual PDF source gaps without API calls or writes")
+    ap.add_argument("--cached-index-only",action="store_true",
+        help="Use only already indexed NSE archive PDF links; no metadata endpoint. With --download 0 there are no HTTP calls")
     args=ap.parse_args()
     try:
-        result=collect(data_root(),limit=args.limit,downloads=args.download,
-                       plan_only=args.plan_only)
+        if args.cached_index_only:
+            if args.plan_only:
+                raise ValueError("CACHED_INDEX_ONLY_USE_DOWNLOAD_ZERO_FOR_OFFLINE_PLAN")
+            result=offline_cached_index_intake(
+                data_root(),downloads=args.download)
+        else:
+            result=collect(data_root(),limit=args.limit,downloads=args.download,
+                           plan_only=args.plan_only)
     except (OfficialAnnualPdfUnavailable,ValueError,OSError,
             requests.RequestException) as exc:
         result={"checked_at_utc":datetime.now(timezone.utc).isoformat(),
