@@ -112,9 +112,52 @@ class LegacyCollectionTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(),before)
 
     def test_inconsistent_xml_stays_in_ledger_only(self):
-        collect(self.root,session=Mock(),fetch=lambda *_:fixture().replace(b'2022-04-01',b'2023-01-01'),pause=lambda _:None)
+        bad=fixture().replace(b'2022-04-01',b'2023-01-01')
+        fetch=Mock(return_value=bad)
+        result=collect(self.root,session=Mock(),fetch=fetch,pause=lambda _:None)
+        self.assertEqual(fetch.call_count,1)
         self.assertFalse((self.root/'annual_historical_results.csv').exists())
-        self.assertIn('EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',(self.root/'legacy_xbrl_verification.csv').read_text())
+        with (self.root/'legacy_xbrl_verification.csv').open(newline='') as stream:
+            row=next(csv.DictReader(stream))
+        self.assertEqual(row['Reason'],'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED')
+        self.assertEqual(row['Context_Diagnostic_Reason'],'EXACT_ANNUAL_DURATION_MISSING')
+        self.assertEqual(row['Context_Exact_Annual_Duration_Count'],'0')
+        self.assertEqual(row['Context_Strict_Annual_Duration_Count'],'0')
+        self.assertEqual(row['Context_Quarter_Length_Ending_Fiscal_End_Count'],'1')
+        self.assertEqual(result['Attempted'],1)
+        self.assertEqual(result['Attempted_Unverified_This_Run'],1)
+        self.assertIn('EXACT_ANNUAL_DURATION_MISSING',
+                      result['Context_Diagnostic_Reason_Counts_JSON'])
+
+    def test_noncanonical_entity_same_april_march_reports_distinct_cause(self):
+        bad=fixture().replace(
+            b'http://www.nseindia.com/NSESymbol',
+            b'https://example.invalid/nonstandard-identifier')
+        fetch=Mock(return_value=bad)
+        state=collect(self.root,session=Mock(),fetch=fetch,pause=lambda _:None)
+        self.assertEqual(fetch.call_count,1)
+        with (self.root/'legacy_xbrl_verification.csv').open(newline='') as stream:
+            row=next(csv.DictReader(stream))
+        self.assertEqual(row['Reason'],'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED')
+        self.assertEqual(row['Context_Diagnostic_Reason'],
+                         'ANNUAL_DURATION_EXISTS_BUT_CANONICAL_NSE_ENTITY_MISSING')
+        self.assertEqual(row['Context_Exact_Annual_Duration_Count'],'1')
+        self.assertEqual(row['Context_Strict_Annual_Duration_Count'],'0')
+        self.assertNotIn('example.invalid',(self.root/'legacy_xbrl_verification.csv').read_text())
+        self.assertEqual(state['Added_Verified'],0)
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
+
+    def test_valid_audited_annual_xml_does_not_require_or_add_diagnostic(self):
+        fetch=Mock(return_value=fixture())
+        state=collect(self.root,session=Mock(),fetch=fetch,pause=lambda _:None)
+        self.assertEqual(fetch.call_count,1)
+        self.assertEqual(state['Added_Verified'],1)
+        self.assertEqual(state['Attempted_Unverified_This_Run'],0)
+        with (self.root/'legacy_xbrl_verification.csv').open(newline='') as stream:
+            row=next(csv.DictReader(stream))
+        self.assertNotIn('Context_Diagnostic_Reason',row)
+        self.assertEqual(state['Context_Diagnostic_Reason_Counts_JSON'],'{}')
+
 
     def test_enforced_preflight_quarantines_recent_403_and_q4_xml(self):
         # The preflight's immutable source-ready facts, not index labels,
