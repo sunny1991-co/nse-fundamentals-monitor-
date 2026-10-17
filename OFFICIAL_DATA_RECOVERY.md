@@ -175,3 +175,42 @@ It does not use the old Financial Results *metadata API*.
 The original verifier still validates context duration, original
 symbol/entity, audited and consolidated flags, currency and complete
 six-core facts; source index links alone never count as verified.
+
+## Zero-network four-year original-XBRL ready-source plan
+
+For the 2,515 previously observed *indexed old-year XBRL URL stages*,
+the user's actual number of original independently verifiable annual XMLs
+is not yet known. Do not conflate Annual/Audited/Consolidated source
+metadata with source-verified full April–March XML contexts. The
+scheduled downloader's `--require-preflight` gate rejects missing
+broadcast-date evidence, shared URLs, already rejected Q4-only XMLs,
+previous download failures within 20h, and stale NSE EQ discovery.
+
+New command:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_verify.py --limit 10 --require-preflight --plan-only
+
+The read-only plan refreshes the same strict local original NSE source
+index preflight, ranks candidates, and previews **up to 10 symbol/FY
+pairs** with a research priority and an "other old FY verified in local
+source history" flag. It creates NO network requests or HTTP session,
+does not update the XML attempt ledger or audited historical facts,
+and does not alter the strict four-year screen or broker orders.
+The reported `Freshly_Preflighted_Ready_Candidates` count comes from
+your own current local sources; no success/fail is assumed.
+
+Priorities within the *already source-ready* URLs favour companies
+with both newer FY2024–25 and FY2025–26 six-core baseline rows,
+especially if another original FY2022–23/FY2023–24 year is already
+verified locally. Absent or incomplete newer baselines get lower
+research preference; their index links are retained, not deleted.
+**Previously never-attempted source URLs are considered before
+retrying prior failed URLs.** This is source collection efficiency,
+not a stock-quality score, financial pass or investment signal.
+
+`--plan-only` always requires `--require-preflight`. Without
+current original NSE EQ/ISIN attestation it fails closed. Use it
+first when old source access has been unreliable. Actual subsequent
+downloads remain conditional on NSE allowing authorized access
+and the original XML independently passing the strict context and
+numeric verifier.
