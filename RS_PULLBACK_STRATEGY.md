@@ -44,6 +44,52 @@ cd ~/nse-fundamentals-monitor- && git pull --ff-only
 NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --limit 12
 ```
 
+### Official NIFTY 50 gross TRI acquisition (separate source review required)
+
+The official NSE Indices website offers historical "Total returns Index Values"
+for NIFTY 50: https://www.niftyindices.com/reports/historical-data
+
+The source download endpoint is
+`https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString`.
+It provides **TotalReturnsIndex** gross TRI, separately from the price index
+and **NTR_Value** (net-of-withholding total returns). No vendor substitute.
+
+1. Get a **quarantined, unreviewed** official NSE Indices source file. Nothing
+   is added to the strategy's trusted benchmark by this action:
+
+   ```bash
+   cd ~/nse-fundamentals-monitor- && git pull --ff-only
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nifty50_tri_official_import.py --fetch
+   ```
+
+2. Compare the returned index name, dates and a few levels with the NSE
+   Indices official historical *Total returns Index Values* page for NIFTY 50.
+   Check the **gross TRI**, not spot/price NIFTY nor the NTR column. Source
+   HTTP 403/429 and redirects are not worked around. A candidate only
+   reports `OFFICIAL_CANDIDATE_READY_UNREVIEWED`; the download's HTTPS origin
+   is not itself an independent audit.
+
+3. **Only after the owner has really checked the source**, explicit
+   manual attestation installs it:
+
+   ```bash
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nifty50_tri_official_import.py --install-reviewed
+   NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py --preflight
+   ```
+
+   It writes `nifty50_tri_history.csv` and a hash-bound
+   `nifty50_tri_history_metadata.json` and refuses to overwrite any
+   existing historical benchmark. The loader still requires its original
+   source-attestation contract and recognizes that operator verification
+   is **not independent auditing**.
+
+4. If `--preflight` passes, run the original historical comparison again.
+   Even a positive backtest result is retrospective and cannot authorize
+   any BUY signal or broker order.
+
+The importer does not enable live trading, make an operator attestation
+implicitly, synthesize missing TRI sessions, or alter the portfolio.
+
 ### If the backtest reports `SOURCE_REQUIRED_OR_INVALID`
 
 Start with the **read-only** source preflight; it does not conduct a backtest
