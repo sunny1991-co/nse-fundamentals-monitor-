@@ -350,15 +350,6 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
                 break
             state="SOME_ANNUAL_PDFS_UNAVAILABLE"
             continue
-        if attempts is not None:
-            attempts.append({
-                "Symbol":item["Symbol"],
-                "Financial_Year":item["Financial_Year"],
-                "Official_Report_URL":url,
-                "Original_Metadata_SHA256":item["Original_Metadata_SHA256"],
-                "Attempted_At_UTC":now.astimezone(timezone.utc).isoformat(),
-                "Attempt_Result":"ARCHIVED_SUCCESS",
-            })
         if size+len(payload)>MAX_PDF_STORAGE_BYTES:
             state="PDF_STORAGE_BUDGET_REACHED"
             break
@@ -390,6 +381,15 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
             "Review_Status":"REQUIRES_AUDITED_CONSOLIDATED_FULL_YEAR_NUMERIC_RECONCILIATION",
         }
         receipts.append(receipt)
+        if attempts is not None:
+            attempts.append({
+                "Symbol":item["Symbol"],
+                "Financial_Year":item["Financial_Year"],
+                "Official_Report_URL":url,
+                "Original_Metadata_SHA256":item["Original_Metadata_SHA256"],
+                "Attempted_At_UTC":now.astimezone(timezone.utc).isoformat(),
+                "Attempt_Result":"ARCHIVED_SUCCESS",
+            })
         existing.add(key)
         size+=len(payload)
         added+=1
@@ -604,7 +604,7 @@ def offline_cached_index_intake(root:Path,*,downloads:int=0,
         "annual_report_metadata_api_calls_this_run":0,
         "old_financial_results_api_calls_this_run":0,
         "pdf_archive_request_budget_this_run":downloads,
-        "pdf_archive_requests_this_run":0 if downloads==0 else "UP_TO_BUDGET",
+        "pdf_archive_requests_this_run":0,
         "new_archived_pdf_candidates_this_run":0,
         "pdf_index_is_previous_metadata_not_reverified_xml":True,
         "pdf_candidate_financials_strict_verified":False,
