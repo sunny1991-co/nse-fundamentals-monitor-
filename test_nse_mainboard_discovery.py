@@ -73,6 +73,36 @@ class NseMainboardDiscoveryTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root/STATUS).read_text())["orders"],
                          "DISABLED")
 
+    def test_sme_symbol_only_csv_excludes_without_claiming_an_isin(self):
+        # Some SME source exports expose only SYMBOL and a descriptive field.
+        # That can remove a symbol, but must not manufacture an ISIN.
+        self.feed[SME_URL] = (
+            "SYMBOL,COMPANY NAME\nSMEX,SME Company\n"
+        ).encode()
+        report = self.run_refresh()
+        self.assertEqual(report["sme_isin_rows"], 0)
+        with (self.root/CATALOG).open(newline="") as f:
+            names = [r["Symbol"] for r in csv.DictReader(f)]
+        self.assertEqual(names, ["OLD", "OTHER"])
+
+    def test_mainboard_aliases_must_retain_eq_and_verified_isin(self):
+        self.feed[EQUITY_URL] = (
+            "TRADING SYMBOL,COMPANY NAME,SECURITY SERIES,ISIN,LISTING DATE\n"
+            "OLD,Old Inc,EQ,INE111A01011,01-JAN-2024\n"
+            "OTHER,Other Inc,EQ,INE222A01012,01-JAN-2024\n"
+            "SMEX,SME Inc,EQ,INE333A01013,01-JAN-2024\n"
+        ).encode()
+        report = self.run_refresh()
+        self.assertEqual(report["mainboard_eq_count"], 2)
+
+    def test_unrecognized_header_error_is_source_specific(self):
+        self.feed[SME_URL] = (
+            "UNKNOWN,NAME\nA,1\n"
+        ).encode()
+        with self.assertRaisesRegex(
+                DiscoveryUnavailable, "SME_OFFICIAL_CSV_HEADERS_UNEXPECTED"):
+            self.run_refresh()
+
     def test_second_scan_is_idempotent_and_keeps_first_seen(self):
         self.run_refresh()
         self.now = datetime(2026, 10, 18, 6, tzinfo=timezone.utc)
