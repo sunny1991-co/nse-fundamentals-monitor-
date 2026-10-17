@@ -94,6 +94,23 @@ class OfficialAnnualAutoIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(OfficialAnnualPdfUnavailable,"SCHEMA_CHANGED"):
             parse_metadata([],"NEW","INE001A01011","New Company","")
 
+    def test_equal_newer_baseline_coverage_prioritizes_tracked_nse_eq(self):
+        # The untracked company should not be preferred simply because
+        # its alphabetic symbol comes first when source review coverage ties.
+        with (self.root/CATALOG).open("a",newline="") as out:
+            writer=csv.DictWriter(out,fieldnames=[
+                "Symbol","ISIN","Company","Baseline_Tracked"])
+            writer.writerow(dict(Symbol="ZZTRACKED",ISIN="INE999A01011",
+                                 Company="Tracked Other Company",
+                                 Baseline_Tracked="true"))
+        with patch(
+            "nse_official_annual_pdf_auto_index.verified_discovered_symbols",
+            return_value={"NEW","ZZTRACKED"},
+        ):
+            rows=choose_symbols(self.root,self.now,2)
+        self.assertEqual([r["Symbol"] for r in rows],
+                         ["ZZTRACKED","NEW"])
+
     def test_capture_metadata_and_bounded_unverified_pdf(self):
         s=MockSession(self.good)
         a=collect(self.root,limit=1,downloads=1,session=s,now=self.now)

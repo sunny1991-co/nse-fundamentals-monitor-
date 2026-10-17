@@ -224,7 +224,7 @@ def choose_symbols(root:Path, now:datetime, limit:int)->list[dict]:
         already=previous.get(s,{})
         candidates.append((already.get("Checked_At_UTC",""),
                            annual_source_priority(s,existing,core_complete),
-                           row.get("Baseline_Tracked")!="false",s,row))
+                           row.get("Baseline_Tracked")!="true",s,row))
     # Never-checked sources go first, then oldest check. Within a tie,
     # companies with BOTH six-field annual FY baselines lead because their
     # older audited documents have the shortest route to a complete review.

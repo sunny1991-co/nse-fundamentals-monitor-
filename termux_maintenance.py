@@ -97,6 +97,12 @@ STEPS = [
     ("legacy_two_fy_evidence_queue_no_orders",
      [sys.executable, str(CODE_ROOT/'nse_legacy_annual_evidence_queue.py')],
      3*60),
+    # Source-only research reprioritization after original old NSE XMLs have
+    # shown prolonged zero strict annual-context verification yield.
+    # PDF second columns are ALWAYS research, never independent XBRL facts.
+    ("legacy_original_annual_pdf_first_recovery_plan",
+     [sys.executable, str(CODE_ROOT/'nse_legacy_pdf_first_recovery_queue.py')],
+     3*60),
     ("sector_refresh",
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
