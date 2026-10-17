@@ -212,6 +212,7 @@ def run(root:Path,*,max_files:int=1,now=None,reader_cls=None)->dict:
         for r in old
     }
     pending=[]
+    deferred_incomplete=[]
     for receipt,entry,path in sources:
         if receipt["Financial_Year"]!=SOURCE_FY:
             continue
@@ -225,6 +226,26 @@ def run(root:Path,*,max_files:int=1,now=None,reader_cls=None)->dict:
         row=current[source_key]
         if row.get("ISIN")!=entry["ISIN"]:
             raise SectionReviewBlocked("NUMERIC_SOURCE_COMPARATIVE_ISIN_MISMATCH")
+        # An incomplete current-year numeric review is not a comparative
+        # source. Defer this exact immutable PDF source without aborting the
+        # other issuers in the batch. Refuse to defer malformed or already
+        # populated source data under an "incomplete" review label.
+        if row.get("Review_State")==(
+                "INCOMPLETE_OR_AMBIGUOUS_SOURCE_NUMBERS_REVIEW_REQUIRED"):
+            if (row.get("Section_Review_Version")!=SECTION_VERSION
+                or row.get("Candidate_Core_Fields")!="0"
+                or any(row.get(field) for field in CORE)
+                or row.get("Audited_Consolidated_Facts_Verified","").lower()!="false"
+                or row.get("Strict_Fundamental_Pass","").lower()!="false"
+                or row.get("Orders")!="DISABLED"):
+                raise SectionReviewBlocked(
+                    "INCOMPLETE_CURRENT_PDF_SOURCE_STATE_CONFLICT")
+            deferred_incomplete.append({
+                "symbol":receipt["Symbol"],
+                "source_report_fy":SOURCE_FY,
+                "reason":"CURRENT_PDF_SIX_CORE_NUMERIC_EVIDENCE_INCOMPLETE",
+            })
+            continue
         pending.append((receipt,entry,path,sections[source_key],row,versioned))
     reviewed=0
     complete=0
@@ -271,6 +292,8 @@ def run(root:Path,*,max_files:int=1,now=None,reader_cls=None)->dict:
         "reports_reviewed_this_run":reviewed,
         "new_six_field_comparative_candidates":complete,
         "reports_pending_current_source_review":max(0,len(pending)-reviewed),
+        "reports_deferred_incomplete_current_numeric_evidence":len(deferred_incomplete),
+        "deferred_incomplete_source_preview":deferred_incomplete[:8],
         "total_comparative_candidate_source_reports":len(rows),
         "source_report_financial_year":SOURCE_FY,
         "separate_earlier_year_audited_xbrl_filings_verified":0,
