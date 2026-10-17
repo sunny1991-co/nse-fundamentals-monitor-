@@ -25,6 +25,8 @@ STEPS = [
     # Research only; no trade/shortlist auto-promotion.
     ('official_mainboard_discovery',
      [sys.executable, str(CODE_ROOT/'nse_mainboard_discovery.py')], 2*60),
+    ('mainboard_evidence_gap_inventory',
+     [sys.executable, str(CODE_ROOT/'nse_discovery_evidence_gaps.py')], 2*60),
     # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
@@ -91,7 +93,13 @@ def summary(root: Path) -> dict:
         discovery = json.loads((root/'runtime'/'nse_mainboard_discovery_status.json').read_text(encoding='utf-8'))
     except (OSError, ValueError, TypeError):
         discovery = {}
+    try:
+        discovery_gaps = json.loads((root/'runtime'/'nse_mainboard_evidence_gaps_status.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        discovery_gaps = {}
     return {
+        'nse_mainboard_evidence_gaps_state': discovery_gaps.get('state', 'NOT_STARTED'),
+        'nse_mainboard_missing_fy_rows': int(discovery_gaps.get('missing_at_least_one_fy_row') or 0),
         'nse_mainboard_discovery_state': discovery.get('state', 'NOT_STARTED'),
         'nse_mainboard_eq_count': int(discovery.get('mainboard_eq_count') or 0),
         'outside_annual_baseline_watch_only': int(discovery.get('outside_annual_baseline') or 0),
