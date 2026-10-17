@@ -13,6 +13,9 @@ chmod 700 "$DATA_DIR" "$RUNTIME_DIR" 2>/dev/null || true
 PID_FILE="$RUNTIME_DIR/termux_supervisor.pid"
 LAUNCH_LOG="$RUNTIME_DIR/termux_launcher.log"
 LEGACY_PID_FILE="$PROJECT_DIR/runtime/termux_supervisor.pid"
+WATCHDOG_PID_FILE="$RUNTIME_DIR/termux_watchdog.pid"
+WATCHDOG_ENABLE_FILE="$RUNTIME_DIR/termux_watchdog.enabled"
+WATCHDOG_LOG="$RUNTIME_DIR/termux_watchdog.log"
 
 bootstrap_data() {
   "$PYTHON_BIN" "$PROJECT_DIR/termux_bootstrap_data.py" \
@@ -31,6 +34,29 @@ is_running() {
   pid_running "$PID_FILE"
 }
 
+watchdog_running() {
+  pid_running "$WATCHDOG_PID_FILE" || return 1
+  pid="$(cat "$WATCHDOG_PID_FILE")"
+  [ -r "/proc/$pid/cmdline" ] || return 1
+  tr '\\0' ' ' < "/proc/$pid/cmdline" | grep -Fq "$PROJECT_DIR/termux_watchdog.py"
+}
+
+start_watchdog() {
+  printf 'enabled\\n' > "$WATCHDOG_ENABLE_FILE"
+  chmod 600 "$WATCHDOG_ENABLE_FILE"
+  if watchdog_running; then
+    return 0
+  fi
+  rm -f "$WATCHDOG_PID_FILE"
+  nohup "$PYTHON_BIN" "$PROJECT_DIR/termux_watchdog.py" >>"$WATCHDOG_LOG" 2>&1 </dev/null &
+  echo "Independent watchdog started (RAM-aware, 2-minute heartbeat checks)."
+}
+
+stop_watchdog() {
+  # Exit naturally on the next <=5-second flag check. Never kill unknown PID.
+  rm -f "$WATCHDOG_ENABLE_FILE"
+}
+
 start_backend() {
   bootstrap_data
   if pid_running "$LEGACY_PID_FILE"; then
@@ -39,6 +65,7 @@ start_backend() {
   fi
   if is_running; then
     echo "NSE swing backend already running. PID $(cat "$PID_FILE")."
+    start_watchdog
     return 0
   fi
   rm -f "$PID_FILE"
@@ -47,11 +74,13 @@ start_backend() {
   sleep 2
   if is_running; then
     echo "NSE swing backend started. PID $(cat "$PID_FILE")."
+    start_watchdog
     echo "Data directory: $DATA_DIR"
     echo "Status: bash ./termux_backend.sh status"
     return 0
   fi
   if kill -0 "$launcher_pid" 2>/dev/null; then
+    start_watchdog
     echo "Supervisor is starting but PID file is not ready yet. Check again in a few seconds."
     return 0
   fi
@@ -84,6 +113,7 @@ stop_one() {
 }
 
 stop_backend() {
+  stop_watchdog
   stopped=0
   if stop_one "$PID_FILE" "NSE swing backend"; then stopped=1; fi
   if [ "$LEGACY_PID_FILE" != "$PID_FILE" ] && stop_one "$LEGACY_PID_FILE" "Legacy repo-local backend"; then stopped=1; fi
@@ -101,6 +131,11 @@ show_status() {
     echo "Backend: STOPPED"
   fi
   echo "Data directory: $DATA_DIR"
+  if [ -f "$RUNTIME_DIR/termux_watchdog_status.json" ]; then
+    echo "Independent watchdog status:"
+    cat "$RUNTIME_DIR/termux_watchdog_status.json"
+    echo
+  fi
   if [ -f "$RUNTIME_DIR/termux_supervisor_status.json" ]; then
     echo "Supervisor status:"
     cat "$RUNTIME_DIR/termux_supervisor_status.json"
