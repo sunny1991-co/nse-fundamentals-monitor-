@@ -147,11 +147,11 @@ def locate_sections(reader,year):
     token=re.sub("[^0-9]+"," ",cover)
     fiscal_year_seen=(year.replace("-"," ") in token)
     auditor_heading=re.compile(
-        r"independent\\s+auditors?(?:['\\u2019]s?)?\\s+report",re.I
+        r"independent\s+auditors?(?:['\u2019]s?)?\s+report",re.I
     )
-    bs=re.compile(r"consolidated\\s+balance\\s+sheet",re.I)
-    pnl=re.compile(r"consolidated\\s+(?:statement\\s+of\\s+)?profit\\s+and\\s+loss",re.I)
-    cf=re.compile(r"consolidated\\s+(?:statement\\s+of\\s+)?cash\\s+flow",re.I)
+    bs=re.compile(r"consolidated\s+balance\s+sheet",re.I)
+    pnl=re.compile(r"consolidated\s+(?:statement\s+of\s+)?profit\s+and\s+loss",re.I)
+    cf=re.compile(r"consolidated\s+(?:statement\s+of\s+)?cash\s+flow",re.I)
 
     def match(i):
         t=get_page(i)
@@ -163,18 +163,18 @@ def locate_sections(reader,year):
         # table-row corroboration, not just a title. These are candidate
         # page locations ONLY, never audited numerical facts.
         auditor=(bool(auditor_heading.search(t))
-                 and bool(re.search(r"\\bwe\\s+have\\s+audited\\b",t,re.I))
-                 and bool(re.search(r"\\b(?:basis\\s+for\\s+opinion|in\\s+our\\s+opinion)\\b",t,re.I))
+                 and bool(re.search(r"\bwe\s+have\s+audited\b",t,re.I))
+                 and bool(re.search(r"\b(?:basis\s+for\s+opinion|in\s+our\s+opinion)\b",t,re.I))
                  and bool(re.search(r"consolidated",t,re.I)))
         balance=(bool(bs.search(t))
-                 and bool(re.search(r"\\btotal\\s+assets\\b",t,re.I))
-                 and bool(re.search(r"\\bequity\\s+and\\s+liabilities\\b",t,re.I)))
+                 and bool(re.search(r"\btotal\s+assets\b",t,re.I))
+                 and bool(re.search(r"\bequity\s+and\s+liabilities\b",t,re.I)))
         profits=(bool(pnl.search(t))
-                 and bool(re.search(r"\\brevenue\\s+from\\s+operations\\b",t,re.I))
-                 and bool(re.search(r"\\b(?:profit\\s+for\\s+the\\s+(?:period|year)|profit\\s+before\\s+tax)\\b",t,re.I)))
+                 and bool(re.search(r"\brevenue\s+from\s+operations\b",t,re.I))
+                 and bool(re.search(r"\b(?:profit\s+for\s+the\s+(?:period|year)|profit\s+before\s+tax)\b",t,re.I)))
         cash=(bool(cf.search(t))
-              and bool(re.search(r"\\bcash\\s+flow\\s+from\\s+operating\\s+activities\\b",t,re.I))
-              and bool(re.search(r"\\bcash\\s+flow\\s+from\\s+investing\\s+activities\\b",t,re.I)))
+              and bool(re.search(r"\bcash\s+flow\s+from\s+operating\s+activities\b",t,re.I))
+              and bool(re.search(r"\bcash\s+flow\s+from\s+investing\s+activities\b",t,re.I)))
         verdict={
             "auditor":auditor,
             "balance_sheet":balance,
