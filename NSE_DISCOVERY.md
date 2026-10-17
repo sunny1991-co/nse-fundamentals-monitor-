@@ -1143,3 +1143,60 @@ Termux diagnostic after updating GitHub:
 
     NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_preflight.py
     NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_annual_evidence_queue.py
+
+## Alternative source progress: bounded original NSE Annual Report PDFs
+
+The old NSE Financial Results source index has previously returned
+2,652 old FY Annual/Audited/Consolidated **metadata** candidate rows.
+Recent original XML source reads overwhelmingly failed the strict
+April–March period/issuer context checks. A zero-yield circuit breaker
+now leaves the old automated source verifier paused. It is not
+appropriate to keep downloading failing original XML by the hundred.
+
+The official NSE **Corporate Filings → Annual Reports** page is a
+separate original *issuer-submitted annual report archive*, including
+older FY2022–23 and FY2023–24 listings, but the presence of a year
+row does not guarantee that a PDF attachment is actually available.
+An absent older-year attachment cannot be interpreted as zero revenue,
+no company report, or a verified standalone/consolidated original
+annual financial statement.
+
+Our original archive source collector,
+`nse_official_annual_pdf_auto_index.py`, now supports this completely
+**offline read-only** plan:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --limit 10 --download 0 --plan-only
+
+The plan requires the current officially attested NSE EQ mainboard
+catalog and produces up to 10 next issuer source targets (prioritizing
+companies with both newer-year baseline six-field research records),
+numbers of previously indexed legitimate NSE annual PDF links for
+FY2022–23 and FY2023–24, previously saved private PDF receipts **not
+rehashed** by the plan, source links without a local receipt, and
+the next research action. NO NSE page/API request, PDF download,
+HTTP session, disk write, audited fundamental pass or broker order
+is made. Original PDF bytes are only opened and SHA-attested by the
+subsequent strict local source-review pipeline.
+
+NSE Annual Reports index/landing HTTP 403 or 429 is now remembered
+from the original private status event for a fixed **20-hour
+source-access cooldown**. Repeated manual/scheduled calls within that
+window make **zero** NSE HTTP calls and **do not rewrite/reset the
+original block timestamp**. After the original cooldown ends the
+bounded source collector may resume normally. The exact original
+request state is kept in
+`runtime/nse_official_annual_pdf_collector_status.json`.
+The unattended Termux maintenance cap is now at most **10 company
+metadata lookups and two bounded original PDF downloads per
+maintenance cycle**, and remains independently constrained by
+8-minute process timeout and local storage limits.
+
+A newly indexed valid NSE archive PDF URL is still only a source
+candidate. It does NOT become strict historical audited XBRL facts,
+final shortlist, trading signal, SMS or order. Source companies,
+ISIN, original PDF archive URL, actual PDF SHA256, report financial
+year, independent audit and Consolidated statement pages/numeric
+facts must remain distinguishable from the original old XBRL verifier.
+Missing older NSE PDF attachments will require a different original,
+issuer-authenticated filing or investor-relations document, evaluated
+separately rather than fabricating an NSE URL.
