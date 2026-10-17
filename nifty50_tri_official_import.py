@@ -24,6 +24,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import requests
@@ -44,6 +45,36 @@ OUTPUT_CSV = "nifty50_tri_history.csv"
 OUTPUT_META = "nifty50_tri_history_metadata.json"
 STATUS_JSON = "runtime/nifty50_tri_acquisition_status.json"
 IST = ZoneInfo("Asia/Kolkata")
+
+
+def response_details(response):
+    """Return safe bounded HTTP diagnostics, never arbitrary response content.
+
+    Do not follow server redirects or expose server-provided URL/query values.
+    A 3xx / noncanonical response remains untrusted even on NSE's domain.
+    """
+    code = getattr(response, "status_code", None)
+    if type(code) is not int or not 100 <= code <= 599:
+        code = None
+    details = {"http_status": code}
+    actual = getattr(response, "url", None)
+    if isinstance(actual, str):
+        details["response_url_matches_official_endpoint"] = actual == ENDPOINT
+    else:
+        details["response_url_matches_official_endpoint"] = False
+    if code is not None and 300 <= code < 400:
+        location = getattr(response, "headers", {}).get("Location", "")
+        if not isinstance(location, str) or not location:
+            details["redirect_class"] = "LOCATION_NOT_PROVIDED"
+        else:
+            target = urlsplit(location)
+            if not target.hostname:
+                details["redirect_class"] = "RELATIVE_REDIRECT_NOT_FOLLOWED"
+            elif target.scheme == "https" and target.hostname == "www.niftyindices.com":
+                details["redirect_class"] = "OFFICIAL_HOST_REDIRECT_NOT_FOLLOWED"
+            else:
+                details["redirect_class"] = "OTHER_REDIRECT_NOT_FOLLOWED"
+    return details
 
 
 def sha(raw):
@@ -148,10 +179,15 @@ def fetch_candidate(root, *, now=None, session=None):
             ENDPOINT, json=request, headers=headers,
             timeout=75, allow_redirects=False,
         )
+        result.update(response_details(response))
         if response.status_code in (403, 429):
             result["state"] = f"OFFICIAL_ACCESS_BLOCKED_{response.status_code}"
-        elif response.status_code != 200 or response.url != ENDPOINT:
-            result["state"] = "OFFICIAL_HTTP_OR_REDIRECT_UNVERIFIED"
+        elif 300 <= response.status_code < 400:
+            result["state"] = "OFFICIAL_REDIRECT_NOT_FOLLOWED"
+        elif response.status_code != 200:
+            result["state"] = "OFFICIAL_HTTP_ERROR_UNVERIFIED"
+        elif response.url != ENDPOINT:
+            result["state"] = "OFFICIAL_RESPONSE_URL_MISMATCH_UNVERIFIED"
         else:
             csv_bytes, rows = canonical_rows(response.content, today=today)
             receipt = {
