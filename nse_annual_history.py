@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from research_monitor.paths import data_root
+from research_monitor.discovered_annual_universe import verified_discovered_symbols
+import argparse
 import re
 import time
 import threading
@@ -477,7 +479,51 @@ def save_csv(df: pd.DataFrame, path: Path) -> None:
     df.to_csv(path, index=False, na_rep="")
 
 
-def main():
+
+def annual_target_symbols(root: Path, old_results: pd.DataFrame,
+                          *, include_discovered: bool = False,
+                          now: datetime | None = None) -> set[str]:
+    """Keep original annual baselines plus their verified historical rows.
+
+    Outside-baseline NSE EQ symbols enter only with an explicit opt-in and a
+    current validated official catalog; missing/stale evidence must stop rather
+    than silently shrink the source universe.
+    """
+    target_symbols: set[str] = set()
+    for filename in ("FY2425.csv", "NSE_FY2025-26_Consolidated_Fundamentals.csv"):
+        path = root / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Required baseline file not found: {filename}")
+        baseline = read_csv(path)
+        if "Symbol" not in baseline.columns:
+            raise ValueError(f"{filename} has no Symbol column")
+        target_symbols.update(
+            str(v).strip().upper() for v in baseline["Symbol"].astype(str)
+            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
+        )
+    if not target_symbols:
+        raise RuntimeError("No baseline symbols found; refusing an empty annual screen.")
+    if not old_results.empty and "Symbol" in old_results.columns:
+        target_symbols.update(
+            str(v).strip().upper() for v in old_results["Symbol"].astype(str)
+            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
+        )
+    if include_discovered:
+        official = verified_discovered_symbols(root, now=now)
+        print(f"Verified official mainboard EQ symbols: {len(official)}", flush=True)
+        target_symbols.update(official)
+    return target_symbols
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--include-discovered', action='store_true',
+                        help='Also collect NSE EQ outside historic FY baselines; requires fresh official discovery')
+    parser.add_argument('--limit', type=int, default=MAX_XBRL_PER_RUN,
+                        help='Maximum official audited-consolidated XBRL filings per run')
+    args = parser.parse_args(argv)
+    if not 1 <= args.limit <= MAX_XBRL_PER_RUN:
+        parser.error(f'--limit must be 1..{MAX_XBRL_PER_RUN}')
     cutoff = date.today() - timedelta(days=HISTORY_DAYS)
     old_results = read_csv(RESULTS_FILE)
     old_unverified = read_csv(UNVERIFIED_FILE)
@@ -501,27 +547,10 @@ def main():
         ].astype(str)
     )
 
-    # Restrict history downloads to the symbols in the requested annual baseline.
-    # We still verify their original NSE filing metadata and exact XBRL source.
-    target_symbols: set[str] = set()
-    for filename in ("FY2425.csv", "NSE_FY2025-26_Consolidated_Fundamentals.csv"):
-        path = ROOT / filename
-        if not path.exists():
-            raise FileNotFoundError(f"Required baseline file not found: {filename}")
-        baseline = read_csv(path)
-        if "Symbol" not in baseline.columns:
-            raise ValueError(f"{filename} has no Symbol column")
-        target_symbols.update(
-            str(v).strip().upper() for v in baseline["Symbol"].astype(str)
-            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
-        )
-    if not target_symbols:
-        raise RuntimeError("No baseline symbols found; refusing to create an empty annual screen.")
-    if not old_results.empty and "Symbol" in old_results.columns:
-        target_symbols.update(
-            str(v).strip().upper() for v in old_results["Symbol"].astype(str)
-            if str(v).strip() and str(v).strip().lower() not in {"nan", "none", "<na>"}
-        )
+    # Fail closed if the user explicitly requested the broader current universe.
+    target_symbols = annual_target_symbols(
+        ROOT, old_results, include_discovered=args.include_discovered
+    )
     print(f"Target baseline symbols: {len(target_symbols)}", flush=True)
 
     s = session_create()
@@ -560,7 +589,7 @@ def main():
             previous_attempts.get(item[0], ""),
             -(published_date(item[1]) or date.min).toordinal(),
         ),
-    )[:MAX_XBRL_PER_RUN]
+    )[:args.limit]
     print(
         f"Annual index records examined: {len(indexed)}; latest audited consolidated symbol-years: {len(by_url)}; "
         f"to process this run: {len(pending)}; workers: {MAX_DOWNLOAD_WORKERS}",
