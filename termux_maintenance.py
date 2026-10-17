@@ -34,7 +34,14 @@ STEPS = [
     # never retry a recent genuine NSE Annual Reports API 403/429 denial.
     ('official_annual_pdf_source_index',
      [sys.executable, str(CODE_ROOT/'nse_official_annual_pdf_auto_index.py'),
-      '--limit', '10', '--download', '2'], 8*60),
+      '--limit', '10', '--download', '0'], 8*60),
+    # An independently indexed NSE annual PDF may remain downloadable even
+    # when the metadata API is temporarily blocked. Download at most ONE
+    # already indexed, issuer+ISIN-checked original PDF per daily cycle.
+    # Per-PDF 403/429, 404, network failure cooldown prevents repeats.
+    ('official_cached_annual_pdf_archive',
+     [sys.executable, str(CODE_ROOT/'nse_official_annual_pdf_auto_index.py'),
+      '--cached-index-only', '--download', '1'], 8*60),
     # Original, independently hashed annual PDFs: review source pages only.
     # No PDF amounts enter audited fundamentals or the strict trade screen.
     ("archived_pdf_section_review",
