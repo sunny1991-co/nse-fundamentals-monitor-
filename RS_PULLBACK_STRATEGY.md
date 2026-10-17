@@ -49,6 +49,16 @@ NSE_DATA_DIR="$HOME/nse-fundamentals-data" python swing_rs_pullback_research.py 
 The official NSE Indices website offers historical "Total returns Index Values"
 for NIFTY 50: https://www.niftyindices.com/reports/historical-data
 
+If the fetch reports an HTTP or redirect error, the diagnostic now includes
+the exact numeric `http_status`, whether the response URL matched the official
+endpoint and a **classified** redirect type (without revealing its URL).
+`OFFICIAL_REDIRECT_NOT_FOLLOWED` means no HTTP redirect was followed;
+`OFFICIAL_HTTP_ERROR_UNVERIFIED` means a non-200 response; and
+`OFFICIAL_ACCESS_BLOCKED_403`/`429` means the official publisher refused
+access. In every case the importer **stops**, preserves previously reviewed
+benchmark files and never labels a failed download as a working TRI source.
+An official page may still be browsable even when this transport is unavailable.
+
 The source download endpoint is
 `https://www.niftyindices.com/Backpage.aspx/getTotalReturnIndexString`.
 It provides **TotalReturnsIndex** gross TRI, separately from the price index
