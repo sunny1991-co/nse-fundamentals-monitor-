@@ -882,3 +882,63 @@ The project status records the attempted fiscal year/window.
 `2026-10-18T06:44:22Z` (12:14:22 IST), due to the 20-hour
 cooldown after the v2 READ_TIMEOUT. Even after this time, actual
 network success is not guaranteed.
+
+## Offline FY2022–23 comparative rows from the original FY2023–24 annual PDF
+
+When NSE's old Financial Results XBRL metadata API returns a
+`READ_TIMEOUT`, **do not hammer the endpoint or weaken the 20-hour
+cooldown**. There is a useful separate read-only source of research
+candidates: the 2023–24 audited consolidated balance sheet and P&L pages
+inside the locally cached 20MICRONS original NSE FY2023–24 annual PDF
+already contain **two** columns, FY2023–24 and FY2022–23.
+
+`nse_annual_pdf_prior_year_comparatives.py` reads the *same* official,
+private, exact SHA-attested FY2023–24 PDF receipt, NSE mainboard EQ
+issuer+ISIN, v3 consolidated statement page candidates, and the
+successful v2 six-field PDF current-year numeric review. It REOPENS
+the original immutable PDF, re-derives all six current-year facts and
+requires them to agree EXACTLY with the previous current-year candidate
+CSV before extracting the **second** printed year column. Each financial
+row must contain exactly two decimal cells, with its first cell matching
+the original current-year amount. Unrecognized, orphaned or extra
+columns are rejected; no numerical guesswork or external network API.
+
+The prior-year columns for the source report appear as:
+- Revenue ₹70,168.72 lakh → ₹701.6872 crore
+- Net profit for period ₹4,196.17 lakh → ₹41.9617 crore
+- Basic EPS ₹11.85 per share
+- Total assets ₹52,391.98 lakh → ₹523.9198 crore
+- Total equity (before separately disclosed NCI) ₹29,357.86 lakh →
+  ₹293.5786 crore
+- Noncurrent borrowings ₹1,856.93 lakh and current borrowings
+  ₹8,334.97 lakh → combined ₹101.9190 crore, excluding leases
+- NCI shown separately: ₹105.25 lakh → ₹1.0525 crore
+
+The prior-year balance sheet is checked on three identities, including
+assets = equity + NCI + liabilities, with at most 0.03 lakh rounding
+tolerance; profit before tax – tax = net profit is checked as well.
+Failures blank **all** prior-year candidate amounts, keeping detailed
+source-row/page and explicit issue evidence. Missing unrelated metrics
+never silently become zero. The new report and status are separate:
+`nse_annual_pdf_prior_year_comparative_candidates.csv` and
+`runtime/nse_annual_pdf_prior_year_comparative_status.json`.
+It is included as a bounded read-only daily Termux maintenance step
+immediately after the current-year PDF candidate scanner.
+
+**Critical provenance:** the FY2022–23 amounts here are the
+*comparative column of an original FY2023–24 report*, **NOT a
+separately independently verified FY2022–23 audited XBRL filing**.
+Prior-year columns can be restated/reclassified. These values are
+never copied to `annual_historical_results.csv`, the strict four-year
+fundamental screen, any broker, paper trading, alerts or backtests.
+`Separately_Audited_Prior_Year_XBRL_Verified=false`;
+`Strict_Fundamental_Pass=false`; `Orders=DISABLED`.
+No old NSE index API calls, external AI fees or cooldown resets.
+
+After GitHub pull, a manual run uses only the cached local PDF:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_prior_year_comparatives.py --max-files 1
+
+If this source PDF's text layout changes or any prior-year arithmetic
+fails, the review must remain incomplete. It does not prove an FY22–23
+original XBRL filing is present.
