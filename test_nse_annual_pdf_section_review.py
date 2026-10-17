@@ -65,10 +65,15 @@ class FakeSparseGapPage:
         if self.index==0:
             return "Annual Report 2022-23 of TESTEQ Limited"
         labels={
-            205:"Independent Auditor's Report on Consolidated Financial Statements",
-            206:"Consolidated Balance Sheet for 31 March 2023",
-            207:"Consolidated Statement of Profit and Loss",
-            208:"Consolidated Cash Flow Statement",
+            205:("Independent Auditor's Report on Consolidated Financial "
+                 "Statements. Opinion We have audited the Group. Basis for Opinion"),
+            206:("Consolidated Balance Sheet for 31 March 2023 "
+                 "TOTAL ASSETS 1,000.00 TOTAL EQUITY AND LIABILITIES 1,000.00"),
+            207:("Consolidated Statement of Profit and Loss "
+                 "Revenue from Operations 500.00 Profit for the year 100.00"),
+            208:("Consolidated Cash Flow Statement "
+                 "Cash Flow from Operating Activities 100.00 "
+                 "Cash Flow from Investing Activities -40.00"),
         }
         return labels.get(self.index,"Directors statutory disclosures")
 
