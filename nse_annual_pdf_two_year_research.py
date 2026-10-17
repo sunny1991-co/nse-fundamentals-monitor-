@@ -34,7 +34,7 @@ from research_monitor.schedule import atomic_status
 
 OUTPUT="nse_annual_pdf_two_year_research_comparison.csv"
 STATUS="runtime/nse_annual_pdf_two_year_research_status.json"
-VERSION="source-locked-pdf-two-year-yoy-research-v1"
+VERSION="source-locked-pdf-two-year-yoy-research-v2-section-attested"
 MAX_FILES=2
 
 # Six core figures are labelled identically in both observations.
@@ -43,7 +43,8 @@ PROVENANCE=[
     "Symbol","ISIN","Source_Report_Financial_Year",
     "Prior_Comparative_Financial_Year","Current_Reported_Financial_Year",
     "Original_NSE_PDF_URL","Original_NSE_PDF_SHA256",
-    "Current_PDF_Review_Version","Prior_Column_Review_Version",
+    "Current_PDF_Review_Version","Current_PDF_Section_Review_Version",
+    "Prior_Column_Review_Version",
     "Two_Year_Research_Version","State","Comparison_Field_Count",
     "Current_Column_Audit_Status","Prior_Column_Audit_Status",
     "Reporting_And_Accounting_Review_Required",
@@ -179,6 +180,7 @@ def one_record(entry,receipt,section,current,prior,payload,now,*,reader_cls=None
         "Original_NSE_PDF_URL":key[2],
         "Original_NSE_PDF_SHA256":key[3],
         "Current_PDF_Review_Version":CURRENT_VERSION,
+        "Current_PDF_Section_Review_Version":SECTION_VERSION,
         "Prior_Column_Review_Version":PRIOR_VERSION,
         "Two_Year_Research_Version":VERSION,
         "State":"TWO_YEAR_PDF_COMPARATIVE_RESEARCH_ONLY",
@@ -246,7 +248,11 @@ def run(root,*,max_files=1,now=None,reader_cls=None):
     index_fields=("Symbol","Financial_Year","Official_Report_URL","PDF_SHA256")
     current=unique_map(
         now_rows,fields=index_fields,
-        condition=lambda r:r.get("Numeric_Review_Version")==CURRENT_VERSION)
+        # A numeric parser version alone is not enough: old v3 and new v4
+        # section locators can coexist for the same PDF SHA. Only the
+        # exact current section-attested numeric record is eligible.
+        condition=lambda r:(r.get("Numeric_Review_Version")==CURRENT_VERSION
+                            and r.get("Section_Review_Version")==SECTION_VERSION))
     prior=unique_map(
         older_rows,fields=(
             "Symbol","Source_Report_Financial_Year",
@@ -293,6 +299,10 @@ def run(root,*,max_files=1,now=None,reader_cls=None):
         "source_pdf_reports_checked":len(sources),
         "new_two_year_comparisons":done,
         "total_two_year_comparisons":len(rows),
+        "current_version_comparison_records":sum(
+            r.get("Two_Year_Research_Version")==VERSION for r in rows),
+        "prior_version_comparison_records_preserved":sum(
+            r.get("Two_Year_Research_Version")!=VERSION for r in rows),
         "pending_source_locked_two_year_comparisons":max(0,len(pending)-done),
         "comparison_is_not_original_audited_xbrl_verification":True,
         "original_nse_xbrl_facts_promoted":0,
