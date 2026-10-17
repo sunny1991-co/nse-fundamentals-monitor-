@@ -45,6 +45,12 @@ STEPS = [
     # NSE Indices' broad constituent industry reference; not strict 4-tier sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
+    # Obtain original NSE pre-2025 audited annual filing INDEX links for
+    # older FY years, bounded to one source-attested company per cycle.
+    # Index metadata alone NEVER approves a historical financial fact.
+    ("official_legacy_annual_xbrl_index",
+     [sys.executable, str(CODE_ROOT/'nse_legacy_annual_official_auto_index.py'),
+      '--max-symbols', '1'], 3*60),
     ("legacy_annual_verify",
      [sys.executable, str(CODE_ROOT/'nse_legacy_xbrl_verify.py'), '--limit', '100'], 20*60),
     # Audited consolidated NSE XBRL only; bounded new company-years each day.
