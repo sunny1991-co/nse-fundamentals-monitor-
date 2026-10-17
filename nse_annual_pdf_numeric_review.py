@@ -173,9 +173,16 @@ def financial_page_evidence(payload:bytes,review:dict,reader_cls=None)->dict:
     # units. The page-index review does not attest columns or lakh/crore scale.
     units_ok=all(bool(re.search(r"\bin\s+lakhs\b",original_text[p],re.I))
                  for p in ("balance_sheet","profit_loss"))
-    now_ok=all(re.search(r"(?:31\s*(?:st)?\s*mar(?:ch)?[,\s]*20)?"
-                         + re.escape(year_end) + r"\b",
-                         original_text[p],re.I)
+    current_date=re.compile(
+        r"\b31\s*(?:st)?\s*march[,\s]*20"+re.escape(year_end)+r"\b",re.I)
+    previous_year=str(int("20"+year_end)-1)
+    previous_date=re.compile(
+        r"\b31\s*(?:st)?\s*march[,\s]*"+previous_year+r"\b",re.I)
+    def expected_columns(text):
+        current=current_date.search(text)
+        previous=previous_date.search(text)
+        return bool(current and previous and current.start()<previous.start())
+    now_ok=all(expected_columns(original_text[p])
                for p in ("balance_sheet","profit_loss"))
     if not units_ok:
         issue.append("REQUIRED_LAKH_UNIT_MARKER_NOT_ON_BOTH_STATEMENT_PAGES")
