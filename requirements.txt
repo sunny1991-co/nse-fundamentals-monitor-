@@ -7,3 +7,4 @@ gunicorn>=23,<24
 tzdata>=2024.1
 python-dotenv>=1,<2
 cryptography>=44
+pypdf>=6,<8

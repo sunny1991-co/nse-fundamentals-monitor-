@@ -33,6 +33,11 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_official_annual_pdf_auto_index.py'),
       '--limit', '25', '--download', '2'], 8*60),
     # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
+    # Original, independently hashed annual PDFs: review source pages only.
+    # No PDF amounts enter audited fundamentals or the strict trade screen.
+    ("archived_pdf_section_review",
+     [sys.executable, str(CODE_ROOT/'nse_annual_pdf_section_review.py'),
+      '--max-files', '2'], 8*60),
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
     ("legacy_annual_verify",
