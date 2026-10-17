@@ -815,3 +815,32 @@ do not delete the ledger or issue multiple manual NSE requests.
 If a source failure is classified, it is diagnostic, not recovery:
 `new_official_old_annual_xbrl_links_indexed=0` means no new link
 was indexed, not that no older official XBRL exists.
+
+## Explicit source cooldown status for zero-request runs
+
+Observed on the user's Termux for 20MICRONS FY2023–24:
+`checked_at_utc=2026-10-17T10:39:34Z`,
+`api_calls_made_this_run=0`,
+`symbols_requested_this_run=0`, but the earlier status misleadingly
+read `OFFICIAL_NSE_OLD_ANNUAL_INDEX_UPDATED` with
+`symbols_remaining_after_this_run=0`.
+This meant **no NSE request was sent**, not that the source or XBRL
+evidence had been acquired. The older source error occurred around
+`10:34:09Z`.
+
+Source-status v3 displays:
+- `state=OFFICIAL_NSE_OLD_ANNUAL_INDEX_COOLDOWN_NO_REQUEST` when
+  no attested issuer can be checked because of source cooldown;
+- `symbols_deferred_by_cooldown` and a corrected
+  `symbols_remaining_after_this_run` (which now includes deferred
+  issuers and earlier blocked attempts);
+- `next_eligible_at_utc`, a calculated **earliest permitted probe**
+  from the original issuer ledger: 10 minutes for one old generic
+  error diagnostic, or 20 hours for modern v2 errors/403/429.
+
+For that earlier single generic error, the first allowed v2 diagnostic
+recheck would be `2026-10-17T10:44:09Z`, which is 16:14:09 IST.
+The scheduled Termux research maintenance may only run later; the
+timestamp is NOT a promise that NSE will allow access or have an XML.
+Do not manually delete the ledger, bypass access controls or treat a
+zero-call status as successful source recovery.

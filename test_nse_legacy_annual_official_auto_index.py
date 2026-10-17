@@ -227,6 +227,61 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
         self.assertEqual(item["Diagnostic_Version"],DIAGNOSTIC_VERSION)
         self.protected()
 
+    def test_user_20microns_generic_error_reports_cooldown_not_updated(self):
+        # Real user first checked 2026-10-17T10:34:09Z and re-ran at
+        # 10:39:34Z. No new XBRL link can be claimed after zero requests.
+        earlier=datetime.fromisoformat("2026-10-17T10:34:09+00:00")
+        check=datetime.fromisoformat("2026-10-17T10:39:34+00:00")
+        with (self.root/LEDGER).open("w",newline="") as f:
+            writer=csv.DictWriter(f,fieldnames=[
+                "Symbol","Checked_At_UTC","State","Rows_Indexed","Reason"])
+            writer.writeheader()
+            writer.writerow({
+                "Symbol":SYMBOL,"Checked_At_UTC":earlier.isoformat(),
+                "State":"INDEX_DISCOVERY_BLOCKED","Rows_Indexed":0,
+                "Reason":"OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR",
+            })
+        session=FakeSession([annual_row()])
+        result=run(self.root,max_symbols=1,now=check,
+                   session=session,pause=lambda _:None)
+        self.assertEqual(result["state"],
+                         "OFFICIAL_NSE_OLD_ANNUAL_INDEX_COOLDOWN_NO_REQUEST")
+        self.assertEqual(result["api_calls_made_this_run"],0)
+        self.assertEqual(result["symbols_requested_this_run"],0)
+        self.assertEqual(result["symbols_fetched_this_run"],0)
+        self.assertEqual(result["symbols_deferred_by_cooldown"],1)
+        self.assertEqual(result["symbols_remaining_after_this_run"],1)
+        self.assertEqual(result["next_eligible_at_utc"],
+                         "2026-10-17T10:44:09+00:00")
+        self.assertEqual(result["new_official_old_annual_xbrl_links_indexed"],0)
+        self.assertEqual(session.calls,[])
+        self.protected()
+
+    def test_versioned_error_uses_full_cooldown_no_second_probing(self):
+        earlier=NOW-timedelta(minutes=11)
+        with (self.root/LEDGER).open("w",newline="") as f:
+            fields=[
+                "Symbol","Checked_At_UTC","State","Rows_Indexed",
+                "Reason","Diagnostic_Version"]
+            writer=csv.DictWriter(f,fieldnames=fields)
+            writer.writeheader()
+            writer.writerow({
+                "Symbol":SYMBOL,"Checked_At_UTC":earlier.isoformat(),
+                "State":"INDEX_DISCOVERY_BLOCKED","Rows_Indexed":0,
+                "Reason":"OFFICIAL_NSE_OLD_RESULTS_INVALID_JSON_200_RESPONSE",
+                "Diagnostic_Version":DIAGNOSTIC_VERSION,
+            })
+        session=FakeSession([annual_row()])
+        result=run(self.root,max_symbols=1,now=NOW,
+                   session=session,pause=lambda _:None)
+        self.assertEqual(result["symbols_deferred_by_cooldown"],1)
+        self.assertEqual(result["next_eligible_at_utc"],
+                         (earlier+timedelta(hours=20)).isoformat())
+        self.assertEqual(result["state"],
+                         "OFFICIAL_NSE_OLD_ANNUAL_INDEX_COOLDOWN_NO_REQUEST")
+        self.assertEqual(session.calls,[])
+        self.protected()
+
     def test_previous_error_not_reprobed_too_soon_or_when_403(self):
         for age,reason in [
             (timedelta(minutes=2),"OFFICIAL_NSE_OLD_RESULTS_NETWORK_OR_JSON_ERROR"),
