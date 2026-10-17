@@ -78,10 +78,24 @@ class FastTrackResearchTests(unittest.TestCase):
         }))
         (self.root/"nifty50_tri_history.csv").write_text("TEST_ONLY")
         (self.root/"nifty50_tri_history_metadata.json").write_text("TEST_ONLY")
+        self.refresh_fingerprints()
         self.identity=patch.object(fast,"verified_discovered_symbols",
                                    return_value=set(SYMS))
         self.identity.start()
         self.addCleanup(self.identity.stop)
+
+    def refresh_fingerprints(self):
+        path=self.root/"fast_fundamental_screen_summary.csv"
+        with path.open(newline="") as stream:
+            row=next(csv.DictReader(stream))
+        for tag,name in (
+            ("Annual_Quality_SHA256","annual_fundamental_quality_report.csv"),
+            ("FY2024_25_SHA256","FY2425.csv"),
+            ("FY2025_26_SHA256","NSE_FY2025-26_Consolidated_Fundamentals.csv"),
+            ("Fast_Shortlist_SHA256","fast_fundamental_shortlist.csv"),
+        ):
+            row[tag]=hashlib.sha256((self.root/name).read_bytes()).hexdigest()
+        write_csv(path,list(row),[row])
 
     def assert_protected(self):
         for k,v in self.protected.items():
@@ -151,10 +165,47 @@ class FastTrackResearchTests(unittest.TestCase):
         self.assertFalse((self.root/"runtime"/"assistant_trade_queue.sqlite3").exists())
         self.assert_protected()
 
+    def test_stale_fast_screen_is_blocked_until_rebuilt(self):
+        # A changed quality file invalidates a previously generated
+        # provisional shortlist, even if counts still happen to agree.
+        p=self.root/"annual_fundamental_quality_report.csv"
+        p.write_text(p.read_text()+"\\n")
+        with self.assertRaisesRegex(
+                fast.FastTrackBlocked,"PROVISIONAL_SCREEN_SOURCE_CHANGED_REBUILD_REQUIRED"):
+            self.invoke()
+        self.assertFalse((self.root/"runtime"/"assistant_trade_queue.sqlite3").exists())
+        self.assert_protected()
+
+    def test_delisted_previous_fast_pass_stays_excluded_without_failing_batch(self):
+        # A formerly screened symbol must never be offered as today's
+        # mainboard equity if its current official listing has disappeared.
+        p=self.root/"annual_fundamental_quality_report.csv"
+        with p.open("a") as handle:
+            handle.write("DELISTED,PASS\\n")
+        shortlist=self.root/"fast_fundamental_shortlist.csv"
+        with shortlist.open() as f:
+            original=list(csv.DictReader(f))
+        sample=dict(original[0],Symbol="DELISTED")
+        write_csv(shortlist,list(original[0]),original+[sample])
+        summ=self.root/"fast_fundamental_screen_summary.csv"
+        with summ.open() as f:
+            sr=next(csv.DictReader(f))
+        sr["Fast_Fundamental_Pass_Count"]="4"
+        write_csv(summ,list(sr),[sr])
+        self.refresh_fingerprints()
+        result=self.invoke(cap=3)
+        self.assertEqual(result["provisional_two_fy_quality_symbols"],3)
+        self.assertEqual(result["excluded_not_in_current_mainboard_eq"],1)
+        with (self.root/fast.OUTPUT).open() as f:
+            rows=list(csv.DictReader(f))
+        self.assertFalse(any(r["Symbol"]=="DELISTED" for r in rows))
+        self.assert_protected()
+
     def test_provisional_shortlist_not_allowed_without_two_year_quality(self):
         p=self.root/"annual_fundamental_quality_report.csv"
         write_csv(p,["Symbol","Two_Year_Baseline_Data_Quality"],[
             {"Symbol":s,"Two_Year_Baseline_Data_Quality":"FAIL"} for s in SYMS])
+        self.refresh_fingerprints()
         with self.assertRaisesRegex(fast.FastTrackBlocked,
                                     "PROVISIONAL_AND_YEAR_QUALITY_DISAGREE"):
             self.invoke()
@@ -166,6 +217,7 @@ class FastTrackResearchTests(unittest.TestCase):
                 {"Report_Generated_On":"2026-10-17",
                  "Fast_Fundamental_Pass_Count":"99",
                  "Status":"PROVISIONAL_SCREEN_COMPLETE"}])
+        self.refresh_fingerprints()
         with self.assertRaisesRegex(fast.FastTrackBlocked,
                                     "PROVISIONAL_SUMMARY_COUNT_MISMATCH"):
             self.invoke()
