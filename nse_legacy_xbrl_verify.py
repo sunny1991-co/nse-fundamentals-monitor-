@@ -10,6 +10,7 @@ import requests
 import nse_annual_history as annual
 import nse_legacy_annual_recovery as legacy
 from research_monitor.legacy_xbrl import verify, VERSION, MAX_XML_BYTES
+from nse_official_annual_pdf_auto_index import baseline_coverage
 
 ROOT = data_root()
 LEDGER = 'legacy_xbrl_verification.csv'
@@ -24,6 +25,26 @@ def write_rows(path, rows, fields=None):
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader(); writer.writerows(rows)
     temp.replace(path)
+
+
+def candidate_priority(symbol, financial_year, baseline_present,
+                       baseline_complete, verified_old_years):
+    """Research source-order only; NEVER implies an issuer is trade-ready.
+
+    First pursue an already verified opposite old FY and BOTH complete
+    newer-FY baseline rows. Treat missing annual data as missing, not 0.
+    """
+    opposite = '2023-24' if financial_year == '2022-23' else '2022-23'
+    has_other_old = (symbol, opposite) in verified_old_years
+    complete_newer = baseline_complete.get(symbol, 0)
+    present_newer = baseline_present.get(symbol, 0)
+    if complete_newer == 2:
+        return 0 if has_other_old else 1
+    if present_newer == 2:
+        return 2 if has_other_old else 3
+    if present_newer == 1:
+        return 4
+    return 5
 
 
 def download(session, url):
@@ -42,10 +63,12 @@ def download(session, url):
 
 
 def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep,
-            require_preflight=False):
+            require_preflight=False, plan_only=False):
     root = Path(root)
     if not 1 <= limit <= 500:
         raise ValueError('Limit must be 1..500')
+    if plan_only and not require_preflight:
+        raise ValueError('OFFLINE_PLAN_REQUIRES_FRESH_OFFICIAL_SOURCE_PREFLIGHT')
     manifest, _ = legacy.build(root)  # Rebuild from baselines/index; do not trust an edited manifest.
     candidates = [r for r in manifest if r['Recovery_Status'] == 'PENDING_INDEPENDENT_XBRL_REVIEW']
     total_index_candidates=len(candidates)
@@ -72,13 +95,48 @@ def collect(root=ROOT, limit=100, session=None, fetch=download, pause=time.sleep
         ]
     history = legacy.csv_rows(root/'annual_historical_results.csv')
     ledger = {r['Source_URL']: r for r in legacy.csv_rows(root/LEDGER)}
-    candidates.sort(key=lambda r: (r['Source_URL'] in ledger,
-        ledger.get(r['Source_URL'], {}).get('Checked_At_UTC', ''), r['Symbol'], r['Financial_Year']))
+    baseline_present, baseline_complete = baseline_coverage(root)
+    verified_old_years = legacy.verified_legacy_years(root)
+    candidates.sort(key=lambda r: (
+        # A never-attempted, freshly preflighted source is preferable to
+        # repeated 404/timeout attempts. Within that group, prioritize
+        # shorter paths to a genuine FOUR-year research comparison.
+        r['Source_URL'] in ledger,
+        candidate_priority(r['Symbol'],r['Financial_Year'],
+                           baseline_present,baseline_complete,
+                           verified_old_years),
+        ledger.get(r['Source_URL'], {}).get('Checked_At_UTC', ''),
+        r['Symbol'], r['Financial_Year']))
+    stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    if plan_only:
+        # The preview does NOT instantiate an HTTP session, issue XML
+        # source requests, write verification attempts or promote a fact.
+        preview = candidates[:min(10,limit)]
+        return {
+            'Checked_At_UTC':stamp,
+            'Status':'SAFE_PREFLIGHT_RESEARCH_PLAN_ONLY_NO_HTTP',
+            'Original_Index_Candidates_Before_Preflight':total_index_candidates,
+            'Excluded_By_Current_Source_Preflight':
+                total_index_candidates-len(candidates),
+            'Freshly_Preflighted_Ready_Candidates':len(candidates),
+            'Planned_Candidate_Limit':limit,
+            'Proposed_Next_Source_Symbol_Years':[
+                {'Symbol':r['Symbol'],'Financial_Year':r['Financial_Year'],
+                 'Research_Priority':candidate_priority(
+                     r['Symbol'],r['Financial_Year'],
+                     baseline_present,baseline_complete,verified_old_years),
+                 'Existing_Other_Legacy_Year_Verified_In_History':
+                     (r['Symbol'], '2023-24' if r['Financial_Year']=='2022-23'
+                      else '2022-23') in verified_old_years}
+                for r in preview
+            ],
+            'XML_Network_Requests':0,'Original_XBRL_Facts_Verified':0,
+            'Strict_Fundamental_Passes_Added':0,'Orders':'DISABLED',
+        }
     own_session = session is None
     session = session or requests.Session()
     if own_session:
         session.headers.update({'User-Agent':'NSE-fundamentals-research/1.0', 'Accept':'application/xml'})
-    stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
     status = dict(Checked_At_UTC=stamp, Candidate_Symbol_Years=len(candidates),
         Original_Index_Candidates_Before_Preflight=total_index_candidates,
         Excluded_By_Current_Source_Preflight=total_index_candidates-len(candidates),
@@ -161,8 +219,11 @@ def main():
     parser.add_argument('--limit',type=int,default=100)
     parser.add_argument('--require-preflight',action='store_true',
         help='Fail closed unless original source index and last attempt are independently safe')
+    parser.add_argument('--plan-only',action='store_true',
+        help='No HTTP requests; preview source-safe four-year research priorities')
     args=parser.parse_args()
-    print(collect(limit=args.limit,require_preflight=args.require_preflight))
+    print(collect(limit=args.limit,require_preflight=args.require_preflight,
+                  plan_only=args.plan_only))
 
 
 if __name__ == '__main__': main()

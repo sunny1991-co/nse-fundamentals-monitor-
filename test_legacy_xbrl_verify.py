@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock,patch
 import requests
 from research_monitor.legacy_xbrl import verify
-from nse_legacy_xbrl_verify import collect, download
+from nse_legacy_xbrl_verify import collect, download, candidate_priority
 
 URL='https://nsearchives.nseindia.com/corporate/xbrl/TEST.xml'
 RECORD=dict(symbol='TEST',qe_Date='2023-03-31',consolidated='Consolidated',audited='Audited',broadcast_Date='2023-05-01')
@@ -167,6 +167,82 @@ class LegacyCollectionTests(unittest.TestCase):
                 collect(self.root,session=Mock(),fetch=fetch,
                         require_preflight=True,pause=lambda _:None)
         self.assertEqual(fetch.call_count,0)
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
+
+    def test_prioritize_nearly_complete_four_year_research_first(self):
+        # Ranking never promotes facts; it chooses which independently
+        # indexed and source-safe old XML can be inspected first.
+        other={('HIGH','2022-23')}
+        present={'HIGH':2,'MID':2,'ONE':1}
+        complete={'HIGH':2,'MID':2}
+        self.assertEqual(candidate_priority('HIGH','2023-24',
+                                            present,complete,other),0)
+        self.assertEqual(candidate_priority('MID','2022-23',
+                                            present,complete,other),1)
+        self.assertEqual(candidate_priority('FILL','2023-24',
+                                            {'FILL':2},{},set()),3)
+        self.assertEqual(candidate_priority('ONE','2022-23',
+                                            present,complete,set()),4)
+        self.assertEqual(candidate_priority('NONE','2022-23',
+                                            present,complete,set()),5)
+
+    def test_plan_only_cannot_create_an_http_session_or_write_ledger(self):
+        from nse_legacy_xbrl_preflight import OUTPUT as READY
+        ready=self.root/READY
+        ready.write_text(
+            'Symbol,Financial_Year,Official_XBRL_Source_URL,'
+            'Source_Review_State,Metadata_Ready_For_XML,'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+','
+            'READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW,true,false\n'
+        )
+        with (
+            patch('nse_legacy_xbrl_preflight.snapshot') as preflight,
+            patch('nse_legacy_xbrl_verify.requests.Session',
+                  side_effect=AssertionError('HTTP SESSION NEVER ALLOWED')),
+            patch('nse_legacy_xbrl_verify.baseline_coverage',
+                  return_value=({'TEST':2},{'TEST':2})),
+        ):
+            planned=collect(self.root,limit=10,require_preflight=True,
+                            plan_only=True)
+        preflight.assert_called_once()
+        self.assertEqual(planned['Status'],
+                         'SAFE_PREFLIGHT_RESEARCH_PLAN_ONLY_NO_HTTP')
+        self.assertEqual(planned['Freshly_Preflighted_Ready_Candidates'],1)
+        self.assertEqual(planned['XML_Network_Requests'],0)
+        self.assertEqual(planned['Original_XBRL_Facts_Verified'],0)
+        self.assertEqual(planned['Strict_Fundamental_Passes_Added'],0)
+        self.assertEqual(planned['Orders'],'DISABLED')
+        self.assertEqual(planned['Proposed_Next_Source_Symbol_Years'],[
+            {'Symbol':'TEST','Financial_Year':'2022-23',
+             'Research_Priority':1,
+             'Existing_Other_Legacy_Year_Verified_In_History':False}
+        ])
+        self.assertFalse((self.root/'legacy_xbrl_verification.csv').exists())
+        self.assertFalse((self.root/'legacy_xbrl_run_status.csv').exists())
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
+
+    def test_plan_only_refuses_missing_independent_preflight(self):
+        with self.assertRaisesRegex(ValueError,
+                                    'OFFLINE_PLAN_REQUIRES_FRESH_OFFICIAL'):
+            collect(self.root,limit=1,plan_only=True,require_preflight=False)
+
+    def test_plan_only_preserves_previous_verification_attempt_bytes(self):
+        original=b'Source_URL,Status,Reason\n'+URL.encode()+b',ACCESS_BLOCKED,SOURCE_HTTP_403\n'
+        file=self.root/'legacy_xbrl_verification.csv'
+        file.write_bytes(original)
+        from nse_legacy_xbrl_preflight import OUTPUT as READY
+        (self.root/READY).write_text(
+            'Symbol,Financial_Year,Official_XBRL_Source_URL,'
+            'Source_Review_State,Metadata_Ready_For_XML,'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+',PREVIOUS_SOURCE_ATTEMPT_COOLDOWN,false,false\n'
+        )
+        with patch('nse_legacy_xbrl_preflight.snapshot'):
+            planned=collect(self.root,require_preflight=True,plan_only=True)
+        self.assertEqual(planned['Freshly_Preflighted_Ready_Candidates'],0)
+        self.assertEqual(planned['Excluded_By_Current_Source_Preflight'],1)
+        self.assertEqual(file.read_bytes(),original)
         self.assertFalse((self.root/'annual_historical_results.csv').exists())
 
     def test_redirect_not_followed(self):
