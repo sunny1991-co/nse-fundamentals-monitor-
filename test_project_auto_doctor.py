@@ -179,8 +179,12 @@ class ProjectDoctorTests(unittest.TestCase):
         self.assertIs(result["permission_to_execute_model_instructions"],False)
         self.assertEqual(post.call_args.kwargs["json"]["store"],False)
         self.assertNotIn("synthetic",json.dumps(post.call_args.kwargs["json"]))
-        self.assertEqual(optional_ai_advice([issue],journal,NOW+timedelta(minutes=1))[
-            "state"],"AI_DIAGNOSIS_RATE_LIMITED")
+        with patch.dict("os.environ",{
+            "NSE_AI_DOCTOR_ENABLE":"1","OPENAI_API_KEY":"synthetic"
+        }):
+            self.assertEqual(optional_ai_advice([
+                issue],journal,NOW+timedelta(minutes=1))[
+                    "state"],"AI_DIAGNOSIS_RATE_LIMITED")
         self.same()
 
 
