@@ -68,6 +68,7 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
         temp=TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root=Path(temp.name)
+        (self.root/LEDGER).parent.mkdir(parents=True,exist_ok=True)
         # The collector never changes source fundamentals, watchlists
         # or brokerage settings.
         (self.root/"annual_historical_results.csv").write_text("DO_NOT_CHANGE")
