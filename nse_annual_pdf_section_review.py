@@ -28,7 +28,7 @@ from research_monitor.schedule import atomic_status
 OUTPUT="nse_annual_pdf_section_review.csv"  # append-safe VERSIONED history view
 LATEST_OUTPUT="nse_annual_pdf_section_review_latest.csv"  # current engine only
 STATUS="runtime/nse_annual_pdf_section_review_status.json"
-VERSION="section-review-3-statement-table-cues"
+VERSION="section-review-4-consolidated-statement-layouts"
 MAX_FILES=2
 MAX_SCAN_PAGES=90
 MAX_PAGES=700
@@ -151,7 +151,7 @@ def locate_sections(reader,year):
         r"independent\s+auditors?(?:['\u2019]s?)?\s+report",re.I
     )
     bs=re.compile(r"consolidated\s+balance\s+sheet",re.I)
-    pnl=re.compile(r"consolidated\s+(?:statement\s+of\s+)?profit\s+and\s+loss",re.I)
+    pnl=re.compile(r"consolidated\s+(?:statement\s+of\s+)?profit\s*(?:and|&)\s*loss(?:\s+statement)?",re.I)
     cf=re.compile(r"consolidated\s+(?:statement\s+of\s+)?cash\s+flow",re.I)
 
     def match(i):
@@ -167,12 +167,22 @@ def locate_sections(reader,year):
                  and bool(re.search(r"\bwe\s+have\s+audited\b",t,re.I))
                  and bool(re.search(r"\b(?:basis\s+for\s+opinion|in\s+our\s+opinion)\b",t,re.I))
                  and bool(re.search(r"consolidated",t,re.I)))
+        # Some original annual-report balance sheets label the final
+        # assets total simply "TOTAL", not "TOTAL ASSETS". Such a page
+        # needs independently present share capital, Equity/Liabilities
+        # heading and a two-column amount row; an index alone cannot pass.
         balance=(bool(bs.search(t))
-                 and bool(re.search(r"\btotal\s+assets\b",t,re.I))
-                 and bool(re.search(r"\bequity\s+and\s+liabilities\b",t,re.I)))
+                 and bool(re.search(r"\bequity\s+and\s+liabilities\b",t,re.I))
+                 and (bool(re.search(r"\btotal\s+assets\b",t,re.I))
+                      or (bool(re.search(r"\bequity\s+share\s+capital\b",t,re.I))
+                          and bool(re.search(
+                              r"\btotal\s+\(?-?\d[\d,]*\.\d{2}\)?\s+\(?-?\d[\d,]*\.\d{2}\)?\b",
+                              t,re.I)))))
         profits=(bool(pnl.search(t))
                  and bool(re.search(r"\brevenue\s+from\s+operations\b",t,re.I))
-                 and bool(re.search(r"\b(?:profit\s+for\s+the\s+(?:period|year)|profit\s+before\s+tax)\b",t,re.I)))
+                 and bool(re.search(
+                     r"\bprofit\s*(?:/\s*\(?loss\)?|\s*\(?loss\)?)?\s+"
+                     r"(?:for\s+the\s+(?:period|year)|before\s+tax)\b",t,re.I)))
         cash=(bool(cf.search(t))
               and bool(re.search(r"\bcash\s+flow\s+from\s+operating\s+activities\b",t,re.I))
               and bool(re.search(r"\bcash\s+flow\s+from\s+investing\s+activities\b",t,re.I)))
@@ -189,8 +199,9 @@ def locate_sections(reader,year):
 
     # Broad sampling discovers headings outside the usual financial pages.
     # A second dense late-report band rescues pages between sparse samples.
-    # Continue to reserve up to 12 pages for neighboring sections after a
-    # heading is located. The scanner is deliberately PARTIAL, not exhaustive.
+    # Reserve space for neighboring sections; annual consolidated auditor
+    # opinions/annexures can run 10+ pages before the balance sheet.
+    # Still a bounded PARTIAL page scan, not an audit of numeric facts.
     pivots=[]
     for i in seed:
         if len(scanned)>=MAX_SCAN_PAGES-12:
@@ -202,10 +213,15 @@ def locate_sections(reader,year):
             break
         if match(i):
             pivots.append(i)
-    for i in pivots:
+    # Prefer corroborated consolidated auditor pages: a long audit report
+    # may put the three statements 8-18 physical pages *after* the opinion.
+    # Do not widen the scan for generic document-title hits.
+    ordered_pivots=sorted(set(pivots),key=lambda i:(i+1 not in found["auditor"],i))
+    for i in ordered_pivots:
         if len(scanned)>=MAX_SCAN_PAGES or all(found.values()):
             break
-        for j in range(max(4,i-7),min(count,i+8)):
+        forward=19 if i+1 in found["auditor"] else 8
+        for j in range(max(4,i-7),min(count,i+forward)):
             if len(scanned)>=MAX_SCAN_PAGES or all(found.values()):
                 break
             match(j)
