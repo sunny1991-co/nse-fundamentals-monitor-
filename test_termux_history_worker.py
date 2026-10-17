@@ -3,12 +3,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from datetime import date, datetime, timezone
 from unittest.mock import Mock, patch
 
 from termux_history_worker import (
     CATCHUP_INTERVAL_SECONDS,
     INTERVAL_SECONDS,
     next_cycle_delay,
+    legacy_history_recheck_needed,
     publish_worker_status,
     run_post_publish_validation,
 )
@@ -48,6 +50,58 @@ class TermuxHistoryWorkerTests(unittest.TestCase):
         self.assertEqual(delay, INTERVAL_SECONDS)
         self.assertEqual(remaining, 0)
         self.assertFalse(fast)
+
+    def test_new_mainboard_history_drives_catchup_even_when_adjusted_complete(self):
+        completed = {
+            'state':'ADJUSTED_HISTORY_PUBLISHED',
+            'daily':{'remaining_archive_days':0,'blocked':False}
+        }
+        raw = {'state':'RESEARCH_UNADJUSTED_EOD_PROGRESS',
+               'estimated_outstanding_expected_sessions':1681,
+               'source_blocked':False}
+        delay, old_pending, fast = next_cycle_delay(completed,0,raw_backfill=raw)
+        self.assertEqual(delay,CATCHUP_INTERVAL_SECONDS)
+        self.assertEqual(old_pending,0)
+        self.assertTrue(fast)
+        raw['state'] = 'NSE_ACCESS_BLOCKED'
+        raw['source_blocked'] = True
+        self.assertEqual(next_cycle_delay(completed,0,raw_backfill=raw)[0],
+                         INTERVAL_SECONDS)
+
+    def test_adjusted_complete_skips_only_until_next_completed_reviewed_session(self):
+        completed = {
+            'state':'ADJUSTED_HISTORY_PUBLISHED',
+            'publish':{'published':True},
+            'daily_range_complete':True,
+            'corporate_action_range_complete':True,
+            'suspicious_consecutive_no_file_gap':False,
+            'range_end':'2026-10-16'
+        }
+        # Sat 17 Oct 2026 in India, previous completed session was Friday.
+        saturday=datetime(2026,10,17,8,tzinfo=timezone.utc)
+        self.assertFalse(legacy_history_recheck_needed(completed,saturday))
+        # Monday before market opens: no new completed session.
+        mon_early=datetime(2026,10,19,2,tzinfo=timezone.utc)
+        self.assertFalse(legacy_history_recheck_needed(completed,mon_early))
+        # Tue Oct 20 is a reviewed NSE holiday: Monday becomes due.
+        tue=datetime(2026,10,20,2,tzinfo=timezone.utc)
+        self.assertTrue(legacy_history_recheck_needed(completed,tue))
+        completed['range_end']='2026-10-19'
+        self.assertFalse(legacy_history_recheck_needed(completed,tue))
+        completed['publish']={'published':False}
+        self.assertTrue(legacy_history_recheck_needed(completed,tue))
+
+    def test_future_or_unattested_adjusted_history_does_not_skip(self):
+        now=datetime(2026,10,17,8,tzinfo=timezone.utc)
+        partial={'state':'ADJUSTED_HISTORY_PUBLISHED','publish':{'published':True},
+                 'range_end':'2026-10-16','daily_range_complete':False,
+                 'corporate_action_range_complete':True}
+        self.assertTrue(legacy_history_recheck_needed(partial,now))
+        partial['daily_range_complete']=True
+        partial['range_end']='2026-12-31'
+        self.assertTrue(legacy_history_recheck_needed(partial,now))
+        with self.assertRaisesRegex(ValueError,'TIMEZONE'):
+            legacy_history_recheck_needed(partial,datetime(2026,10,17,8))
 
     def test_post_publish_backtest_runs_once_per_history_sha(self):
         with tempfile.TemporaryDirectory() as directory:

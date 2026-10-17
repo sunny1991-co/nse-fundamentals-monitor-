@@ -274,3 +274,38 @@ automatic_mainboard_raw_breakout_candidates counts RAW price patterns,
 not validated strategy signals, trade eligibility, probability of profit,
 or Groww execution permission. The new research pipeline cannot authorize
 orders, modify the adjusted trading files or trigger automatic SMS.
+
+
+## Automatic backfill priority and responsive Termux status
+
+The first operator run reported all-mainboard raw history 5 sessions complete
+with 1,681 expected sessions outstanding, while legacy adjusted data already
+had zero missing days and over 1.3 million verified/adjusted OHLCV rows.
+Previously the worker called its expensive legacy republisher BEFORE
+the new-company backfill, and the raw archive could stay unchanged until that
+collector's long batch ended. This was a scheduling issue, not proof of an
+exchange download error.
+
+The supervised history worker now runs bounded all-mainboard research first,
+and reports MAINBOARD_RESEARCH_COLLECTING for that phase. When the prior
+adjusted history already covers the most recent fully completed reviewed
+NSE equity session, and daily coverage/corporate-action coverage and publish
+attestations are valid, it SKIPS redundant legacy republishing. New completed
+trading sessions trigger the original adjusted collector again. Unattested
+statuses always run the old full strict verification. New raw archive progress
+(not just old adjusted archive) drives a 3-minute catchup sleep after healthy
+batches; NSE access blocks return to slower backoff rather than retrying fast.
+
+Raw and adjusted files remain separate. The new raw archive is not corporate
+action adjusted and cannot feed trading/backtests/orders; this change never
+loosens fundamental, liquidity, risk or owner approval gates.
+
+To apply the new running worker code after merging this patch:
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    bash termux_backend.sh restart
+    bash termux_backend.sh status
+
+The first few lines of the new history_worker.log cycle will show the
+automatic all-mainboard research phase before the adjusted-data phase.
+A previous COLLECTING state alone does NOT prove a hung collector.

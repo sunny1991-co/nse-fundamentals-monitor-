@@ -14,7 +14,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, date, timedelta, timezone
 
 from dotenv import load_dotenv
 
@@ -22,7 +22,8 @@ CODE_ROOT = Path(__file__).resolve().parent
 load_dotenv(CODE_ROOT/'.env', interpolate=False)
 
 from research_monitor.paths import data_root
-from research_monitor.schedule import atomic_status
+from research_monitor.schedule import atomic_status, IST
+from research_monitor.nse_history_calendar import expected_archive_day
 
 
 def publish_worker_status(path: Path, value: dict, owner_only: bool = False) -> bool:
@@ -125,7 +126,43 @@ BATCH_DAYS = 250
 MAX_MINUTES = 30
 
 
-def next_cycle_delay(collector: dict, code: int | None) -> tuple[int, int, bool]:
+def legacy_history_recheck_needed(collector: dict, now: datetime) -> bool:
+    """Skip costly historic republish when the last completed NSE session is covered.
+
+    An absent, incomplete, corrupted or unrecognized status always triggers
+    normal collector verification. This NEVER assumes raw new-company data is
+    eligible for the strict adjusted historical feed.
+    """
+    if now.tzinfo is None:
+        raise ValueError("TIMEZONE_AWARE_CLOCK_REQUIRED")
+    if not (
+        collector.get('state') == 'ADJUSTED_HISTORY_PUBLISHED'
+        and (collector.get('publish') or {}).get('published') is True
+        and collector.get('daily_range_complete') is True
+        and collector.get('corporate_action_range_complete') is True
+        and not collector.get('suspicious_consecutive_no_file_gap', True)
+    ):
+        return True
+    end = now.astimezone(IST).date() - timedelta(days=1)
+    last_expected = end
+    for _ in range(14):
+        if expected_archive_day(last_expected):
+            break
+        last_expected -= timedelta(days=1)
+    else:
+        return True
+    try:
+        recorded_end = date.fromisoformat(str(collector.get('range_end', '')))
+    except ValueError:
+        return True
+    # A future-dated source range is invalid, not a reason to skip auditing.
+    if recorded_end > end:
+        return True
+    return recorded_end < last_expected
+
+
+def next_cycle_delay(collector: dict, code: int | None,
+                     raw_backfill: dict | None = None) -> tuple[int, int, bool]:
     daily = collector.get('daily') or {}
     remaining = int(
         daily.get('remaining_archive_days', daily.get('remaining_weekdays', 0)) or 0
@@ -137,6 +174,19 @@ def next_cycle_delay(collector: dict, code: int | None) -> tuple[int, int, bool]
         and not blocked
         and collector.get('state') != 'ADJUSTED_HISTORY_PUBLISHED'
     )
+    # The old adjusted archive may be complete while thousands of original
+    # EQ research days are still missing. Run short raw catch-up cycles without
+    # wasting 30 minutes republishing identical adjusted data each time.
+    raw = raw_backfill or {}
+    raw_pending = int(raw.get('estimated_outstanding_expected_sessions') or 0)
+    raw_blocked = raw.get('source_blocked') is True or raw.get('state') in (
+        'NSE_ACCESS_BLOCKED', 'MAINBOARD_RESEARCH_BACKFILL_BLOCKED',
+        'ARCHIVE_MISSING_BATCH_REVIEW', 'UNEXPECTED_SOURCE_RESULT',
+    )
+    research_fast = raw.get('state') == 'RESEARCH_UNADJUSTED_EOD_PROGRESS' and (
+        raw_pending > 0 and not raw_blocked
+    )
+    fast_catchup = fast_catchup or research_fast
     wait_seconds = CATCHUP_INTERVAL_SECONDS if fast_catchup else INTERVAL_SECONDS
     return wait_seconds, remaining, fast_catchup
 
@@ -173,6 +223,45 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
+    def run_managed_research_child(command, log, timeout_seconds):
+        """Run bounded research subprocess with stop/timeout process-group cleanup."""
+        nonlocal active_child
+        if stopping:
+            return None
+        active_child = subprocess.Popen(
+            command, cwd=CODE_ROOT, env=env, stdout=log,
+            stderr=subprocess.STDOUT, start_new_session=True,
+        )
+        timed_out = False
+        try:
+            deadline = time.monotonic() + timeout_seconds
+            while not stopping and active_child.poll() is None:
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
+                time.sleep(0.5)
+            if active_child.poll() is None:
+                try:
+                    os.killpg(active_child.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    active_child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(active_child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    active_child.wait()
+            result = active_child.returncode
+            if timed_out:
+                log.write('[managed research] time budget reached; retry on next cycle\n')
+                log.flush()
+                return None
+            return result
+        finally:
+            active_child = None
+
     env = dict(os.environ)
     env.pop('UPSTOX_ANALYTICS_TOKEN', None)
     env['SMS_ENABLED'] = '0'
@@ -198,72 +287,35 @@ def main() -> int:
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
             })
-            code = None
-            try:
-                with log_path.open('a', encoding='utf-8', buffering=1) as log:
-                    log.write(f'\n=== history cycle {started} ===\n')
-                    active_child = subprocess.Popen(
-                        [
-                            sys.executable, str(CODE_ROOT/'swing_nse_history.py'),
-                            '--days', str(BATCH_DAYS),
-                            '--max-minutes', str(MAX_MINUTES),
-                        ],
-                        cwd=CODE_ROOT,
-                        env=env,
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        start_new_session=True,
-                    )
-                    deadline = time.monotonic() + (MAX_MINUTES + 2) * 60
-                    while active_child.poll() is None and not stopping and time.monotonic() < deadline:
-                        time.sleep(1)
-                    if active_child.poll() is None:
-                        try:
-                            os.killpg(active_child.pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
-                        try:
-                            active_child.wait(timeout=10)
-                        except subprocess.TimeoutExpired:
-                            try:
-                                os.killpg(active_child.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            active_child.wait()
-                    code = active_child.returncode
-                    if not stopping and time.monotonic() >= deadline:
-                        code = None
-                        log.write('collector timeout; will retry next cycle\n')
-                    active_child = None
-            except OSError as exc:
-                code = None
-                with log_path.open('a', encoding='utf-8') as log:
-                    log.write(f'collector start error: {type(exc).__name__}\n')
-
-            collector = {}
-            try:
-                collector = json.loads(
-                    (runtime/'nse_eod_history_status.json').read_text(encoding='utf-8')
-                )
-            except (OSError, ValueError, TypeError):
-                collector = {}
-
+            # New-company raw history runs FIRST so the slow but already
+            # completed legacy adjusted collector never starves it.
             # Run a separate, bounded all-EQ research backfill. Its database
             # is UNADJUSTED and cannot enter the trade/backtest feed.
             discovery_cycle = {'state': 'NOT_RUN'}
+            if stopping:
+                break
+            publish_worker_status(status_path, {
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'state': 'MAINBOARD_RESEARCH_COLLECTING',
+                'phase': 'RAW_HISTORY_FIRST',
+                'upstox': 'NOT_USED', 'orders': 'MANUAL_ONLY',
+            })
             try:
                 with log_path.open('a', encoding='utf-8', buffering=1) as log:
                     log.write('\n=== automatic all-mainboard research cycle ===\n')
-                    backfill = subprocess.run(
+                    log.flush()
+                    backfill_code = run_managed_research_child(
                         [sys.executable, str(CODE_ROOT/'nse_mainboard_history_backfill.py'),
                          '--days', '60', '--max-minutes', '12'],
-                        cwd=CODE_ROOT, env=env, stdout=log,
-                        stderr=subprocess.STDOUT, timeout=13*60, check=False,
+                        log, 13*60,
                     )
-                    radar = subprocess.run(
-                        [sys.executable, str(CODE_ROOT/'nse_mainboard_technical_radar.py')],
-                        cwd=CODE_ROOT, env=env, stdout=log,
-                        stderr=subprocess.STDOUT, timeout=5*60, check=False,
+                    log.write('=== raw EOD finished; technical radar starts ===\n')
+                    log.flush()
+                    radar_code = (
+                        run_managed_research_child(
+                            [sys.executable, str(CODE_ROOT/'nse_mainboard_technical_radar.py')],
+                            log, 5*60,
+                        ) if not stopping else None
                     )
                 backfill_state = json.loads(
                     (runtime/'mainboard_raw_research_history_status.json').read_text(
@@ -274,8 +326,8 @@ def main() -> int:
                         encoding='utf-8')
                 )
                 discovery_cycle = {
-                    'state': 'RESEARCH_CYCLE_COMPLETED' if backfill.returncode == 0 and
-                             radar.returncode == 0 else 'RESEARCH_CYCLE_PARTIAL',
+                    'state': 'RESEARCH_CYCLE_COMPLETED' if backfill_code == 0 and
+                             radar_code == 0 else 'RESEARCH_CYCLE_PARTIAL',
                     'backfill': backfill_state.get('state', 'UNKNOWN'),
                     'archive_days_added': int(backfill_state.get(
                         'archive_days_added_this_run') or 0),
@@ -293,6 +345,73 @@ def main() -> int:
                     'trade_eligible':False,
                 }
 
+
+            if stopping:
+                break
+            code = None
+            collector = {}
+            try:
+                collector = json.loads(
+                    (runtime/'nse_eod_history_status.json').read_text(encoding='utf-8')
+                )
+            except (OSError, ValueError, TypeError):
+                collector = {}
+            legacy_needed = legacy_history_recheck_needed(
+                collector, datetime.now(timezone.utc))
+            publish_worker_status(status_path, {
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+                'state': 'LEGACY_ADJUSTED_COLLECTING' if legacy_needed else 'LEGACY_ADJUSTED_UP_TO_DATE',
+                'phase': 'VERIFIED_ADJUSTED_HISTORY',
+                'raw_research_cycle': discovery_cycle,
+                'legacy_collector_skipped': not legacy_needed,
+                'upstox': 'NOT_USED', 'orders': 'MANUAL_ONLY',
+            })
+            if not legacy_needed:
+                code = 0
+                with log_path.open('a', encoding='utf-8', buffering=1) as log:
+                    log.write('=== adjusted NSE archive already covers all reviewed completed sessions; no republish ===\\n')
+            else:
+                try:
+                    with log_path.open('a', encoding='utf-8', buffering=1) as log:
+                        log.write(f'\n=== adjusted history cycle {started} ===\n')
+                        log.flush()
+                        active_child = subprocess.Popen(
+                            [
+                                sys.executable, str(CODE_ROOT/'swing_nse_history.py'),
+                                '--days', str(BATCH_DAYS),
+                                '--max-minutes', str(MAX_MINUTES),
+                            ],
+                            cwd=CODE_ROOT,
+                            env=env,
+                            stdout=log,
+                            stderr=subprocess.STDOUT,
+                            start_new_session=True,
+                        )
+                        deadline = time.monotonic() + (MAX_MINUTES + 2) * 60
+                        while active_child.poll() is None and not stopping and time.monotonic() < deadline:
+                            time.sleep(1)
+                        if active_child.poll() is None:
+                            try:
+                                os.killpg(active_child.pid, signal.SIGTERM)
+                            except ProcessLookupError:
+                                pass
+                            try:
+                                active_child.wait(timeout=10)
+                            except subprocess.TimeoutExpired:
+                                try:
+                                    os.killpg(active_child.pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                                active_child.wait()
+                        code = active_child.returncode
+                        if not stopping and time.monotonic() >= deadline:
+                            code = None
+                            log.write('collector timeout; will retry next cycle\n')
+                        active_child = None
+                except OSError as exc:
+                    code = None
+                    with log_path.open('a', encoding='utf-8') as log:
+                        log.write(f'collector start error: {type(exc).__name__}\n')
             post_publish = {'state': 'NOT_READY'}
             if collector.get('state') == 'ADJUSTED_HISTORY_PUBLISHED':
                 try:
@@ -302,7 +421,16 @@ def main() -> int:
                     post_publish = {'state': 'POST_PUBLISH_LOG_ERROR'}
 
             daily = collector.get('daily') or {}
-            wait_seconds, remaining, fast_catchup = next_cycle_delay(collector, code)
+            raw_status = {}
+            try:
+                raw_status = json.loads(
+                    (runtime/'mainboard_raw_research_history_status.json').read_text(
+                        encoding='utf-8')
+                )
+            except (OSError, ValueError, TypeError):
+                raw_status = {}
+            wait_seconds, remaining, fast_catchup = next_cycle_delay(
+                collector, code, raw_backfill=raw_status)
             next_run = time.time() + wait_seconds
             publish_worker_status(status_path, {
                 'updated_at': datetime.now(timezone.utc).isoformat(),
@@ -316,6 +444,7 @@ def main() -> int:
                 'next_run_seconds': wait_seconds,
                 'post_publish_validation': post_publish,
                 'mainboard_auto_research': discovery_cycle,
+                'legacy_collector_skipped': not legacy_needed,
                 'next_run_epoch': next_run,
                 'upstox': 'NOT_USED',
                 'orders': 'MANUAL_ONLY',
