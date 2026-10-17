@@ -31,7 +31,7 @@ STEPS = [
     # mainboard companies in a bounded daily batch. Index/PDF review ONLY.
     ('official_annual_pdf_source_index',
      [sys.executable, str(CODE_ROOT/'nse_official_annual_pdf_auto_index.py'),
-      '--limit', '25', '--download', '1'], 8*60),
+      '--limit', '25', '--download', '2'], 8*60),
     # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
