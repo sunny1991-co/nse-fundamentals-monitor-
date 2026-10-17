@@ -78,7 +78,7 @@ last report. The original NSE annual baseline, historical database and strict
 trading signals remain untouched.
 
 
-## Official audited annual XBRL catch-up (18 October 2026 implementation)
+## Official audited annual XBRL catch-up (17 October 2026 implementation)
 
 The daily Termux research maintenance runs a bounded 25-filing catch-up
 through the existing nse_annual_history.py verified XBRL extractor:
