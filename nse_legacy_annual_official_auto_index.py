@@ -364,7 +364,7 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         # Include deferred issuers; a zero-request run is NOT completion.
         "symbols_remaining_after_this_run":(
             len(deferred)+max(
-                0,len(eligible)-counts["checked"]-len(errors)
+                0,len(eligible)-counts["checked"]
             )
         ),
         "new_official_old_annual_xbrl_links_indexed":counts["new_index_rows"],
