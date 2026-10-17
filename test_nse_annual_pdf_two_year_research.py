@@ -23,6 +23,7 @@ from nse_annual_pdf_two_year_research import (
 )
 from nse_annual_pdf_section_review import (
     LATEST_OUTPUT, FIELDS as SECTION_FIELDS, VERSION as SECTION_VERSION,
+    SectionReviewBlocked,
 )
 from nse_official_annual_pdf_auto_index import PDF_DIR
 from test_nse_annual_pdf_numeric_review import PDF, Reader, WrappedPDFReader, BadBalance
