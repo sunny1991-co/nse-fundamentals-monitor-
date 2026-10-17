@@ -626,3 +626,40 @@ The numerical strings above come from the linked NSE original report; the
 Python parser independently re-reads private PDF bytes. If pypdf line ordering
 does not preserve the statement's label and both year columns, do not
 force a PASS: capture the review issue and improve the extractor offline.
+
+## FY23/24 20MICRONS PDF numeric extraction failure: safer v2 wrapped-row review
+
+Real Termux output reported `Statement_Units=INR_LAKHS` but
+`Revenue_Operations_Cr:MISSING_OR_AMBIGUOUS_TWO_COLUMN_ROW`,
+`Total_Equity_Cr:MISSING_OR_AMBIGUOUS_TWO_COLUMN_ROW`, and
+`BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS` for the cached
+20MICRONS FY2023-24 NSE report. This is **not evidence that the report
+omitted the metrics**: the original NSE PDF at its attested annual-report
+URL visibly contains revenue, total equity and separate current and
+noncurrent borrowing rows. The failure is in converting PDF *visual*
+tabular cells into text rows via pypdf.
+
+`nse_annual_pdf_numeric_review.py` **v2**:
+- Re-examines safely cached v1 incomplete reviews without deleting the v1
+  review evidence; version key prevents false v1 completion.
+- Allows a label followed by **at most two immediate numeric-only** text
+  continuations on the same physical PDF page; never crosses another
+  named item or paragraph.
+- Independently requests pypdf's `extraction_mode="layout"` from the
+  **same four exact original PDF pages**, whenever the installed pypdf
+  supports it. If default and layout modes disagree on a value,
+  the financial row is quarantined as a conflict, not guessed.
+- Demands exactly one borrowing row beneath Non-current Liabilities and
+  one beneath Current Liabilities, in that order; excludes lease obligations.
+- Keeps both year dates, INR lakh scale, whole-balance-sheet and P&L
+  arithmetic checks, immutable NSE original URL/ISIN/SHA, no official
+  numeric/XBRL promotion and `orders=DISABLED`.
+
+Synthetic regressions recreate the observed annual table cells (including
+split rows, separate numeric columns, cross-mode contradiction and mistaken
+borrowing sections), and preserve the older source and financial files.
+The actual cached 20MICRONS report **must still be run in Termux** before
+claiming complete PDF candidates: production PDF text layout is not
+equivalent to any synthetic fixture. Even a successful PDF candidate remains
+`Audited_Consolidated_Facts_Verified=false` until separately reconciled
+against reliable annual NSE filing/XBRL context.
