@@ -243,7 +243,8 @@ class PDFTwoYearResearchTests(unittest.TestCase):
         self.untouched()
 
     def test_original_balance_conflict_never_becomes_trend(self):
-        with self.assertRaises(SectionReviewBlocked):
+        with self.assertRaisesRegex(
+                PDFComparisonBlocked,"ORIGINAL_CURRENT_PDF_EVIDENCE_INCOMPLETE"):
             run(self.root,now=NOW,max_files=1,reader_cls=BadBalance)
         self.assertFalse((self.root/OUTPUT).exists())
         self.untouched()
