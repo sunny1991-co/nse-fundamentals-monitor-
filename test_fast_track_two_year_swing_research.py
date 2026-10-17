@@ -92,7 +92,7 @@ class FastTrackResearchTests(unittest.TestCase):
         self_bars=bars.copy()
         self_bars["Signal"]=False
         self_bars.loc[self_bars.index[-1],"Signal"]=True
-        self_bars["Stop"]=95.
+        self_bars["Stop"]=self_bars["Close"]*.95
         self_bars["Relative_TRI_63d_Return"]=.15
         return self_bars
 
