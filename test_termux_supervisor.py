@@ -5,6 +5,23 @@ import termux_supervisor as supervisor
 
 
 class TermuxSupervisorTests(unittest.TestCase):
+    def test_project_doctor_first_health_check_due_immediately(self):
+        boot_monotonic=12345.0
+        previous=supervisor.initial_doctor_last_check(boot_monotonic)
+        self.assertGreaterEqual(
+            boot_monotonic-previous,supervisor.AUTO_DOCTOR_INTERVAL
+        )
+        # Subsequent normal checks retain the bounded two-minute interval.
+        last_check=boot_monotonic
+        self.assertLess(
+            boot_monotonic+supervisor.AUTO_DOCTOR_INTERVAL-1-last_check,
+            supervisor.AUTO_DOCTOR_INTERVAL,
+        )
+        self.assertGreaterEqual(
+            boot_monotonic+supervisor.AUTO_DOCTOR_INTERVAL-last_check,
+            supervisor.AUTO_DOCTOR_INTERVAL,
+        )
+
     def test_restart_delay_uses_short_delay_until_restart_storm(self):
         restarts = []
         for second in [0, 30, 60, 90, 120]:

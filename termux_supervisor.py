@@ -52,6 +52,15 @@ def release_wakelock(run=subprocess.run, which=shutil.which) -> None:
         pass
 
 
+def initial_doctor_last_check(now_monotonic: float) -> float:
+    """Trigger the first read-only diagnostic immediately on supervisor start.
+
+    The health check itself still honors each child's 10-minute start grace;
+    a first report must not imply that an early startup is a stale process.
+    """
+    return now_monotonic - AUTO_DOCTOR_INTERVAL
+
+
 def restart_delay(restarts: list[float], now: float) -> tuple[list[float], int]:
     recent = [stamp for stamp in restarts if now-stamp <= 300]
     recent.append(now)
@@ -295,7 +304,7 @@ def main() -> int:
 
                 publish()
                 last_publish = time.monotonic()
-                last_doctor = time.monotonic()
+                last_doctor = initial_doctor_last_check(time.monotonic())
                 restart_history: dict[str, list[float]] = {}
                 while not stopping:
                     failed_name = next(

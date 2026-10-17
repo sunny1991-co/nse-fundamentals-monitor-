@@ -478,3 +478,13 @@ To install new supervisor code after PR merge:
 Under Android process kill, powered-off phone, loss of data connectivity or
 unavailable external APIs, an on-device guardian cannot operate. Truly
 always-on operation would require separate cloud hosting and credentials.
+
+### First project doctor status after supervisor restart
+
+The first self-healing health scan now runs immediately after all supervised
+Termux subprocesses start, writing
+`runtime/project_auto_doctor_status.json` without a two-minute initial
+blind spot. Checks then repeat at the normal two-minute cadence. The first
+scan reports worker startup as a grace period, NOT a stuck worker; the
+10-minute per-process safety delay and repeated health-check confirmation
+still apply before any automatic restart.
