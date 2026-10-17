@@ -135,6 +135,12 @@ class ChartResearchTests(unittest.TestCase):
         clean=normalize_candles(bars,"20MICRONS",NOW)
         self.assertEqual(len(clean),106)
 
+    def test_future_reported_minute_is_explicitly_rejected(self):
+        bad=synthetic_bars()
+        bad[-1][0]=(NOW+timedelta(seconds=20)).isoformat()
+        with self.assertRaisesRegex(ChartUnavailable,"FUTURE_CANDLE"):
+            normalize_candles(bad,"20MICRONS",NOW)
+
     def test_malformed_prices_or_duplicate_periods_are_blocked(self):
         bad=synthetic_bars()
         bad[-1][2]=bad[-1][4]-1
