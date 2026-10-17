@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
-from urllib.request import urlopen
+from urllib.request import Request,urlopen
 from urllib.error import URLError
 from typing import Any
 
@@ -69,7 +69,13 @@ def dashboard_ok(*,probe=None)->bool:
     if probe is not None:
         return bool(probe())
     try:
-        with urlopen("http://127.0.0.1:8787/healthz",timeout=1.5) as response:
+        # Connect to the fixed local IPv4 socket, but present the exact
+        # trusted Host configured by the Termux supervisor (APP_HOST=localhost).
+        # Using the socket address as Host gets rejected by Flask's
+        # TRUSTED_HOSTS and incorrectly triggers dashboard restarts.
+        probe_request=Request("http://127.0.0.1:8787/healthz",
+                              headers={"Host":"localhost"})
+        with urlopen(probe_request,timeout=1.5) as response:
             return response.status==200
     except (OSError,URLError,ValueError):
         return False
