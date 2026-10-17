@@ -76,3 +76,37 @@ Manual data-only check:
 Insufficient or stale NSE list evidence blocks publication and preserves the
 last report. The original NSE annual baseline, historical database and strict
 trading signals remain untouched.
+
+
+## Official audited annual XBRL catch-up (18 October 2026 implementation)
+
+The daily Termux research maintenance runs a bounded 25-filing catch-up
+through the existing nse_annual_history.py verified XBRL extractor:
+
+    cd ~/nse-fundamentals-monitor-
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_mainboard_discovery.py
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_history.py --include-discovered --limit 25
+
+This opts into official current NSE mainboard EQ securities verified by the
+fresh discovery catalog in addition to the previous fixed FY baseline.
+Discovery older than 48 hours, invalid EQ/ISIN data, missing verified SME
+source or truncated catalog causes an error, not an unverified fallback.
+
+The extractor filters NSE official filing-index records by FY March 31,
+audited, consolidated, publication date, then verifies the XBRL reporting
+basis and annual contexts. It appends only verified records to
+annual_historical_results.csv in the private NSE_DATA_DIR. Previously
+verified data is cached; blocked documents remain retryable. The original
+FY2425.csv and NSE_FY2025-26_Consolidated_Fundamentals.csv stay unchanged.
+
+The current four-year fundamental quality checker already merges verified
+historical facts, so after enough source-verified FY 2022-23 through FY 2025-26
+records are collected, the new symbols may be evaluated by the SAME STRICT
+annual rules. Not all companies will have four audited consolidated fiscal
+years (particularly newer listings). No missing financial field is imputed;
+source access blocks and unfinished records do not count as PASS.
+
+**Limits:** A batch of 25 source filings is not 25 complete companies. The
+official NSE API/index can block or lack filings. No historical stock OHLCV
+backfill or real trading is added by this step. Do not equate a fundamental
+PASS with a tested entry/stop/exit strategy or ready broker order.
