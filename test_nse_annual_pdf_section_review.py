@@ -124,6 +124,42 @@ class FakeTwentyMicronsFinancialReader(FakeReader):
         self.pages=[FakeTwentyMicronsFinancialSectionPage(i) for i in range(281)]
 
 
+class FakeLongConsolidatedAuditorPage:
+    """Synthetic FY2023-24 layout matching published 21STCENMGM headings."""
+    def __init__(self,i):
+        self.i=i
+
+    def extract_text(self):
+        if self.i==0:
+            return "Twentyfirst Century Management Services Annual Report 2023-24"
+        if self.i==1:
+            return ("CONTENTS: Consolidated Balance Sheet, Consolidated "
+                    "Profit & Loss Statement, Consolidated Cash Flow Statement")
+        if self.i==117:  # physical page 118
+            return ("Independent Auditor's Report. We have audited the "
+                    "Consolidated Financial Statements. Basis for Opinion.")
+        if self.i==125:  # physical page 126; generic TOTAL, not TOTAL ASSETS
+            return ("CONSOLIDATED BALANCE SHEET AS ON 31ST MARCH 2024. "
+                    "ASSETS: Current Assets; TOTAL 5,556.51 3,776.48. "
+                    "EQUITY AND LIABILITIES Equity Share capital "
+                    "1,050.00 1,050.00. TOTAL 5,556.51 3,776.48.")
+        if self.i==126:  # physical page 127; ampersand and Profit/(loss)
+            return ("CONSOLIDATED PROFIT & LOSS STATEMENT FOR THE YEAR ENDED "
+                    "31ST MARCH 2024. Revenue From Operations 3,855.42 (916.96). "
+                    "Profit/(loss) before tax 3292.60 (1793.61).")
+        if self.i==127:  # physical page 128
+            return ("CONSOLIDATED CASH FLOW STATEMENT FOR THE YEAR ENDED "
+                    "31ST MARCH 2024. CASH FLOW FROM OPERATING ACTIVITIES "
+                    "and CASH FLOW FROM INVESTING ACTIVITIES.")
+        return "Board report and notes to accounts"
+
+
+class FakeLongConsolidatedAuditorReader(FakeReader):
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages=[FakeLongConsolidatedAuditorPage(i) for i in range(152)]
+
+
 class FakeSectionIndexOnlyReader(FakeReader):
     def __init__(self,stream,strict=True):
         super().__init__(stream,strict=strict)
@@ -312,6 +348,33 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
             row["Consolidated_Profit_Loss_Page_1based"],
             row["Consolidated_Cash_Flow_Page_1based"],
         ])
+        self.assertEqual(row["Section_Review_State"],
+                         "CANDIDATE_SECTIONS_LOCATED_SOURCE_AUDIT_STILL_REQUIRED")
+        self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
+        self.assertEqual(report["financial_facts_added"],0)
+        self.assertEqual(report["strict_annual_passes_added"],0)
+        self.assert_protected()
+
+    def test_21stcenmgm_layout_long_auditor_and_ampersand_statement(self):
+        # Original FY2023-24 report uses 10-page auditor section before
+        # three consecutive consolidated statements on pages 126-128.
+        # Section headings are corroborated, but amounts are NOT verified.
+        self.receipt[0]["Financial_Year"]="2023-24"
+        self.index[0]["Financial_Year"]="2023-24"
+        csv_write(self.root/PDF_LOG,PDF_FIELDS,self.receipt)
+        csv_write(self.root/PDF_INDEX,OUTPUT_FIELDS,self.index)
+        report=run(self.root,max_files=1,now=NOW,
+                   reader_cls=FakeLongConsolidatedAuditorReader)
+        self.assertEqual(report["reports_reviewed_this_run"],1)
+        with (self.root/LATEST_OUTPUT).open() as handle:
+            row=next(csv.DictReader(handle))
+        self.assertEqual([
+            row["Auditor_Page_1based"],
+            row["Consolidated_Balance_Sheet_Page_1based"],
+            row["Consolidated_Profit_Loss_Page_1based"],
+            row["Consolidated_Cash_Flow_Page_1based"],
+        ],["118","126","127","128"])
+        self.assertEqual(row["Review_Version"],VERSION)
         self.assertEqual(row["Section_Review_State"],
                          "CANDIDATE_SECTIONS_LOCATED_SOURCE_AUDIT_STILL_REQUIRED")
         self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
