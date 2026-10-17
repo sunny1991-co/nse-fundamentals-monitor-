@@ -169,8 +169,12 @@ class LegacyEvidenceQueueTests(unittest.TestCase):
         rows=self.rows()
         self.assertEqual(rows[(SYM,"2023-24")]["Source_Stage"],
                          "PDF_SIX_CORE_NUMERIC_CANDIDATES_ONLY")
+        self.assertEqual(rows[(SYM,"2023-24")]["Independent_PDF_Evidence_Stage"],
+                         "CURRENT_FY_SIX_PDF_CORE_CANDIDATES_UNVERIFIED")
         self.assertEqual(rows[(SYM,"2022-23")]["Source_Stage"],
                          "LATER_ANNUAL_PDF_PRIOR_FY_COMPARATIVE_ONLY")
+        self.assertEqual(rows[(SYM,"2022-23")]["Independent_PDF_Evidence_Stage"],
+                         "LATER_YEAR_REPORT_PRIOR_FY_COMPARATIVE_ONLY")
         self.assertEqual(rows[(SYM,"2022-23")][
             "Previous_FY_Comparative_Six_Core_From_Later_PDF"],"true")
         self.assertEqual(rows[(SYM,"2022-23")]["Original_XBRL_Six_Core_Fields_In_Local_History"],"false")
@@ -186,6 +190,37 @@ class LegacyEvidenceQueueTests(unittest.TestCase):
         self.assertTrue(all(r["Trade_Eligible"]=="false" for r in rows.values()))
         self.assertTrue(all(r["Orders"]=="DISABLED" for r in rows.values()))
         self.assertTrue(all(r["Original_Audited_XBRL_Reverified_This_Run"]=="false" for r in rows.values()))
+        self.assert_protected()
+
+    def test_original_xbrl_url_has_priority_but_never_hides_pdf_candidate(self):
+        for year,url in (("2023-24",URL),("2022-23",
+                         URL.replace("2024","2023"))):
+            name=f"nse_legacy_financial_results_{year}.csv"
+            end="2024-03-31" if year=="2023-24" else "2023-03-31"
+            fields=["Symbol","Period Ended","Audited / Unaudited",
+                    "Consolidated / Non-Consolidated","Period","XBRL URL"]
+            save(self.root/name,fields,[{
+                "Symbol":SYM,"Period Ended":end,
+                "Audited / Unaudited":"Audited",
+                "Consolidated / Non-Consolidated":"Consolidated",
+                "Period":"Annual",
+                "XBRL URL":url.replace("/annual_reports/","/corporate/xbrl/")
+                                  .replace(".pdf",".xml"),
+            }])
+        result=snapshot(self.root,now=NOW)
+        items=self.rows()
+        self.assertEqual(items[(SYM,"2023-24")]["Source_Stage"],
+                         "ORIGINAL_XBRL_INDEX_LINKS_ONLY")
+        self.assertEqual(items[(SYM,"2022-23")]["Source_Stage"],
+                         "ORIGINAL_XBRL_INDEX_LINKS_ONLY")
+        self.assertEqual(items[(SYM,"2023-24")]["Independent_PDF_Evidence_Stage"],
+                         "CURRENT_FY_SIX_PDF_CORE_CANDIDATES_UNVERIFIED")
+        self.assertEqual(items[(SYM,"2022-23")]["Independent_PDF_Evidence_Stage"],
+                         "LATER_YEAR_REPORT_PRIOR_FY_COMPARATIVE_ONLY")
+        self.assertEqual(result["company_years_by_independent_pdf_evidence"][
+            "CURRENT_FY_SIX_PDF_CORE_CANDIDATES_UNVERIFIED"],1)
+        self.assertEqual(result["company_years_by_independent_pdf_evidence"][
+            "LATER_YEAR_REPORT_PRIOR_FY_COMPARATIVE_ONLY"],1)
         self.assert_protected()
 
     def test_prior_year_column_never_claimed_as_independent_xbrl(self):
