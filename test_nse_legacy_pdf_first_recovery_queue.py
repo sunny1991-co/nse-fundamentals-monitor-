@@ -136,7 +136,7 @@ class PDFSourceRecoveryTests(unittest.TestCase):
             "2026-10-18T06:44:22+00:00")
         rows=self.data()
         self.assertEqual([r["Symbol"] for r in rows],
-                         ["BPL","20MICRONS","BRITANNIA","NEWCO"])
+                         ["BPL","BRITANNIA","20MICRONS","NEWCO"])
         by_sym={r["Symbol"]:r for r in rows}
         self.assertEqual(by_sym["BPL"]["Next_Research_Action"],
                          "ARCHIVE_ALREADY_INDEXED_OFFICIAL_FY2023_24_PDF_WHEN_SOURCE_PERMITTED")
