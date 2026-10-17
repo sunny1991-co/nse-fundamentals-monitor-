@@ -52,48 +52,71 @@ def normalize_header(value: str) -> str:
     return " ".join(str(value).strip().lstrip("\ufeff").upper().split())
 
 
+def pick_column(headers: dict[str, str], *candidates: str) -> str | None:
+    return next((headers[name] for name in candidates if name in headers), None)
+
+
 def listing_rows(payload: bytes, *, minimum: int, maximum: int, is_sme: bool) -> dict[str, dict]:
-    """Fail closed on HTML, truncation, bad headers, duplicates or ambiguous IDs."""
+    """Strict mainboard IDs; SME may provide symbol-only *exclusion* evidence.
+
+    SME rows can ONLY remove securities from the mainboard list, never
+    admit a symbol. A blank SME ISIN is not used for cross-ISIN exclusion.
+    """
+    label = "SME" if is_sme else "EQUITY"
     if not isinstance(payload, bytes) or not 64 <= len(payload) <= MAX_BYTES:
-        raise DiscoveryUnavailable("OFFICIAL_CSV_INVALID_SIZE")
+        raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_INVALID_SIZE")
     try:
         decoded = payload.decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(decoded, newline=""))
         headers = {normalize_header(h): h for h in (reader.fieldnames or []) if h}
-        needed = ("SYMBOL", "ISIN NUMBER", "NAME OF COMPANY")
-        if any(h not in headers for h in needed):
-            raise DiscoveryUnavailable("OFFICIAL_CSV_HEADERS_UNEXPECTED")
-        if not is_sme and "SERIES" not in headers:
-            raise DiscoveryUnavailable("MAINBOARD_SERIES_MISSING")
+        symbol_col = pick_column(headers, "SYMBOL", "TRADING SYMBOL", "TRADING_SYMBOL")
+        isin_col = pick_column(headers, "ISIN NUMBER", "ISIN", "ISIN NO", "ISIN NO.", "ISIN CODE")
+        name_col = pick_column(headers, "NAME OF COMPANY", "COMPANY NAME", "NAME", "SECURITY NAME")
+        series_col = pick_column(headers, "SERIES", "SECURITY SERIES")
+        date_col = pick_column(headers, "DATE OF LISTING", "LISTING DATE")
+        if (not symbol_col or (not is_sme and
+                (not isin_col or not name_col or not series_col))):
+            # Only expose public CSV field names, never source row data or tokens.
+            safe = [re.sub(r"[^A-Z0-9_ ]", "", h)[:28]
+                    for h in list(headers)[:9]]
+            raise DiscoveryUnavailable(
+                label + "_OFFICIAL_CSV_HEADERS_UNEXPECTED:" + ",".join(safe)
+            )
         by_symbol: dict[str, dict] = {}
         seen_isins: set[str] = set()
         for row in reader:
-            if None in row:  # Extra delimiter or otherwise malformed CSV.
-                raise DiscoveryUnavailable("OFFICIAL_CSV_ROW_MALFORMED")
-            sym = str(row.get(headers["SYMBOL"], "")).strip().upper()
-            isin = str(row.get(headers["ISIN NUMBER"], "")).strip().upper()
-            name = str(row.get(headers["NAME OF COMPANY"], "")).strip()
-            series = str(row.get(headers.get("SERIES", ""), "")).strip().upper()
+            if None in row:  # Extra delimiter or malformed CSV row.
+                raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_ROW_MALFORMED")
+            sym = str(row.get(symbol_col, "")).strip().upper()
+            isin = str(row.get(isin_col, "")).strip().upper() if isin_col else ""
+            name = str(row.get(name_col, "")).strip() if name_col else ""
+            series = str(row.get(series_col, "")).strip().upper() if series_col else ""
             if not sym and not isin and not name:
                 continue
-            if not SYMBOL.fullmatch(sym) or not ISIN.fullmatch(isin) or not name:
-                raise DiscoveryUnavailable("OFFICIAL_CSV_INCOMPLETE_SECURITY")
-            if not is_sme and series != "EQ":
-                continue  # Mainboard universe is EQ, never BE/BZ/etc.
-            if sym in by_symbol or isin in seen_isins:
-                raise DiscoveryUnavailable("OFFICIAL_CSV_CONFLICTING_INSTRUMENT")
-            seen_isins.add(isin)
+            if not SYMBOL.fullmatch(sym):
+                raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_INVALID_SYMBOL")
+            if not is_sme:
+                # On the *mainboard* list never infer identity from symbol alone.
+                if not ISIN.fullmatch(isin) or not name:
+                    raise DiscoveryUnavailable("EQUITY_OFFICIAL_CSV_INCOMPLETE_SECURITY")
+                if series != "EQ":
+                    continue
+            elif isin and not ISIN.fullmatch(isin):
+                raise DiscoveryUnavailable("SME_OFFICIAL_CSV_INVALID_OPTIONAL_ISIN")
+            if sym in by_symbol or (isin and isin in seen_isins):
+                raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_CONFLICTING_INSTRUMENT")
+            if isin:
+                seen_isins.add(isin)
             by_symbol[sym] = {
                 "Symbol": sym, "Company": name, "ISIN": isin,
-                "Listing_Date": str(row.get(headers.get("DATE OF LISTING", ""), "")).strip(),
+                "Listing_Date": str(row.get(date_col, "")).strip() if date_col else "",
                 "Series": series if is_sme else "EQ",
             }
         if not minimum <= len(by_symbol) <= maximum:
-            raise DiscoveryUnavailable("OFFICIAL_CSV_IMPLAUSIBLE_UNIVERSE_SIZE")
+            raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_IMPLAUSIBLE_UNIVERSE_SIZE")
         return by_symbol
     except (UnicodeError, csv.Error, TypeError, AttributeError):
-        raise DiscoveryUnavailable("OFFICIAL_CSV_PARSE_ERROR") from None
-
+        raise DiscoveryUnavailable(label + "_OFFICIAL_CSV_PARSE_ERROR") from None
 
 def download_official(url: str, session: requests.Session) -> bytes:
     response = session.get(
@@ -194,7 +217,7 @@ def refresh(root: Path, fetch=None, *, min_main: int = MIN_MAINBOARD,
     main = listing_rows(main_raw, minimum=min_main, maximum=MAX_MAINBOARD, is_sme=False)
     sme = listing_rows(sme_raw, minimum=min_sme, maximum=MAX_SME, is_sme=True)
     sme_symbols = set(sme)
-    sme_isins = {r["ISIN"] for r in sme.values()}
+    sme_isins = {r["ISIN"] for r in sme.values() if r["ISIN"]}
     confirmed = {sym: row for sym, row in main.items()
                  if sym not in sme_symbols and row["ISIN"] not in sme_isins}
     if len(confirmed) < min_main:
@@ -257,7 +280,9 @@ def refresh(root: Path, fetch=None, *, min_main: int = MIN_MAINBOARD,
     status = {
         "checked_at_utc": stamp, "state": "OFFICIAL_DISCOVERY_UPDATED",
         "mainboard_eq_count": len(confirmed), "sme_excluded": len(main)-len(confirmed),
-        "sme_list_count": len(sme), "baseline_tracked_in_mainboard": sum(
+        "sme_list_count": len(sme), "sme_isin_rows": len(sme_isins),
+        "sme_exclusion_basis": "SYMBOL_AND_AVAILABLE_ISIN",
+        "baseline_tracked_in_mainboard": sum(
             row["Baseline_Tracked"] == "true" for row in catalog
         ),
         "outside_annual_baseline": sum(row["Baseline_Tracked"] == "false" for row in catalog),
