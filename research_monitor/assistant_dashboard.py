@@ -27,7 +27,7 @@ Technical signals and backtests have not demonstrated independently
 profitable trading. This is not a live buy recommendation.</p>
 <p>The strategy decides hypothetical entry zone, stop-loss, targets and
 100-session maximum holding. You only approve or reject the exact paper plan
-and choose an integer quantity no greater than the displayed risk cap.</p>
+and choose an integer quantity no greater than the displayed risk cap.\nCombined paper positions must also fit within 3% planned total stop risk\nand 100% planned total notional across this ledger. These are NOT real\nbroker-account balance or loss guarantees.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if current %}
 <h2>{{ current.plan.symbol }} · {{ current.plan.strategy }}</h2>
