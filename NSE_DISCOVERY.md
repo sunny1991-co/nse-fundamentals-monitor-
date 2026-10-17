@@ -212,3 +212,41 @@ generalized into automatically verified financial facts without more source
 validation. Further needed: corporate-action-adjusted archive, correct
 historical universe/backtests, independent NIFTY 50 TRI, and forward paper
 validation. Strict trade eligibility is never weakened.
+
+## Automatic older audited annual-report PDF SOURCE discovery
+
+NSE's official corporate Annual Reports portal lists company-submitted full
+annual report attachments by symbol and fiscal year:
+https://www.nseindia.com/companies-listing/corporate-filings-annual-reports
+
+The existing supervised daily Termux maintenance now tries the official NSE
+Annual Reports index for up to **25** different NSE Mainboard EQ symbols per
+day (weighted toward companies not yet in the original annual baseline).
+Checks rotate; old and new companies are never permanently starved. It
+records only FY2022–23 and FY2023–24 full-report source candidates, and
+downloads at most **one** original NSE-hosted PDF per day into a private local
+runtime folder, with a 26 MB per-file and 1 GiB total budget. Low disk space
+or NSE 403/429 stops downloads (no access-control bypass). API changes are
+shown as errors, not silently converted to guessed URLs.
+
+Termux automatically invokes it after the official mainboard update, or use:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --limit 25 --download 1
+
+Private reports:
+- nse_official_annual_pdf_candidates.csv
+- runtime/nse_official_annual_pdf_index_ledger.csv
+- runtime/nse_official_annual_pdf_collector_status.json
+- runtime/nse_official_pdf_download_receipts.csv
+- runtime/official_annual_report_pdf_candidates/ (PDFs by hashed URL)
+
+This is automatic *source discovery and provenance capture*, NOT automatic
+approval of financial statements. The next audit phase must separately
+establish exact issuer, audited consolidated reporting basis, date/period,
+units, statement values, source page, and comparative reconciliation, and
+reject ambiguous scans/quarters. Only successful independently source
+verified annual numbers can enter the strict four-year screen. No PDF
+financial figures or new trade signals are ever fabricated by this collector.
+New listings that have less than four complete reporting years remain
+research-only. Neither manual owner approval nor live broker orders are
+turned on automatically by any part of this system.
