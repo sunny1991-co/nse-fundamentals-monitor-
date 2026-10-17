@@ -360,3 +360,31 @@ session. Historic and new-company raw-EOD data must not become tradable
 without corporate action adjustments and full audited fundamental screens.
 No real order, protective stop, owner YES/NO approval, or SMS alert is enabled
 by the chart module.
+
+
+## Prioritizing FY22/23 source documents for the existing complete FY25/26 set
+
+The automatic NSE Annual Report metadata collector now **prioritizes**
+companies with all six mandatory numeric baseline fields populated in BOTH
+FY2024-25 and FY2025-26. The strict screen needs two earlier audited,
+consolidated **full-year** reports to calculate 3-year CAGR, ROE, ROCE and
+cash-flow quality. There is no value in treating an FY22 or FY23 Q4 filing
+as a complete full fiscal year.
+
+This priority changes the order in which old archived annual-report URLs
+and PDFs are collected; **it does not classify those six baseline numbers as
+independently audited or verified**. The original source quality checks,
+symbol/ISIN-linked official mainboard list, report provenance, HTTP block
+handling, 26 MiB PDF size cap, 1 GiB private storage cap and 512 MiB
+free-disk safety reserve remain in effect.
+
+Never-checked new listings are still visited; if previously checked, all
+companies rotate by oldest check time. During each scheduled daily
+maintenance the source collector attempts up to 25 verified NSE companies
+and privately archives up to TWO original official older-year PDF candidates.
+
+After updating, the status summary will include
+prioritized_two_year_six_core_company_sources_selected.
+The PDFs remain evidence for independent audited-consolidated numeric
+reconciliation and do NOT feed annual_historical_results.csv,
+strict fundamental pass, strategy backtest or live broker orders.
