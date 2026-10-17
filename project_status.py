@@ -172,6 +172,7 @@ def snapshot(root: Path | None = None) -> dict:
     raw_backfill = read_json(runtime / "mainboard_raw_research_history_status.json")
     raw_radar = read_json(runtime / "nse_mainboard_auto_research_radar_status.json")
     official_pdf_index = read_json(runtime / "nse_official_annual_pdf_collector_status.json")
+    minute_chart = read_json(runtime / "live_chart_research_status.json")
     legacy_pdf_pilot = read_json(runtime / "annual_report_pdf_pilot_status.json")
     sector_reference = read_json(runtime / "nse_totalmarket_industry_reference_status.json")
     history = read_json(runtime / "nse_eod_history_status.json")
@@ -317,6 +318,11 @@ def snapshot(root: Path | None = None) -> dict:
         "automatic_mainboard_raw_breakout_candidates": int_value(
             raw_radar.get("unadjusted_breakout_research_candidates",0)),
         "automatic_mainboard_radar_is_tradable": False,
+        "automatic_live_chart_state": minute_chart.get("state","NOT_STARTED"),
+        "automatic_live_chart_source": minute_chart.get("provider","NOT_CONNECTED"),
+        "automatic_live_chart_analyzed_symbols": len(minute_chart.get("charts") or []),
+        "automatic_live_chart_last_checked_at_utc": minute_chart.get("checked_at_utc"),
+        "automatic_live_chart_is_trade_eligible": False,
         "automatic_official_annual_pdf_index_state": official_pdf_index.get(
             "state","NOT_STARTED"),
         "automatic_official_annual_pdf_index_symbols_checked": int_value(
