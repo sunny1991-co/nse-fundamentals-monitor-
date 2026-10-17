@@ -222,7 +222,12 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
         name=hashlib.sha256(url.encode("utf-8")).hexdigest()[:28]+".pdf"
         path=folder/name
         digest=hashlib.sha256(payload).hexdigest()
-        if not path.exists():
+        if path.exists():
+            if hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+                raise OfficialAnnualPdfUnavailable(
+                    "CACHED_PRIVATE_ANNUAL_REPORT_PDF_INTEGRITY_MISMATCH"
+                )
+        else:
             tmp=path.with_suffix(".pdf.tmp")
             try:
                 tmp.write_bytes(payload)
@@ -348,7 +353,7 @@ def main()->int:
         print(json.dumps(result,indent=2))
         return 1
     print(json.dumps(result,indent=2))
-    return 0
+    return 1 if result.get("state")=="NSE_OFFICIAL_ANNUAL_INDEX_ACCESS_BLOCKED" else 0
 
 
 if __name__=="__main__":
