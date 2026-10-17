@@ -66,6 +66,16 @@ class RSPullbackHypothesisTests(unittest.TestCase):
         self.assertFalse(bool(d.TRI_Exact_Day_Present.iloc[-1]))
         self.assertTrue(math.isnan(float(d.Relative_TRI_126d_Return.iloc[-1])))
 
+    def test_missing_benchmark_session_inside_lookback_blocks_signal(self):
+        bars,tri=synthetic()
+        tri=tri.drop(tri.index[-45])
+        with patch("research_monitor.rs_pullback_rules.features",
+                   side_effect=stable_indicators):
+            d=rs_pullback_features(bars,tri)
+        self.assertTrue(bool(d.TRI_Exact_Day_Present.iloc[-1]))
+        self.assertFalse(bool(d.TRI_Complete_260_Sessions.iloc[-1]))
+        self.assertFalse(bool(d.Signal.iloc[-1]))
+
     def test_future_appended_data_cannot_rewrite_past_signals_or_stops(self):
         bars,tri=synthetic(740)
         with patch("research_monitor.rs_pullback_rules.features",
