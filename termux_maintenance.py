@@ -22,6 +22,9 @@ from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
 STEPS = [
+    # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
+    ("official_index_industry_reference",
+     [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
     ("legacy_annual_verify",
      [sys.executable, str(CODE_ROOT/'nse_legacy_xbrl_verify.py'), '--limit', '100'], 20*60),
     ("sector_refresh",
