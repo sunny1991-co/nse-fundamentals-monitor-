@@ -7,7 +7,7 @@ import json
 import unittest
 
 from research_monitor.auto_doctor import (
-    evaluate,inspect,recoverable,optional_ai_advice,
+    evaluate,inspect,recoverable,optional_ai_advice,dashboard_ok,
     HEARTBEATS, STATUS,JOURNAL,MAX_RESTARTS_PER_COMPONENT_PER_WINDOW
 )
 
@@ -131,6 +131,24 @@ class ProjectDoctorTests(unittest.TestCase):
         self.assertIn("ANNUAL_SOURCE_BLOCKED",
                       [x["code"] for x in report["issues"]])
         self.assertTrue(all(x["auto_repair"] is False for x in report["issues"]))
+        self.same()
+
+    def test_loopback_dashboard_probe_sends_configured_trusted_host(self):
+        # The socket binds 127.0.0.1, while Flask accepts only Host: localhost.
+        # Avoid false 400 health results and unnecessary supervised restarts.
+        class HealthResponse:
+            status=200
+            def __enter__(self):
+                return self
+            def __exit__(self,*args):
+                return False
+        with patch("research_monitor.auto_doctor.urlopen",
+                   return_value=HealthResponse()) as fetch:
+            self.assertTrue(dashboard_ok())
+        request=fetch.call_args.args[0]
+        self.assertEqual(request.full_url,"http://127.0.0.1:8787/healthz")
+        self.assertEqual(request.get_header("Host"),"localhost")
+        self.assertEqual(fetch.call_args.kwargs["timeout"],1.5)
         self.same()
 
     def test_local_mfa_dashboard_failure_needs_confirmations(self):
