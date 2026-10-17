@@ -241,9 +241,12 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
                r.get("Official_Report_URL")) for r in receipts}
     size=sum(path.stat().st_size for path in (root/PDF_DIR).glob("*.pdf")) if (root/PDF_DIR).is_dir() else 0
     added=0
+    attempted=0
     state="CANDIDATE_PDFS_ARCHIVED_NOT_FINANCIAL_VERIFIED"
     for item in candidates:
-        if added>=limit:
+        # --download is a HARD original-source HTTP request budget,
+        # not merely the number of documents that happen to succeed.
+        if attempted>=limit:
             break
         if item["Financial_Year"] not in REQUIRED_YEARS:
             continue
@@ -260,6 +263,7 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
             state="LOCAL_DISK_FREE_SPACE_TOO_LOW"
             break
         try:
+            attempted+=1
             payload=public_pdf(session,url)
         except (OfficialAnnualPdfUnavailable,requests.RequestException) as exc:
             if "ACCESS_BLOCKED" in str(exc):
