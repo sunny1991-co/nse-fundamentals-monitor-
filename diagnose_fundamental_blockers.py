@@ -87,6 +87,18 @@ def main():
     print("This is NOT the NSE four-tier company sector classification; "
           "strict annual and trade screens remain unchanged.")
 
+    print("\nOriginal FY2022-23/FY2023-24 XML context root-cause diagnosis:")
+    try:
+        context = json.loads(
+            (ROOT/"runtime"/"legacy_xbrl_context_diagnostic.json").read_text()
+        )
+        print("State:",context.get("state","UNKNOWN"),
+              "checked original XML:",context.get("checked_records",0),
+              "reasons:",context.get("context_reason_counts",{}))
+    except (OSError, ValueError, TypeError):
+        print("NOT_YET_RUN — this is a manual four-document source audit.")
+    print("XML context diagnostics cannot modify verified annual facts.")
+
     print("\nQuality summary:")
     for row in rows("annual_fundamental_quality_summary.csv"):
         print(" | ".join(f"{k}={v}" for k, v in row.items()))
