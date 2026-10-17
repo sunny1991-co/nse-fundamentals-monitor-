@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock,patch
 import requests
 from research_monitor.legacy_xbrl import verify
-from nse_legacy_xbrl_verify import collect, download, candidate_priority
+from nse_legacy_xbrl_verify import collect, download, original_xml_source_yield, VERSION, candidate_priority
 
 URL='https://nsearchives.nseindia.com/corporate/xbrl/TEST.xml'
 RECORD=dict(symbol='TEST',qe_Date='2023-03-31',consolidated='Consolidated',audited='Audited',broadcast_Date='2023-05-01')
@@ -287,6 +287,78 @@ class LegacyCollectionTests(unittest.TestCase):
         self.assertEqual(planned['Excluded_By_Current_Source_Preflight'],1)
         self.assertEqual(file.read_bytes(),original)
         self.assertFalse((self.root/'annual_historical_results.csv').exists())
+
+    def test_recent_source_rejection_yield_guard_correctly_classifies(self):
+        reads=[{
+            'Source_URL':URL.replace('TEST',f'FAILED{i}'),
+            'Parser_Version':VERSION,'Source_SHA256':'a'*64,
+            'Checked_At_UTC':f'2026-10-17T11:{i:02d}:00+00:00',
+            'Status':'UNVERIFIED',
+            'Reason':'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',
+        } for i in range(40)]
+        classification=original_xml_source_yield(reads)
+        self.assertEqual(classification['Source_Yield_Recent_XML_Responses'],40)
+        self.assertEqual(classification['Source_Yield_Recent_Structural_Rejects'],40)
+        self.assertTrue(classification['Source_Yield_Unattended_Pause_Recommended'])
+        reads[-1].update(Status='VERIFIED',Reason='')
+        self.assertFalse(original_xml_source_yield(reads)[
+            'Source_Yield_Unattended_Pause_Recommended'])
+        self.assertFalse(original_xml_source_yield(reads[:10])[
+            'Source_Yield_Unattended_Pause_Recommended'])
+        # Metadata entries without downloaded original XML are not
+        # counted as failed original audited sources.
+        for row in reads:row['Source_SHA256']=''
+        self.assertFalse(original_xml_source_yield(reads)[
+            'Source_Yield_Unattended_Pause_Recommended'])
+
+    def test_unattended_source_guard_pauses_even_when_preflight_ready(self):
+        from nse_legacy_xbrl_preflight import OUTPUT as READY
+        (self.root/READY).write_text(
+            'Symbol,Financial_Year,Official_XBRL_Source_URL,'
+            'Source_Review_State,Metadata_Ready_For_XML,'
+            'Independent_Audited_Consolidated_Annual_XML_Checked_This_Run\n'
+            'TEST,2022-23,'+URL+','
+            'READY_FOR_INDEPENDENT_ORIGINAL_XML_CONTEXT_REVIEW,true,false\n'
+        )
+        attempts=[{
+            'Symbol':f'FAIL{i}','Financial_Year':'2023-24',
+            'Source_URL':URL.replace('TEST',f'FAIL{i}'),
+            'Index_SHA256':'a'*64,'Source_SHA256':'b'*64,
+            'Checked_At_UTC':f'2026-10-17T11:{i:02d}:00+00:00',
+            'Parser_Version':VERSION,'Status':'UNVERIFIED',
+            'Reason':'EXACT_APRIL_MARCH_CONTEXT_NOT_VERIFIED',
+        } for i in range(40)]
+        path=self.root/'legacy_xbrl_verification.csv'
+        with path.open('w',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(attempts[0]))
+            writer.writeheader()
+            writer.writerows(attempts)
+        untouched=path.read_bytes()
+        with (
+            patch('nse_legacy_xbrl_preflight.snapshot'),
+            patch('nse_legacy_xbrl_verify.requests.Session',
+                  side_effect=AssertionError('NO HTTP SESSION IN PAUSE')),
+            patch('nse_legacy_xbrl_verify.baseline_coverage',
+                  return_value=({'TEST':2},{'TEST':2})),
+        ):
+            status=collect(self.root,limit=3,require_preflight=True,
+                           respect_yield_guard=True)
+        self.assertEqual(status['Status'],
+                         'UNATTENDED_ORIGINAL_XML_SOURCE_ZERO_YIELD_PAUSED')
+        self.assertEqual(status['Attempted'],0)
+        self.assertEqual(status['Added_Verified'],0)
+        self.assertTrue(status['Source_Yield_Unattended_Pause_Recommended'])
+        self.assertEqual(status['Source_Yield_Recent_XML_Responses'],40)
+        self.assertEqual(path.read_bytes(),untouched)
+        self.assertFalse((self.root/'annual_historical_results.csv').exists())
+        self.assertIn('ZERO_YIELD_PAUSED',
+                      (self.root/'legacy_xbrl_run_status.csv').read_text())
+
+    def test_yield_guard_only_valid_with_fresh_official_preflight(self):
+        with self.assertRaisesRegex(ValueError,
+                                    'YIELD_GUARD_REQUIRES_OFFICIAL_PREFLIGHT'):
+            collect(self.root,limit=1,require_preflight=False,
+                    respect_yield_guard=True)
 
     def test_redirect_not_followed(self):
         response=Mock(status_code=302)

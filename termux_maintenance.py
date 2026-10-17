@@ -69,9 +69,13 @@ STEPS = [
     # independent verifier failure cooldown. Metadata is never audited facts.
     ("legacy_xbrl_metadata_preflight_no_network",
      [sys.executable, str(CODE_ROOT/'nse_legacy_xbrl_preflight.py')], 3*60),
+    # Original old-year XML index has shown prolonged zero verified
+    # April-March annual sources. Avoid unattended daily batches of 100
+    # repeatedly rejected Q4/issuer contexts; leave source research alive.
     ("legacy_annual_verify",
      [sys.executable, str(CODE_ROOT/'nse_legacy_xbrl_verify.py'),
-      '--limit', '100', '--require-preflight'], 20*60),
+      '--limit', '3', '--require-preflight', '--respect-yield-guard'],
+     20*60),
     # Audited consolidated NSE XBRL only; bounded new company-years each day.
     # On NSE access blocks or stale discovery, report a failure; NEVER promote a
     # stock on vendor financials, and never overwrite FY baselines.

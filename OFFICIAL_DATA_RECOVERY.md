@@ -287,3 +287,60 @@ values and numeric facts are not copied into the source diagnostic.
 The original strict annual source rejection code remains unchanged
 and authoritative. Neither PDF candidates nor synthetic annual
 columns become a verified source, and broker orders remain disabled.
+
+## Unattended legacy XML zero-yield safety guard
+
+The user's real source-file evidence shows that the 2026-10-17T12:06:57Z
+small original NSE XML batch fetched three Annual/Audited/Consolidated
+*index* candidates (BOSCHLTD FY2022–23, BOSCHLTD FY2023–24, BPCL
+FY2022–23); none passed the strict April–March original XBRL
+context gate. A later source-verified GitHub ledger check showed 811
+source attempts across October 16–17: 767 strict year context
+rejections, 42 XML symbol/issuer identity failures, and 2 HTTP 404;
+**zero newly verified old Annual XBRL facts**. The XML context
+rejection alone does NOT prove every rejected source is quarterly
+only: identity schemes or dimensions may also be responsible.
+
+The repository's prior unattended Termux maintenance used
+`nse_legacy_xbrl_verify.py --limit 100 --require-preflight`
+every day. Metadata readiness of 2,062 further original NSE URLs
+is **not evidence that their actual XML has usable full annual
+audited facts**; another bulk batch can needlessly generate source
+traffic and retries.
+
+The new bounded operational rule is `--respect-yield-guard` alongside
+the **still-mandatory** `--require-preflight`. It examines the last
+50 REAL original source XML responses recorded under the current
+source parser version, identified by a non-empty 64-character
+source-response SHA256 and timestamp; plain CSV index links
+do not count. If at least 30 actual XML source responses exist and
+90% or more of those have strict source-context/issuer structural
+rejections with ZERO verified annual results, the unattended batch
+returns `UNATTENDED_ORIGINAL_XML_SOURCE_ZERO_YIELD_PAUSED`
+before creating any HTTP session. It emits recent yield counts,
+the unresolved number of already-preflighted source URLs and the
+recommended action `REVIEW_ALTERNATE_OFFICIAL_AUDITED_ANNUAL_SOURCES`.
+This leaves the original XBRL verification ledger, previously
+verified annual history, strict company screen, and trading state
+unchanged. It DOES NOT declare that all remaining old original
+filings are invalid, and does not rewrite a Q4 filing as Annual.
+
+Daily Termux maintenance now caps this older source step at **3
+source URLs** even when its yield guard does not activate, instead
+of 100. The verified FY2024–25 and FY2025–26 integrated filing
+collection, offline PDF/archive research, quarterly comparison,
+sector checks, and safety screens remain separate and are NOT
+paused by this old-year source-yield guard.
+
+View current original XML metadata candidates and latest source yield,
+without any NSE HTTP access:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_xbrl_verify.py --limit 10 --require-preflight --plan-only
+
+The scheduled guarded check may be run explicitly, but **do not**
+manually download or repeatedly retry source XML just to bypass
+an observed near-100% structural rejection rate. A different,
+independently authenticated original full-year audited source and
+associated source/version verification is needed before original
+four-year audit screening can progress. No paid AI or broker
+orders are involved.
