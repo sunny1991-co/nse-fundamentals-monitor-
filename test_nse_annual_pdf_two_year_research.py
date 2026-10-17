@@ -183,8 +183,8 @@ class PDFTwoYearResearchTests(unittest.TestCase):
     def test_prior_candidate_tamper_blocks_yoy_report(self):
         self.prior["Net_Profit_Cr"]="999.0000"
         self.prepare()
-        with self.assertRaisesRegex(SectionReviewBlocked,
-                                     "COMPARATIVE_FIRST_COLUMN|COMPARATIVE"):
+        with self.assertRaisesRegex(PDFComparisonBlocked,
+                                     "CACHED_VALUE_CONFLICTS_WITH_ORIGINAL_NSE_PDF"):
             run(self.root,now=NOW,max_files=1,reader_cls=Reader)
         self.assertFalse((self.root/OUTPUT).exists())
         self.untouched()
