@@ -22,6 +22,7 @@ from research_monitor.assistant_signal_pipeline import (
     match_quote_and_prepare_paper_prompt,
     advance_approved_paper_positions,
 )
+from research_monitor.live_chart_radar import run as run_live_chart_research
 
 ROOT = data_root()
 
@@ -147,6 +148,19 @@ def tick(root=ROOT, now=None):
         atomic_status(runtime/'assistant_paper_execution_status.json',advance)
         status['assistant_paper_updates']=advance.get('updated_positions',0)
         status['assistant_real_orders']='DISABLED'
+    # Independent read-only chart research runs in the supervised 10-second
+    # loop, but fetches at most four broker-published 1-minute candles every
+    # 60 seconds. It can NEVER generate paper prompts, BUY or broker orders.
+    try:
+        chart=run_live_chart_research(
+            root, now=now, open_session=(state=="LIVE_MONITORING")
+        )
+        status['automatic_live_chart_state']=chart.get('state','UNAVAILABLE')
+        status['automatic_live_chart_companies']=len(chart.get('charts',[]))
+    except (OSError,ValueError,TypeError,AttributeError,RuntimeError):
+        status['automatic_live_chart_state']='READ_ONLY_CHART_SOURCE_UNAVAILABLE'
+        status['automatic_live_chart_companies']=0
+    atomic_status(runtime/'worker_status.json',status)
     return status
 
 def main():
