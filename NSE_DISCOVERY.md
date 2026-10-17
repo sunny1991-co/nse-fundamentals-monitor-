@@ -535,3 +535,31 @@ re-review**, and synthetic unit tests reproduce the exact false-positive
 attested numeric facts, and the strict NSE XBRL/paper/real-order gates remain
 unchanged. Other companies' statement formats might require separate
 review before this locator can reliably identify their pages.
+
+## Separate current PDF review from historical versions
+
+A real FY2023-24 20MICRONS source report was re-reviewed successfully
+as `section-review-3-statement-table-cues`, locating physical auditor /
+balance sheet / profit & loss / cash flow pages 201 / 209 / 210 / 211.
+Because `nse_annual_pdf_section_review.csv` keeps older versions for
+provenance, `head -n 2` would display an obsolete v2 row (200 on all
+four headings, actually the report contents/index).
+
+The scanner now additionally maintains
+`nse_annual_pdf_section_review_latest.csv`: only the CURRENT scanner
+version, not the historical v2 data. The private
+`runtime/nse_annual_pdf_section_review_status.json` now directly shows
+`most_recent_current_review.physical_pdf_pages`,
+`current_review_version` and `current_version_review_records`.
+Older source/evidence versions are preserved in the historical file.
+This is strictly a *PDF section candidate view*, not numeric fact
+verification, an audit attestation or a trading signal.
+
+After `git pull --ff-only`, one bounded run updates both views:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_annual_pdf_section_review.py --max-files 1
+    head -n 2 ~/nse-fundamentals-data/nse_annual_pdf_section_review_latest.csv
+
+In case no new PDF requires review, the latest view is still regenerated
+from existing current-version records, without redownloading or adding
+unverified financial facts.
