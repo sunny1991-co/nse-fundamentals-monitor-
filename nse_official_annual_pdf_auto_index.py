@@ -479,7 +479,11 @@ def offline_cached_index_intake(root:Path,*,downloads:int=0,
     remaining=[row for key,row in unique.items() if key not in receipt_keys]
     remaining.sort(key=lambda r:(
         annual_source_priority(r["Symbol"],existing,complete),
-        r["Financial_Year"],r["Symbol"],r["Official_Report_URL"]))
+        # A 2023-24 annual report can supply current-year and
+        # (RESEARCH-ONLY) 2022-23 printed comparative source rows.
+        # Prefer it over a 2022-23 PDF on equal issuer priority.
+        0 if r["Financial_Year"]=="2023-24" else 1,
+        r["Symbol"],r["Official_Report_URL"]))
     stamp=now.astimezone(timezone.utc).isoformat()
     report={
         "checked_at_utc":stamp,
@@ -612,8 +616,8 @@ def collect(root:Path,*,limit:int=25,downloads:int=1,
         existing,core_complete=baseline_coverage(root)
         download_queue=sorted(ordered,key=lambda r:(
             annual_source_priority(r.get("Symbol",""),existing,core_complete),
-            r.get("Financial_Year",""),r.get("Symbol",""),
-            r.get("Official_Report_URL","")))
+            0 if r.get("Financial_Year")=="2023-24" else 1,
+            r.get("Symbol",""),r.get("Official_Report_URL","")))
         selected_complete=sum(
             annual_source_priority(row["Symbol"],existing,core_complete)==0
             for row in chosen
@@ -651,7 +655,9 @@ def collect(root:Path,*,limit:int=25,downloads:int=1,
 def main()->int:
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit",type=int,default=25)
-    ap.add_argument("--download",type=int,default=1)
+    # Do not silently make a PDF request when the user asks for
+    # cached-index inspection without an explicit --download budget.
+    ap.add_argument("--download",type=int,default=None)
     ap.add_argument("--plan-only",action="store_true",
                     help="List safe official NSE annual PDF source gaps without API calls or writes")
     ap.add_argument("--cached-index-only",action="store_true",
@@ -662,16 +668,25 @@ def main()->int:
             if args.plan_only:
                 raise ValueError("CACHED_INDEX_ONLY_USE_DOWNLOAD_ZERO_FOR_OFFLINE_PLAN")
             result=offline_cached_index_intake(
-                data_root(),downloads=args.download)
+                data_root(),downloads=0 if args.download is None else args.download)
         else:
-            result=collect(data_root(),limit=args.limit,downloads=args.download,
-                           plan_only=args.plan_only)
+            result=collect(
+                data_root(),limit=args.limit,
+                downloads=1 if args.download is None else args.download,
+                plan_only=args.plan_only)
     except (OfficialAnnualPdfUnavailable,ValueError,OSError,
             requests.RequestException) as exc:
         result={"checked_at_utc":datetime.now(timezone.utc).isoformat(),
-                "state":"OFFICIAL_ANNUAL_INDEX_BLOCKED","reason":str(exc)[:140],
+                "state":("CACHED_NSE_ANNUAL_PDF_INDEX_BLOCKED"
+                         if args.cached_index_only
+                         else "OFFICIAL_ANNUAL_INDEX_BLOCKED"),
+                "reason":str(exc)[:140],
                 "previous_reports_preserved":True,"orders":"DISABLED"}
-        atomic_status(data_root()/STATUS,result)
+        # The original NSE API 403/429 status owns its 20-hour
+        # cooldown timestamp. NEVER overwrite it due to a cached
+        # offline index validation error or archived-PDF fetch failure.
+        atomic_status(data_root()/(
+            CACHED_STATUS if args.cached_index_only else STATUS),result)
         print(json.dumps(result,indent=2))
         return 1
     print(json.dumps(result,indent=2))
