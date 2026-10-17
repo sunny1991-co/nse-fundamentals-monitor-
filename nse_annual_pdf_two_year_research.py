@@ -34,7 +34,7 @@ from research_monitor.schedule import atomic_status
 
 OUTPUT="nse_annual_pdf_two_year_research_comparison.csv"
 STATUS="runtime/nse_annual_pdf_two_year_research_status.json"
-VERSION="source-locked-pdf-two-year-yoy-research-v2-section-attested"
+VERSION="source-locked-pdf-two-year-yoy-research-v3-split-section"
 MAX_FILES=2
 
 # Six core figures are labelled identically in both observations.

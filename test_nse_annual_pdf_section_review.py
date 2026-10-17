@@ -160,6 +160,55 @@ class FakeLongConsolidatedAuditorReader(FakeReader):
         self.pages=[FakeLongConsolidatedAuditorPage(i) for i in range(152)]
 
 
+class FakeSplitConsolidatedBalancePage:
+    """63MOONS FY2023-24 source-like split BS; physical pages 179-180."""
+    def __init__(self,index,closing_prior="3,46,585.27"):
+        self.index=index
+        self.closing_prior=closing_prior
+
+    def extract_text(self):
+        if self.index==0:
+            return "63 moons technologies limited Annual Report 2023-24"
+        if self.index==168:
+            return ("INDEPENDENT AUDITOR'S REPORT. We have audited "
+                    "consolidated financial statements. Basis for opinion.")
+        if self.index==178:
+            return ("FINANCIALS | CONSOLIDATED. CONSOLIDATED BALANCE SHEET "
+                    "as at March 31, 2024 (IN LAKHS) ASSETS "
+                    "TOTAL NON-CURRENT ASSETS 1,76,138.97 1,45,699.07 "
+                    "TOTAL CURRENT ASSETS 1,88,391.42 2,00,886.20 "
+                    "TOTAL ASSETS 3,64,530.39 3,46,585.27")
+        if self.index==179:
+            return ("CONSOLIDATED BALANCE SHEET (CONTD.) "
+                    "as at March 31, 2024 (IN LAKHS) "
+                    "EQUITY AND LIABILITIES EQUITY Equity share capital "
+                    "921.57 921.57 TOTAL EQUITY 3,31,810.87 3,09,050.72 "
+                    "TOTAL LIABILITIES 32,719.52 37,534.55 "
+                    "TOTAL EQUITY AND LIABILITIES 3,64,530.39 "+
+                    self.closing_prior)
+        if self.index==180:
+            return ("CONSOLIDATED STATEMENT OF PROFIT AND LOSS "
+                    "Revenue from Operations 8,000.00 7,000.00 "
+                    "Profit before tax 2,000.00 (1,000.00)")
+        if self.index==184:
+            return ("CONSOLIDATED STATEMENT OF CASH FLOW "
+                    "CASH FLOW FROM OPERATING ACTIVITIES 4,000.00 "
+                    "CASH FLOW FROM INVESTING ACTIVITIES (3,000.00)")
+        return "Statutory disclosures and explanatory notes."
+
+
+class FakeSplitConsolidatedBalanceReader(FakeReader):
+    closing_prior="3,46,585.27"
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages=[FakeSplitConsolidatedBalancePage(i,self.closing_prior)
+                    for i in range(248)]
+
+
+class FakeSplitBalanceMismatchReader(FakeSplitConsolidatedBalanceReader):
+    closing_prior="3,46,585.28"
+
+
 class FakeSectionIndexOnlyReader(FakeReader):
     def __init__(self,stream,strict=True):
         super().__init__(stream,strict=strict)
@@ -380,6 +429,48 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
         self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
         self.assertEqual(report["financial_facts_added"],0)
         self.assertEqual(report["strict_annual_passes_added"],0)
+        self.assert_protected()
+
+    def test_63moons_two_adjacent_consolidated_balance_pages_located(self):
+        # NSE official FY2023-24 annual report: auditor at physical 169;
+        # consolidated assets at 179, liabilities continuation at 180;
+        # P&L at 181 and cash flow at 185.
+        self.receipt[0]["Financial_Year"]="2023-24"
+        self.index[0]["Financial_Year"]="2023-24"
+        csv_write(self.root/PDF_LOG,PDF_FIELDS,self.receipt)
+        csv_write(self.root/PDF_INDEX,OUTPUT_FIELDS,self.index)
+        report=run(self.root,max_files=1,now=NOW,
+                   reader_cls=FakeSplitConsolidatedBalanceReader)
+        self.assertEqual(report["reports_reviewed_this_run"],1)
+        with (self.root/LATEST_OUTPUT).open() as handle:
+            row=next(csv.DictReader(handle))
+        self.assertEqual(
+            [row["Auditor_Page_1based"],
+             row["Consolidated_Balance_Sheet_Page_1based"],
+             row["Consolidated_Profit_Loss_Page_1based"],
+             row["Consolidated_Cash_Flow_Page_1based"]],
+            ["169","179","181","185"])
+        self.assertEqual(row["Review_Version"],VERSION)
+        self.assertEqual(row["Section_Review_State"],
+                         "CANDIDATE_SECTIONS_LOCATED_SOURCE_AUDIT_STILL_REQUIRED")
+        self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
+        self.assertEqual(report["financial_facts_added"],0)
+        self.assertEqual(report["strict_annual_passes_added"],0)
+        self.assertEqual(report["orders"],"DISABLED")
+        self.assert_protected()
+
+    def test_split_page_balance_totals_disagree_fails_closed(self):
+        self.receipt[0]["Financial_Year"]="2023-24"
+        self.index[0]["Financial_Year"]="2023-24"
+        csv_write(self.root/PDF_LOG,PDF_FIELDS,self.receipt)
+        csv_write(self.root/PDF_INDEX,OUTPUT_FIELDS,self.index)
+        run(self.root,max_files=1,now=NOW,
+            reader_cls=FakeSplitBalanceMismatchReader)
+        with (self.root/LATEST_OUTPUT).open() as handle:
+            row=next(csv.DictReader(handle))
+        self.assertEqual(row["Consolidated_Balance_Sheet_Page_1based"],"")
+        self.assertEqual(row["Section_Review_State"],
+                         "INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW")
         self.assert_protected()
 
     def test_contents_index_only_cannot_claim_four_financial_statements(self):
