@@ -234,6 +234,24 @@ class AnnualPDFPriorComparativeTests(unittest.TestCase):
         self.assertFalse((self.root/OUTPUT).exists())
         self.assert_untouched()
 
+    def test_stale_numeric_section_version_cannot_feed_prior_comparative(self):
+        # Same original source URL/PDF hash and numeric parser, but the
+        # cached present-year figures were tied to an obsolete page locator.
+        self.current["Section_Review_Version"]="section-review-3-statement-table-cues"
+        self.write_sources()
+        result=run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertEqual(result["reports_reviewed_this_run"],0)
+        self.assertEqual(result["new_six_field_comparative_candidates"],0)
+        self.assertFalse((self.root/OUTPUT).exists())
+        # Reverified current section evidence then unlocks separate,
+        # strictly review-only prior-year comparative processing.
+        self.current["Section_Review_Version"]=SECTION_VERSION
+        self.write_sources()
+        good=run(self.root,max_files=1,now=NOW,reader_cls=Reader)
+        self.assertEqual(good["new_six_field_comparative_candidates"],1)
+        self.assertEqual(good["strict_fundamental_passes_added"],0)
+        self.assert_untouched()
+
     def test_incomplete_current_numeric_evidence_is_deferred_not_blocked(self):
         # Matches a genuine section-reviewed report whose six source
         # amounts cannot yet pass arithmetic/date/unit verification.
