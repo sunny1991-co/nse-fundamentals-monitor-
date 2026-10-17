@@ -166,6 +166,14 @@ def snapshot(root: Path | None = None) -> dict:
     root = Path(root or data_root())
     runtime = root / "runtime"
 
+    # Keep legacy fully adjusted EOD coverage separate from the newer
+    # all-EQ unadjusted raw-data archive. Neither archive implies a trade.
+    discovered = read_json(runtime / "nse_mainboard_discovery_status.json")
+    raw_backfill = read_json(runtime / "mainboard_raw_research_history_status.json")
+    raw_radar = read_json(runtime / "nse_mainboard_auto_research_radar_status.json")
+    official_pdf_index = read_json(runtime / "nse_official_annual_pdf_collector_status.json")
+    legacy_pdf_pilot = read_json(runtime / "annual_report_pdf_pilot_status.json")
+    sector_reference = read_json(runtime / "nse_totalmarket_industry_reference_status.json")
     history = read_json(runtime / "nse_eod_history_status.json")
     daily = history.get("daily") or {}
     gap = history.get("archive_gap_audit") or {}
@@ -293,6 +301,32 @@ def snapshot(root: Path | None = None) -> dict:
     return {
         "stage": stage,
         "backend_phase": worker.get("phase", "UNKNOWN"),
+        "automatic_mainboard_discovery_state": discovered.get("state","NOT_STARTED"),
+        "automatic_mainboard_eq_members": int_value(discovered.get("mainboard_eq_count",0)),
+        "automatic_new_research_only_symbols": int_value(
+            discovered.get("outside_annual_baseline",0)),
+        "automatic_mainboard_raw_backfill_state": raw_backfill.get("state","NOT_STARTED"),
+        "automatic_mainboard_unadjusted_archive_days_complete": int_value(
+            raw_backfill.get("all_complete_archive_days",0)),
+        "automatic_mainboard_unadjusted_archive_days_pending": int_value(
+            raw_backfill.get("estimated_outstanding_expected_sessions",0)),
+        "automatic_mainboard_raw_backfill_source_blocked": (
+            raw_backfill.get("source_blocked") is True
+        ),
+        "automatic_mainboard_radar_state": raw_radar.get("state","NOT_STARTED"),
+        "automatic_mainboard_raw_breakout_candidates": int_value(
+            raw_radar.get("unadjusted_breakout_research_candidates",0)),
+        "automatic_mainboard_radar_is_tradable": False,
+        "automatic_official_annual_pdf_index_state": official_pdf_index.get(
+            "state","NOT_STARTED"),
+        "automatic_official_annual_pdf_index_symbols_checked": int_value(
+            official_pdf_index.get("indexed_company_total",0)),
+        "automatic_official_annual_pdf_candidates": int_value(
+            official_pdf_index.get("total_candidate_pdf_index_rows",0)),
+        "automatic_annual_pdf_pilot_state": legacy_pdf_pilot.get("state","NOT_STARTED"),
+        "official_coarse_sector_reference_state": sector_reference.get(
+            "state","NOT_STARTED"),
+        "official_coarse_sector_reference_is_full_4_tier": False,
         "history_worker": hist_worker.get("state", "UNKNOWN"),
         "history_state": history.get("state", "NOT_STARTED"),
         "history_published": history_published,
