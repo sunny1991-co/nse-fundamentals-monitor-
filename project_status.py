@@ -169,6 +169,7 @@ def snapshot(root: Path | None = None) -> dict:
     # Keep legacy fully adjusted EOD coverage separate from the newer
     # all-EQ unadjusted raw-data archive. Neither archive implies a trade.
     discovered = read_json(runtime / "nse_mainboard_discovery_status.json")
+    project_doctor = read_json(runtime / "project_auto_doctor_status.json")
     raw_backfill = read_json(runtime / "mainboard_raw_research_history_status.json")
     raw_radar = read_json(runtime / "nse_mainboard_auto_research_radar_status.json")
     official_pdf_index = read_json(runtime / "nse_official_annual_pdf_collector_status.json")
@@ -303,6 +304,14 @@ def snapshot(root: Path | None = None) -> dict:
     return {
         "stage": stage,
         "backend_phase": worker.get("phase", "UNKNOWN"),
+        "automatic_project_doctor_state": project_doctor.get("state","NOT_STARTED"),
+        "automatic_project_doctor_issue_count": int_value(
+            project_doctor.get("issue_count",0)),
+        "automatic_project_doctor_recovery_requested": (
+            project_doctor.get("automatic_recovery_requested") or []),
+        "automatic_project_doctor_external_ai_state": (
+            project_doctor.get("optional_ai_diagnosis") or {}).get(
+                "state","NOT_ENABLED"),
         "automatic_mainboard_discovery_state": discovered.get("state","NOT_STARTED"),
         "automatic_mainboard_eq_members": int_value(discovered.get("mainboard_eq_count",0)),
         "automatic_new_research_only_symbols": int_value(
