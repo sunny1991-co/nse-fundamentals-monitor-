@@ -27,7 +27,7 @@ from research_monitor.schedule import atomic_status
 
 OUTPUT="nse_annual_pdf_section_review.csv"
 STATUS="runtime/nse_annual_pdf_section_review_status.json"
-VERSION="section-review-2-adaptive"
+VERSION="section-review-3-statement-table-cues"
 MAX_FILES=2
 MAX_SCAN_PAGES=90
 MAX_PAGES=700
@@ -147,25 +147,39 @@ def locate_sections(reader,year):
     token=re.sub("[^0-9]+"," ",cover)
     fiscal_year_seen=(year.replace("-"," ") in token)
     auditor_heading=re.compile(
-        r"independent\s+auditors?(?:['\u2019]s?)?\s+report",re.I
+        r"independent\\s+auditors?(?:['\\u2019]s?)?\\s+report",re.I
     )
-    bs=re.compile(r"consolidated\s+balance\s+sheet",re.I)
-    pnl=re.compile(r"consolidated\s+(?:statement\s+of\s+)?profit\s+and\s+loss",re.I)
-    cf=re.compile(r"consolidated\s+(?:statement\s+of\s+)?cash\s+flow",re.I)
+    bs=re.compile(r"consolidated\\s+balance\\s+sheet",re.I)
+    pnl=re.compile(r"consolidated\\s+(?:statement\\s+of\\s+)?profit\\s+and\\s+loss",re.I)
+    cf=re.compile(r"consolidated\\s+(?:statement\\s+of\\s+)?cash\\s+flow",re.I)
 
     def match(i):
         t=get_page(i)
         if not t:
             return False
-        is_consolidated=bool(re.search("consolidated",t,re.I))
+        # A section index (e.g., a page of all four 'Consolidated ...'
+        # headings) and an auditor's narrative list can mention ALL four
+        # statement names. Actual STATEMENT pages must contain independent
+        # table-row corroboration, not just a title. These are candidate
+        # page locations ONLY, never audited numerical facts.
+        auditor=(bool(auditor_heading.search(t))
+                 and bool(re.search(r"\\bwe\\s+have\\s+audited\\b",t,re.I))
+                 and bool(re.search(r"\\b(?:basis\\s+for\\s+opinion|in\\s+our\\s+opinion)\\b",t,re.I))
+                 and bool(re.search(r"consolidated",t,re.I)))
+        balance=(bool(bs.search(t))
+                 and bool(re.search(r"\\btotal\\s+assets\\b",t,re.I))
+                 and bool(re.search(r"\\bequity\\s+and\\s+liabilities\\b",t,re.I)))
+        profits=(bool(pnl.search(t))
+                 and bool(re.search(r"\\brevenue\\s+from\\s+operations\\b",t,re.I))
+                 and bool(re.search(r"\\b(?:profit\\s+for\\s+the\\s+(?:period|year)|profit\\s+before\\s+tax)\\b",t,re.I)))
+        cash=(bool(cf.search(t))
+              and bool(re.search(r"\\bcash\\s+flow\\s+from\\s+operating\\s+activities\\b",t,re.I))
+              and bool(re.search(r"\\bcash\\s+flow\\s+from\\s+investing\\s+activities\\b",t,re.I)))
         verdict={
-            "auditor": is_consolidated and bool(
-                auditor_heading.search(t)
-                or re.search(r"\bopinion\s+we\s+have\s+audited\b",t,re.I)
-            ),
-            "balance_sheet": bool(bs.search(t)),
-            "profit_loss": bool(pnl.search(t)),
-            "cash_flow": bool(cf.search(t)),
+            "auditor":auditor,
+            "balance_sheet":balance,
+            "profit_loss":profits,
+            "cash_flow":cash,
         }
         for key,hit in verdict.items():
             if hit and (i+1) not in found[key]:
@@ -254,7 +268,10 @@ def run(root,max_files=MAX_FILES,now=None,reader_cls=None):
         try:
             details=inspect_pdf(pdf,receipt["Financial_Year"],reader_cls=reader_cls)
             pages=details["sections"]
-            located=all(pages.values())
+            # Detect a suspicious one-page reference list: never report
+            # four separate statements as distinct when all are on one page.
+            pages_distinct=len(set(pages.values()))==4 if all(pages.values()) else False
+            located=all(pages.values()) and pages_distinct
             state=("CANDIDATE_SECTIONS_LOCATED_SOURCE_AUDIT_STILL_REQUIRED"
                    if located and details["cover_fiscal_year_candidate"]
                    else "INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW")
