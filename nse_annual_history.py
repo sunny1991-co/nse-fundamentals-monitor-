@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from research_monitor.paths import data_root
 from research_monitor.discovered_annual_universe import verified_discovered_symbols
+from research_monitor.schedule import atomic_status
 import argparse
 import re
 import time
@@ -681,6 +682,24 @@ def main(argv=None):
         years = sorted(results["Financial_Year"].astype(str).unique())
         print("Years available:", ", ".join(years), flush=True)
     print("Full annual dataset remains incomplete until all candidate filings and required fields are resolved.", flush=True)
+    # A durable audit of progress: 25 attempted source files are NOT 25 fully
+    # eligible companies, and missing/403 filings never silently pass.
+    atomic_status(ROOT / "runtime" / "nse_annual_discovered_catchup_status.json", {
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "state": ("NSE_XBRL_ACCESS_BLOCKED" if blocked_stop else
+                  "BOUNDED_OFFICIAL_ANNUAL_RESEARCH_CAPTURE"),
+        "include_current_discovered_mainboard": bool(args.include_discovered),
+        "target_symbols": len(target_symbols),
+        "verified_eligible_index_filing_urls": len(by_url),
+        "attempted_this_run": attempted,
+        "new_verified_company_year_files": len(new_rows),
+        "new_unverified_company_year_files": len(new_unverified),
+        "all_stored_verified_year_rows": len(results),
+        "source_validation": "AUDITED_CONSOLIDATED_NSE_INDEX_PLUS_XBRL",
+        "strict_fundamental_screen_auto_pass": False,
+        "trading_authorization": "DISABLED",
+        "orders": "DISABLED",
+    })
 
 
 if __name__ == "__main__":
