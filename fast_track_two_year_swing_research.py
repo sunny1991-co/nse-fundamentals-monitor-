@@ -20,6 +20,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from nse_mainboard_discovery import CATALOG, write_csv_atomic
@@ -177,7 +178,7 @@ def adjusted_bars(root: Path, symbols: set[str], now: datetime) -> dict[str,pd.D
             dates=frame["Date"]
             data=frame[["Open","High","Low","Close","Volume"]]
             if (dates.duplicated().any() or not dates.is_monotonic_increasing
-                or not math.isfinite(data.to_numpy(dtype=float)).all()
+                or not np.isfinite(data.to_numpy(dtype=float)).all()
                 or (data[["Open","High","Low","Close"]] <=0).any().any()
                 or (data["Volume"]<0).any()
                 or (data["High"]<data[["Open","Low","Close"]].max(axis=1)).any()
