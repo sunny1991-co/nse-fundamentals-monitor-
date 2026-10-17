@@ -107,8 +107,9 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
         self.assertEqual(len(session.calls),1)
         url,opts=session.calls[0]
         self.assertEqual(url,API)
-        self.assertEqual(opts["params"],
-                         {"index":"equities","period":"Annual","symbol":SYMBOL})
+        self.assertEqual(opts["params"],{
+            "index":"equities","period":"Annual","symbol":SYMBOL,
+            "from_date":"01-04-2024","to_date":"30-09-2024"})
         record=self.rows("2023-24")[0]
         self.assertEqual(record["Symbol"],SYMBOL)
         self.assertEqual(record["ISIN"],ISIN)
@@ -125,6 +126,59 @@ class AnnualLegacyAutoIndexTests(unittest.TestCase):
         self.assertEqual(run(self.root,max_symbols=1,now=NOW,
                              session=FakeSession([]),pause=lambda _:None)[
             "symbols_fetched_this_run"],0)
+        self.protected()
+
+    def test_2022_23_target_uses_only_2023_broadcast_window(self):
+        # A source-verified PDF from 2022-23 authorizes a single query
+        # restricted to that FY's normal first filing season.
+        self.source.stop()
+        src=patch("nse_legacy_annual_official_auto_index.checked_sources",
+                  return_value=[({
+                      "Symbol":SYMBOL,"Financial_Year":"2022-23",
+                      "Official_Report_URL":
+                      "https://nsearchives.nseindia.com/annual_reports/"
+                      "AR_20000_20MICRONS_2022_2023_20062023104857.pdf",
+                      "PDF_SHA256":"b"*64,
+                  },{"ISIN":ISIN},self.root/"cached-fy22-23.pdf")])
+        src.start()
+        self.addCleanup(src.stop)
+        session=FakeSession([annual_row(year="2022-23")])
+        result=run(self.root,max_symbols=1,now=NOW,
+                   session=session,pause=lambda _:None)
+        self.assertEqual(result["api_calls_made_this_run"],1)
+        self.assertEqual(session.calls[0][1]["params"],{
+            "index":"equities","period":"Annual","symbol":SYMBOL,
+            "from_date":"01-04-2023","to_date":"30-09-2023"})
+        self.assertEqual(result["last_target_fiscal_year"],"2022-23")
+        self.assertEqual(result["last_broadcast_window_start"],"2023-04-01")
+        self.assertEqual(result["last_broadcast_window_end"],"2023-09-30")
+        self.assertEqual(len(self.rows("2022-23")),1)
+        self.protected()
+
+    def test_real_read_timeout_remains_blocked_with_20hr_cooldown(self):
+        class ReadTimeoutSession:
+            calls=0
+            def get(self,*args,**kwargs):
+                self.calls+=1
+                raise requests.exceptions.ReadTimeout("SECRET_UNSAFE")
+        first_session=ReadTimeoutSession()
+        first=run(self.root,max_symbols=1,now=NOW,
+                  session=first_session,pause=lambda _:None)
+        self.assertEqual(first["errors"][0]["reason"],
+                         "OFFICIAL_NSE_OLD_RESULTS_READ_TIMEOUT")
+        self.assertEqual(first_session.calls,1)
+        self.assertEqual(first["new_official_old_annual_xbrl_links_indexed"],0)
+        self.assertEqual(first["last_target_fiscal_year"],"2023-24")
+        second_session=ReadTimeoutSession()
+        second=run(self.root,max_symbols=1,now=NOW+timedelta(minutes=12),
+                   session=second_session,pause=lambda _:None)
+        self.assertEqual(second_session.calls,0)
+        self.assertEqual(second["state"],
+                         "OFFICIAL_NSE_OLD_ANNUAL_INDEX_COOLDOWN_NO_REQUEST")
+        self.assertEqual(second["symbols_deferred_by_cooldown"],1)
+        self.assertEqual(second["next_eligible_at_utc"],
+                         (NOW+timedelta(hours=20)).isoformat())
+        self.assertEqual(second["symbols_remaining_after_this_run"],1)
         self.protected()
 
     def test_2022_23_and_2023_24_year_indexes_separately_not_quarters(self):

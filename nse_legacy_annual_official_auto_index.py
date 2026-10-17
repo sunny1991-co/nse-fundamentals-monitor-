@@ -42,8 +42,10 @@ INDEX_FIELDS=(
     "Indexed_At_UTC",
 )
 LEDGER_FIELDS=("Symbol","Checked_At_UTC","State","Rows_Indexed","Reason",
-               "Diagnostic_Version")
+               "Diagnostic_Version","Target_Financial_Year","Broadcast_Window_Start",
+               "Broadcast_Window_End")
 DIAGNOSTIC_VERSION="legacy-nse-response-diagnostic-v2"
+QUERY_VERSION="target-fy-broadcast-window-v1"
 ONE_SAFE_REPROBE_DELAY=timedelta(minutes=10)
 MAX_SYMBOLS=3
 COOLDOWN=timedelta(hours=20)
@@ -154,7 +156,7 @@ def source_metadata(row,symbol,isin,*,now):
     }
 
 
-def query(session,symbol):
+def query(session,symbol,*,target_fy="2023-24"):
     """At most one request; sanitized, distinguish network/HTML/JSON faults.
 
     Raw URL token/cookies, response HTML, body content and exception
@@ -163,9 +165,25 @@ def query(session,symbol):
     """
     if not SYMBOL.fullmatch(symbol):
         raise LegacyIndexUnavailable("INVALID_COMPANY_SYMBOL")
+    # NSE's source endpoint supports a broadcast-date window; an unbounded
+    # annual query need not fetch 2023-24 and produced a READ_TIMEOUT on
+    # the user's Android device. Restrict to six months after FY end.
+    if target_fy not in YEARS:
+        raise LegacyIndexUnavailable("TARGET_FISCAL_YEAR_NOT_ATTESTED")
+    closing=date.fromisoformat(YEARS[target_fy][1])
+    start=closing+timedelta(days=1)
+    # Period closed March 31; the initial typical annual-report broadcast
+    # window ends September 30 of the same calendar year. Late/revised
+    # filings might exist beyond this window and must NOT be deemed absent.
+    end=date(closing.year,9,30)
+    params={
+        "index":"equities","period":"Annual","symbol":symbol,
+        "from_date":start.strftime("%d-%m-%Y"),
+        "to_date":end.strftime("%d-%m-%Y"),
+    }
     try:
         response=session.get(
-            API,params={"index":"equities","period":"Annual","symbol":symbol},
+            API,params=params,
             headers={"Referer":LANDING,"Accept":"application/json, text/plain, */*"},
             allow_redirects=False,timeout=(12,30),
         )
@@ -239,6 +257,21 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         raise ValueError("TIMEZONE_AWARE_NOW_REQUIRED")
     verified=checked_sources(root,now)
     symbols,issuer=prioritized_symbols(root,verified)
+    # Choose the exact archived annual-report FY for each issuer, giving
+    # highest priority to a local PDF-vs-XBRL missing-year gap.
+    gaps={
+        (r.get("Symbol"),r.get("Financial_Year"))
+        for r in csv_rows(root/CROSSCHECK)
+        if r.get("Review_State") in GAP_STATES
+    }
+    targets={}
+    for receipt,entry,_ in verified:
+        sym,fy=receipt["Symbol"],receipt["Financial_Year"]
+        if fy not in YEARS:
+            continue
+        candidate=(0 if (sym,fy) in gaps else 1,fy)
+        if sym not in targets or candidate<targets[sym][0]:
+            targets[sym]=(candidate,fy)
     ledger=csv_rows(root/LEDGER)
     latest={r.get("Symbol"):r for r in ledger}
     eligible=[]
@@ -287,7 +320,13 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
     try:
         for symbol in eligible[:max_symbols]:
             try:
-                observations=query(session,symbol)
+                if symbol not in targets:
+                    raise LegacyIndexUnavailable("SOURCE_RECEIPT_TARGET_FY_MISSING")
+                target_fy=targets[symbol][1]
+                closing=date.fromisoformat(YEARS[target_fy][1])
+                query_start=closing+timedelta(days=1)
+                query_end=date(closing.year,9,30)
+                observations=query(session,symbol,target_fy=target_fy)
                 approved=[]
                 for source in observations:
                     record=source_metadata(source,symbol,issuer[symbol],now=now)
@@ -325,7 +364,10 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
                     Checked_At_UTC=now.astimezone(timezone.utc).isoformat(),
                     State="OFFICIAL_NSE_INDEX_CANDIDATES_ONLY",
                     Rows_Indexed=len(approved),Reason="",
-                    Diagnostic_Version=DIAGNOSTIC_VERSION)
+                    Diagnostic_Version=DIAGNOSTIC_VERSION,
+                    Target_Financial_Year=target_fy,
+                    Broadcast_Window_Start=query_start.isoformat(),
+                    Broadcast_Window_End=query_end.isoformat())
                 counts["checked"]+=1
             except LegacyIndexUnavailable as exc:
                 reason=str(exc)
@@ -333,7 +375,12 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
                 latest[symbol]=dict(Symbol=symbol,
                     Checked_At_UTC=now.astimezone(timezone.utc).isoformat(),
                     State="INDEX_DISCOVERY_BLOCKED",Rows_Indexed=0,
-                    Reason=reason,Diagnostic_Version=DIAGNOSTIC_VERSION)
+                    Reason=reason,Diagnostic_Version=DIAGNOSTIC_VERSION,
+                    Target_Financial_Year=targets.get(symbol,(None,""))[1],
+                    Broadcast_Window_Start=(
+                        query_start.isoformat() if "query_start" in locals() else ""),
+                    Broadcast_Window_End=(
+                        query_end.isoformat() if "query_end" in locals() else ""))
                 if "ACCESS_BLOCKED" in reason:
                     counts["access_blocked"]=True
                 state="OFFICIAL_NSE_OLD_ANNUAL_INDEX_PARTIAL_OR_BLOCKED"
@@ -352,6 +399,18 @@ def run(root,*,max_symbols=1,now=None,session=None,pause=time.sleep):
         "state":state,
         "verified_issuer_symbols":len(symbols),
         "response_diagnostic_version":DIAGNOSTIC_VERSION,
+        "query_scope_version":QUERY_VERSION,
+        "requests_use_attested_fiscal_year_broadcast_window":True,
+        "broadcast_window_is_not_exhaustive":True,
+        "last_target_fiscal_year":(
+            latest.get(eligible[0],{}).get("Target_Financial_Year","")
+            if eligible else None),
+        "last_broadcast_window_start":(
+            latest.get(eligible[0],{}).get("Broadcast_Window_Start","")
+            if eligible else None),
+        "last_broadcast_window_end":(
+            latest.get(eligible[0],{}).get("Broadcast_Window_End","")
+            if eligible else None),
         "api_calls_made_this_run":counts["checked"]+len(errors),
         "symbols_requested_this_run":min(max_symbols,len(eligible)),
         "symbols_fetched_this_run":counts["checked"],

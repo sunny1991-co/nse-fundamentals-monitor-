@@ -844,3 +844,41 @@ The scheduled Termux research maintenance may only run later; the
 timestamp is NOT a promise that NSE will allow access or have an XML.
 Do not manually delete the ledger, bypass access controls or treat a
 zero-call status as successful source recovery.
+
+## NSE old Financial Results READ_TIMEOUT: restrict archived annual broadcast dates
+
+Observed real Termux `2026-10-17T10:44:22Z`:
+`OFFICIAL_NSE_OLD_RESULTS_READ_TIMEOUT` after exactly one
+official NSE Annual corporate-financial-results request for
+20MICRONS. The generic old network/json failure was thus explained
+as a **read timeout**, not an NSE missing filing, 403 or an XML
+verification success. The 20-hour per-issuer source cooldown
+remains mandatory from this attempt.
+
+Review of the NSE Financial Results endpoint's public client
+documentation and historical request structure found an improvement:
+the request had `index=equities&period=Annual&symbol=20MICRONS`
+**without a broadcast date range**. The official endpoint supports
+`from_date` and `to_date` in `DD-MM-YYYY` format to scope
+filings by their broadcast dates. When no date range is specified,
+behavior can be broad or current-year dependent, so an old
+FY2023-24 result is not assured.
+
+New one-request-at-a-time query uses the fiscal year of an independently
+SHA-attested official annual PDF already cached for this issuer, not
+a guessed year or quarterly record. The *first* six-month annual
+filing season is queried:
+- FY **2022-23**: `from_date=01-04-2023&to_date=30-09-2023`;
+- FY **2023-24**: `from_date=01-04-2024&to_date=30-09-2024`.
+
+This **initial window is not exhaustive**: late or revised old
+annual filings may fall outside it. If NSE yields zero rows or
+another timeout, remain in source gap; do not declare no XBRL exists.
+No extra/fallback requests, no bypass of NSE access restrictions, and
+no relaxation of the strict legacy original-XBRL verification gate.
+The project status records the attempted fiscal year/window.
+
+**User-device next check:** no earlier than
+`2026-10-18T06:44:22Z` (12:14:22 IST), due to the 20-hour
+cooldown after the v2 READ_TIMEOUT. Even after this time, actual
+network success is not guaranteed.
