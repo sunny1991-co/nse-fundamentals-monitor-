@@ -53,6 +53,12 @@ STEPS = [
     ("official_discovered_annual_catchup",
      [sys.executable, str(CODE_ROOT/'nse_annual_history.py'),
       '--include-discovered', '--limit', '25'], 20*60),
+    # Compare source-attested PDF numeric *candidates* only with independently
+    # source-verified original NSE audited annual XBRL rows already collected.
+    # Missing original => gap, NOT audit fact promotion or a trading signal.
+    ("archived_pdf_vs_original_annual_xbrl_diagnostic",
+     [sys.executable, str(CODE_ROOT/'nse_annual_pdf_xbrl_crosscheck.py'),
+      '--max-files', '2'], 5*60),
     ("sector_refresh",
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
