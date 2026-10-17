@@ -151,6 +151,35 @@ class OldNSEAnnualXMLPreflightTests(unittest.TestCase):
                          "false")
         self.protected()
 
+    def test_duplicate_exact_annual_metadata_rows_with_same_date_block(self):
+        # Two different or duplicate index entries cannot be accepted
+        # merely because their publication dates are equal.
+        self.fy24.append(dict(self.fy24[0]))
+        self.save_indexes()
+        result=snapshot(self.root,now=NOW)
+        row=self.rows()[("20MICRONS","2023-24")]
+        self.assertEqual(row["Source_Index_Rows_Matched"],"2")
+        self.assertEqual(row["Source_Review_State"],
+                         "SOURCE_INDEX_ROW_OR_PUBLICATION_AMBIGUOUS")
+        self.assertEqual(row["Metadata_Ready_For_XML"],"false")
+        self.assertEqual(result["new_independently_verified_xml_facts"],0)
+        self.protected()
+
+    def test_noise_from_other_companies_cannot_match_wrong_symbol(self):
+        # Source files contain thousands of issuers: the source index
+        # must still match BOTH the exact NSE symbol and original URL.
+        for index in range(150):
+            self.fy24.append(old_row(
+                f"NOISE{index}","2023-24",
+                f"https://nsearchives.nseindia.com/corporate/xbrl/NOISE{index}.xml",
+                "20-Jun-2024"))
+        self.save_indexes()
+        snapshot(self.root,now=NOW)
+        row=self.rows()[("20MICRONS","2023-24")]
+        self.assertEqual(row["Source_Index_Rows_Matched"],"1")
+        self.assertEqual(row["Metadata_Ready_For_XML"],"true")
+        self.protected()
+
     def test_label_annual_with_wrong_fiscal_end_not_indexed(self):
         self.fy24[0]["Period Ended"]="2024-06-30"
         self.save_indexes()
