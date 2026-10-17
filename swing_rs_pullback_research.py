@@ -307,6 +307,31 @@ def source_preflight(root, *, history_reader=read_history,
             "missing_files": [],
             "adjusted_history_checked": True,
         }
+    frozen_tri = tri.loc[tri.index <= pd.Timestamp(FROZEN_SAMPLE_END)]
+    if len(frozen_tri) < 260:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "OFFICIAL_NIFTY_50_TOTAL_RETURN_INDEX",
+            "reason_code": "FROZEN_TRI_WARMUP_INSUFFICIENT",
+            "missing_files": [],
+            "adjusted_history_checked": True,
+            "tri_dated_rows_through_frozen_sample": len(frozen_tri),
+            "minimum_tri_rows": 260,
+        }
+
+    frozen = bars.loc[pd.to_datetime(bars.Date) <= pd.Timestamp(FROZEN_SAMPLE_END)]
+    per_symbol_rows = frozen.groupby("Symbol").size()
+    eligible = int((per_symbol_rows >= 1260).sum())
+    if eligible == 0:
+        return None, {
+            "state": "SOURCE_REQUIRED_OR_INVALID",
+            "blocked_stage": "ADJUSTED_NSE_DAILY_EQUITY_HISTORY",
+            "reason_code": "NO_STOCK_WITH_1260_FROZEN_HISTORICAL_BARS",
+            "missing_files": [],
+            "adjusted_history_checked": True,
+            "tri_source_checked": True,
+            "long_history_stocks": 0,
+        }
     return (bars, digest, tri, tri_digest), {
         "state": "SOURCE_PREFLIGHT_PASSED_RESEARCH_ONLY",
         "blocked_stage": None,
@@ -316,6 +341,7 @@ def source_preflight(root, *, history_reader=read_history,
         "tri_source_checked": True,
         "completed_daily_stock_rows": len(bars),
         "tri_dated_rows": len(tri),
+        "long_history_stocks": eligible,
         "historical_source_attestation_is_independent_audit": False,
         "trading_orders": "DISABLED",
     }
