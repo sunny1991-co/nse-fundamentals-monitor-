@@ -11,7 +11,7 @@ from nse_mainboard_discovery import CATALOG
 from nse_official_annual_pdf_auto_index import (
     offline_cached_index_intake,CACHED_STATUS,STATUS,OUTPUT,OUTPUT_FIELDS,
     PDF_LOG,PDF_DIR,source_access_cooldown,OfficialAnnualPdfUnavailable,
-    parse_metadata,acquire_pdfs,
+    parse_metadata,acquire_pdfs,main,
 )
 from test_nse_official_annual_pdf_auto_index import MockSession,pdf_bytes
 
@@ -111,7 +111,7 @@ class CachedOfficialPDFIntakeTests(unittest.TestCase):
         self.assertEqual(out["validated_indexed_pdf_links_pending_archive"],1)
         with (self.root/PDF_LOG).open(newline="") as file:
             receipt=next(csv.DictReader(file))
-        self.assertEqual(receipt["Official_Report_URL"],PDF_A)
+        self.assertEqual(receipt["Official_Report_URL"],PDF_B)
         self.assertIn("REQUIRES_AUDITED_CONSOLIDATED",
                       receipt["Review_Status"])
         self.assertEqual((self.root/STATUS).read_text(),
@@ -161,6 +161,67 @@ class CachedOfficialPDFIntakeTests(unittest.TestCase):
         self.assertEqual(s.api_calls,0)
         self.assertEqual(out["new_archived_pdf_candidates_this_run"],0)
         self.assertFalse((self.root/PDF_LOG).exists())
+        self.untouched()
+
+    def test_cached_index_cli_defaults_to_zero_http_requests(self):
+        import sys
+        with (
+            patch.object(sys,"argv",["nse_official_annual_pdf_auto_index.py",
+                                      "--cached-index-only"]),
+            patch("nse_official_annual_pdf_auto_index.data_root",
+                  return_value=self.root),
+            patch("nse_official_annual_pdf_auto_index.requests.Session",
+                  side_effect=AssertionError("NO_HTTP_IN_DEFAULT_CACHED_MODE")),
+        ):
+            outcome=main()
+        self.assertEqual(outcome,0)
+        self.assertFalse((self.root/PDF_LOG).exists())
+        self.assertTrue((self.root/CACHED_STATUS).exists())
+        self.assertEqual(json.loads((self.root/CACHED_STATUS).read_text())[
+            "pdf_archive_requests_this_run"],0)
+        self.untouched()
+
+    def test_cached_index_cli_validation_error_preserves_api_cooldown_bytes(self):
+        import sys
+        tampered=dict(self.entries[0])
+        tampered["ISIN"]="INE000000000"
+        csvwrite(self.root/OUTPUT,OUTPUT_FIELDS,[tampered])
+        status_before=(self.root/STATUS).read_bytes()
+        with (
+            patch.object(sys,"argv",["nse_official_annual_pdf_auto_index.py",
+                                      "--cached-index-only","--download","0"]),
+            patch("nse_official_annual_pdf_auto_index.data_root",
+                  return_value=self.root),
+            patch("nse_official_annual_pdf_auto_index.requests.Session",
+                  side_effect=AssertionError("NO_HTTP_ON_BAD_CACHE")),
+        ):
+            outcome=main()
+        self.assertEqual(outcome,1)
+        self.assertEqual((self.root/STATUS).read_bytes(),status_before)
+        separate=json.loads((self.root/CACHED_STATUS).read_text())
+        self.assertEqual(separate["state"],"CACHED_NSE_ANNUAL_PDF_INDEX_BLOCKED")
+        self.assertIn("ISSUER_ISIN",separate["reason"])
+        self.assertFalse((self.root/PDF_LOG).exists())
+        self.untouched()
+
+    def test_cached_index_cli_does_not_treat_pdf_403_as_metadata_block(self):
+        import sys
+        from requests import HTTPError
+        with (
+            patch.object(sys,"argv",["nse_official_annual_pdf_auto_index.py",
+                                      "--cached-index-only","--download","1"]),
+            patch("nse_official_annual_pdf_auto_index.data_root",
+                  return_value=self.root),
+            patch("nse_official_annual_pdf_auto_index.offline_cached_index_intake",
+                  side_effect=OfficialAnnualPdfUnavailable(
+                      "NSE_ANNUAL_PDF_ACCESS_BLOCKED_403")),
+        ):
+            outcome=main()
+        self.assertEqual(outcome,1)
+        self.assertEqual((self.root/STATUS).read_text(),
+                         json.dumps(self.blocked))
+        self.assertEqual(json.loads((self.root/CACHED_STATUS).read_text())[
+            "state"],"CACHED_NSE_ANNUAL_PDF_INDEX_BLOCKED")
         self.untouched()
 
     def test_empty_cached_pdf_index_is_read_only_no_http(self):
