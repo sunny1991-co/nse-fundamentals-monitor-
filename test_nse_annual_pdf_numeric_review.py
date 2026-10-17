@@ -82,6 +82,71 @@ class Reader:
         self.pages[210]=Page(CF)
 
 
+class SplitCellPage(Page):
+    def extract_text(self,extraction_mode=None):
+        return self.content
+
+
+class WrappedPDFReader(Reader):
+    """Simulate actual multi-line pypdf extraction from a 2-year table."""
+    balance=(BS.replace("Total equity 35,295.37 29,357.86",
+                        "Total equity\n35,295.37\n29,357.86")
+               .replace("(i) Borrowings 19 1,241.25 1,856.93",
+                        "(i) Borrowings 19\n1,241.25 1,856.93")
+               .replace("(i) Borrowings 23 10,320.78 8,334.97",
+                        "(i) Borrowings 23\n10,320.78\n8,334.97"))
+    pnl=PNL.replace("Revenue from Operations 29 77,749.29 70,168.72",
+                    "Revenue from Operations 29\n77,749.29\n70,168.72")
+
+
+class LayoutOnlyPage:
+    def __init__(self,primary,layout):
+        self.primary=primary
+        self.layout=layout
+
+    def extract_text(self,extraction_mode=None):
+        if extraction_mode=="layout":
+            return self.layout
+        return self.primary
+
+
+class LayoutModePDFReader(Reader):
+    """Simulates pypdf reading numbers in a separate column by default."""
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        primary_bs=(BS.replace("Total equity 35,295.37 29,357.86",
+                               "Total equity")
+                      .replace("(i) Borrowings 19 1,241.25 1,856.93",
+                               "(i) Borrowings 19")
+                      .replace("(i) Borrowings 23 10,320.78 8,334.97",
+                               "(i) Borrowings 23"))
+        primary_pnl=PNL.replace(
+            "Revenue from Operations 29 77,749.29 70,168.72",
+            "Revenue from Operations 29")
+        self.pages[208]=LayoutOnlyPage(primary_bs,BS)
+        self.pages[209]=LayoutOnlyPage(primary_pnl,PNL)
+
+
+class ConflictingTextModesPDFReader(Reader):
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages[209]=LayoutOnlyPage(
+            PNL,PNL.replace("Revenue from Operations 29 77,749.29 70,168.72",
+                            "Revenue from Operations 29 77,749.30 70,168.72"))
+
+
+class BorrowingsWrongSectionsReader(Reader):
+    balance=BS.replace(
+        "Non-current Liabilities\n(i) Borrowings 19 1,241.25 1,856.93",
+        "Current Liabilities\n(i) Borrowings 19 1,241.25 1,856.93")
+
+
+class MissingRowNeighborReader(Reader):
+    pnl=PNL.replace("Revenue from Operations 29 77,749.29 70,168.72",
+                    "Revenue from Operations 29\n"
+                    "II. Other income 30 406.51 293.38")
+
+
 class NoUnits(Reader):
     balance=BS.replace("(In Lakhs)","(INR)")
     pnl=PNL.replace("(In Lakhs)","(INR)")
@@ -185,6 +250,72 @@ class AnnualPDFNumericEvidenceTests(unittest.TestCase):
         # Review is idempotent under the same immutable PDF SHA/version.
         self.assertEqual(run(self.root,max_files=1,now=NOW,reader_cls=Reader)[
             "new_reports_read"],0)
+        self.assert_protected()
+
+    def test_wrapped_two_year_cells_from_original_pdf_safe_reconstruction(self):
+        # Real PDF text sometimes puts the printed annual cells on
+        # separate lines even though the visible table row is one row.
+        details=financial_page_evidence(PDF,self.pages,reader_cls=WrappedPDFReader)
+        self.assertEqual(details["state"],
+                         "COMPLETE_SOURCE_ROW_CANDIDATES_NOT_AUDIT_VERIFIED")
+        self.assertEqual(details["metrics"]["Revenue_Operations_Cr"],"777.4929")
+        self.assertEqual(details["metrics"]["Total_Equity_Cr"],"352.9537")
+        self.assertEqual(details["metrics"]["Total_Borrowings_Cr"],"115.6203")
+        self.assertEqual(details["borrowings_check"],
+                         "BOTH_ROW_CANDIDATES_FOUND_UNVERIFIED")
+        self.assert_protected()
+
+    def test_independent_pdf_layout_can_rescue_split_table_columns(self):
+        details=financial_page_evidence(PDF,self.pages,reader_cls=LayoutModePDFReader)
+        self.assertEqual(details["state"],
+                         "COMPLETE_SOURCE_ROW_CANDIDATES_NOT_AUDIT_VERIFIED")
+        self.assertEqual(details["metrics"]["Revenue_Operations_Cr"],"777.4929")
+        self.assertEqual(details["metrics"]["Total_Equity_Cr"],"352.9537")
+        self.assertEqual(details["metrics"]["Total_Borrowings_Cr"],"115.6203")
+        self.assertEqual(details["raw_evidence"]["Total_Equity_Cr"][
+            "pdf_extraction_mode"],"LAYOUT_TEXT")
+        self.assert_protected()
+
+    def test_if_both_pdf_text_modes_disagree_do_not_guess_source_number(self):
+        details=financial_page_evidence(PDF,self.pages,
+                                        reader_cls=ConflictingTextModesPDFReader)
+        self.assertEqual(details["metrics"],{})
+        self.assertIn(
+            "Revenue_Operations_Cr:CONFLICTING_PDF_TEXT_EXTRACTION_MODES",
+            details["issues"])
+        self.assert_protected()
+
+    def test_never_consume_neighbor_named_financial_row_values(self):
+        details=financial_page_evidence(PDF,self.pages,
+                                        reader_cls=MissingRowNeighborReader)
+        self.assertEqual(details["metrics"],{})
+        self.assertIn("Revenue_Operations_Cr:MISSING_OR_AMBIGUOUS_TWO_COLUMN_ROW",
+                      details["issues"])
+        self.assert_protected()
+
+    def test_borrowings_must_be_in_noncurrent_then_current_sections(self):
+        details=financial_page_evidence(PDF,self.pages,
+                                        reader_cls=BorrowingsWrongSectionsReader)
+        self.assertEqual(details["metrics"],{})
+        self.assertIn("BORROWINGS_REQUIRES_TWO_INDEPENDENT_SOURCE_ROWS",
+                      details["issues"])
+        self.assert_protected()
+
+    def test_existing_v1_failure_automatically_rechecked_with_v2(self):
+        self.root.joinpath(OUTPUT).write_text(
+            "Symbol,Financial_Year,PDF_SHA256,Numeric_Review_Version,Review_State\n"
+            + f"20MICRONS,2023-24,{SHA},numeric-evidence-candidate-v1,"
+              "INCOMPLETE_OR_AMBIGUOUS_SOURCE_NUMBERS_REVIEW_REQUIRED\n"
+        )
+        result=run(self.root,max_files=1,now=NOW,reader_cls=WrappedPDFReader)
+        self.assertEqual(result["new_reports_read"],1)
+        with (self.root/OUTPUT).open(newline="") as f:
+            data=list(csv.DictReader(f))
+        self.assertEqual(len(data),2)
+        self.assertEqual({r["Numeric_Review_Version"] for r in data},
+                         {"numeric-evidence-candidate-v1",VERSION})
+        self.assertEqual([r for r in data if r["Numeric_Review_Version"]==VERSION][0][
+            "Candidate_Core_Fields"],"6")
         self.assert_protected()
 
     def test_unit_or_date_ambiguity_quarantines_all_numeric_candidates(self):
