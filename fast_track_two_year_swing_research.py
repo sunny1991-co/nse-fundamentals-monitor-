@@ -34,6 +34,7 @@ from research_monitor.termux_resources import memory_snapshot
 
 OUTPUT = "fast_track_two_year_eod_research.csv"
 STATUS = "runtime/fast_track_two_year_eod_research_status.json"
+CURSOR = "runtime/fast_track_two_year_eod_cursor.json"
 MAX_BARS_PER_SYMBOL = 350
 MAX_SYMBOLS = 300
 MAX_ROWS = 15
@@ -206,9 +207,23 @@ def scan(root: Path, *, now:datetime|None=None,max_symbols:int=MAX_SYMBOLS,
     if not resources.get("heavy_research_allowed"):
         raise FastTrackBlocked("RAM_PRESSURE_RESEARCH_DEFERRED")
     eligible=source_universe(root,now)
-    # Sorted batches are deterministic; unscanned companies are explicitly
-    # OUT OF SCOPE until a later manually scheduled scan.
-    batch=eligible[:max_symbols]
+    # Rotate deterministic capped batches between daily maintenance runs.
+    # The cursor is bound to the EXACT provisional symbol set, not a stale
+    # count or an unrelated previous shortlist. Never skip a company silently.
+    digest=hashlib.sha256("|".join(
+        item["Symbol"] for item in eligible).encode("utf-8")).hexdigest()
+    cursor_path=root/CURSOR
+    try:
+        previous=json.loads(cursor_path.read_text(encoding="utf-8"))
+        start=(previous["next_offset"] if
+               previous.get("universe_sha256")==digest else 0)
+        if (not isinstance(start,int) or isinstance(start,bool)
+            or start<0 or start>=len(eligible)):
+            start=0
+    except (OSError,ValueError,KeyError,TypeError):
+        start=0
+    batch=eligible[start:start+max_symbols]
+    next_offset=(start+len(batch)) % len(eligible) if eligible else 0
     research=[]
     if batch:
         bars=adjusted_bars(root,{r["Symbol"] for r in batch},now)
@@ -261,6 +276,10 @@ def scan(root: Path, *, now:datetime|None=None,max_symbols:int=MAX_SYMBOLS,
         "strategy":STRATEGY_ID,
         "provisional_two_fy_quality_symbols":len(eligible),
         "bounded_symbols_assessed_this_run":len(batch),
+        "research_batch_start_offset":start,
+        "research_batch_next_offset":next_offset,
+        "universe_rotation_complete_this_run":(
+            start+len(batch)>=len(eligible)),
         "qualified_adjusted_price_histories":len(bars) if batch else 0,
         "research_patterns_this_run":len(research),
         "research_rows_written":min(MAX_ROWS,len(research)),
@@ -273,6 +292,8 @@ def scan(root: Path, *, now:datetime|None=None,max_symbols:int=MAX_SYMBOLS,
         "trade_eligible":False,"orders":"DISABLED",
     }
     write_csv_atomic(root/OUTPUT,FIELDS,research[:MAX_ROWS])
+    atomic_status(cursor_path,{"universe_sha256":digest,
+                               "next_offset":next_offset})
     atomic_status(root/STATUS,report)
     return report
 
