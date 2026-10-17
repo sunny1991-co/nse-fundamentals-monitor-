@@ -32,6 +32,12 @@ STEPS = [
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
     ("legacy_annual_verify",
      [sys.executable, str(CODE_ROOT/'nse_legacy_xbrl_verify.py'), '--limit', '100'], 20*60),
+    # Audited consolidated NSE XBRL only; bounded new company-years each day.
+    # On NSE access blocks or stale discovery, report a failure; NEVER promote a
+    # stock on vendor financials, and never overwrite FY baselines.
+    ("official_discovered_annual_catchup",
+     [sys.executable, str(CODE_ROOT/'nse_annual_history.py'),
+      '--include-discovered', '--limit', '25'], 20*60),
     ("sector_refresh",
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
