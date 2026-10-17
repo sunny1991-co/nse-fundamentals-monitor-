@@ -42,6 +42,13 @@ STEPS = [
     ("annual_pdf_numeric_evidence_review",
      [sys.executable, str(CODE_ROOT/'nse_annual_pdf_numeric_review.py'),
       '--max-files', '2'], 8*60),
+    # One later 2023-24 original PDF can ALSO contain FY2022-23
+    # comparative columns. Revalidate immutable PDF/source and retain
+    # candidates separately; not an original FY22-23 XBRL verification.
+    ("archived_pdf_prior_year_comparatives_research_only",
+     [sys.executable,
+      str(CODE_ROOT/'nse_annual_pdf_prior_year_comparatives.py'),
+      '--max-files', '2'], 8*60),
     # NSE Indices' broad constituent industry reference; not strict 4-tier sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
