@@ -188,7 +188,7 @@ def _first_column(frame: pd.DataFrame, aliases: Iterable[str]) -> str | None:
     return None
 
 
-def parse_bhavcopy(payload: bytes, day: date, source_kind: str, symbols: set[str]) -> list[tuple]:
+def parse_bhavcopy(payload: bytes, day: date, source_kind: str, symbols: set[str] | None) -> list[tuple]:
     raw = _csv_bytes(payload, source_kind in {"legacy", "udiff"})
     frame = pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
     frame.columns = [str(c).strip().lstrip("\ufeff") for c in frame.columns]
@@ -210,7 +210,13 @@ def parse_bhavcopy(payload: bytes, day: date, source_kind: str, symbols: set[str
 
     sym = frame[cols["symbol"]].astype(str).str.strip().str.upper()
     series = frame[cols["series"]].astype(str).str.strip().str.upper()
-    frame = frame[sym.isin(symbols) & series.eq("EQ")].copy()
+    # None is reserved for the separate, research-only unadjusted EQ archive.
+    # Existing validated trading-history collectors ALWAYS supply a symbol set.
+    # The resulting archive is not a mainboard or corporate-action attestation.
+    mask = series.eq("EQ")
+    if symbols is not None:
+        mask = mask & sym.isin(symbols)
+    frame = frame[mask].copy()
     if frame.empty:
         return []
 
@@ -347,7 +353,7 @@ def _headers(referer: str) -> dict[str, str]:
     }
 
 
-def fetch_one_day(session: requests.Session, day: date, symbols: set[str]) -> tuple[str, str, str, list[tuple], str]:
+def fetch_one_day(session: requests.Session, day: date, symbols: set[str] | None) -> tuple[str, str, str, list[tuple], str]:
     errors = []
     for kind, url in candidate_urls(day):
         try:
