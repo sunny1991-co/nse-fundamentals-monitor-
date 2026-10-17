@@ -34,6 +34,17 @@ OUTPUT = "nse_official_annual_pdf_candidates.csv"
 LEDGER = "runtime/nse_official_annual_pdf_index_ledger.csv"
 STATUS = "runtime/nse_official_annual_pdf_collector_status.json"
 CACHED_STATUS = "runtime/nse_official_annual_pdf_cached_intake_status.json"
+CACHED_ATTEMPTS = "runtime/nse_official_annual_pdf_cached_download_attempts.csv"
+CACHED_ATTEMPT_FIELDS = [
+    "Symbol","Financial_Year","Official_Report_URL",
+    "Original_Metadata_SHA256","Attempted_At_UTC","Attempt_Result",
+]
+CACHED_SOURCE_FAIL_20H = timedelta(hours=20)
+CACHED_SOURCE_404_RETRY = timedelta(days=7)
+CACHED_ATTEMPT_RESULTS = frozenset({
+    "ARCHIVED_SUCCESS","PDF_ACCESS_403","PDF_ACCESS_429",
+    "PDF_NOT_FOUND_404","PDF_SOURCE_ERROR",
+})
 ACCESS_COOLDOWN = timedelta(hours=20)
 PDF_DIR = Path("runtime") / "official_annual_report_pdf_candidates"
 PDF_LOG = "runtime/nse_official_pdf_download_receipts.csv"
@@ -233,8 +244,66 @@ def choose_symbols(root:Path, now:datetime, limit:int)->list[dict]:
     return [x[4] for x in candidates[:limit]]
 
 
+def _pdf_source_attempt_code(exc:Exception)->str:
+    value=str(exc)
+    if "ACCESS_BLOCKED_403" in value:
+        return "PDF_ACCESS_403"
+    if "ACCESS_BLOCKED_429" in value:
+        return "PDF_ACCESS_429"
+    if "HTTP_404" in value:
+        return "PDF_NOT_FOUND_404"
+    return "PDF_SOURCE_ERROR"
+
+
+def cached_pdf_retry_state(root:Path, index:dict, now:datetime):
+    """Strict identity-locked, bounded per-URL failed original PDF requests.
+
+    A previous 403/429 is a 20h *archive-host-wide* cooldown; 404 is
+    deferred for seven days for that exact URL. Never mutate NSE metadata
+    API's own access cooldown and never assume a 404 proves no filing.
+    """
+    path=root/CACHED_ATTEMPTS
+    if not path.is_file():
+        return {}, ""
+    if path.is_symlink() or path.stat().st_size>2_000_000:
+        raise OfficialAnnualPdfUnavailable("UNSAFE_CACHED_PDF_REQUEST_LEDGER")
+    lines=read_rows(path)
+    if len(lines)>10000:
+        raise OfficialAnnualPdfUnavailable("CACHED_PDF_REQUEST_LEDGER_TOO_LARGE")
+    latest={}
+    global_until=""
+    for row in lines:
+        sym=row.get("Symbol","")
+        fy=row.get("Financial_Year","")
+        url=row.get("Official_Report_URL","")
+        key=(sym,fy,url)
+        if (key in latest or key not in index
+            or row.get("Original_Metadata_SHA256")!=
+               index[key].get("Original_Metadata_SHA256")
+            or row.get("Attempt_Result") not in CACHED_ATTEMPT_RESULTS):
+            raise OfficialAnnualPdfUnavailable("CACHED_PDF_REQUEST_LEDGER_SOURCE_IDENTITY_INVALID")
+        try:
+            stamped=datetime.fromisoformat(row["Attempted_At_UTC"])
+            if (stamped.tzinfo is None or stamped>now or
+                stamped.year<2020):
+                raise ValueError("invalid attempt date")
+        except (KeyError,TypeError,ValueError,OverflowError) as exc:
+            raise OfficialAnnualPdfUnavailable("CACHED_PDF_REQUEST_LEDGER_TIMESTAMP_INVALID") from exc
+        result=row["Attempt_Result"]
+        delay=(CACHED_SOURCE_404_RETRY if result=="PDF_NOT_FOUND_404"
+               else CACHED_SOURCE_FAIL_20H)
+        until=stamped+delay
+        if result in ("PDF_ACCESS_403","PDF_ACCESS_429") and now<until:
+            candidate=until.astimezone(timezone.utc).isoformat()
+            if candidate>global_until:
+                global_until=candidate
+        latest[key]=(result,until)
+    return latest,global_until
+
+
 def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
-                 *,session,now:datetime,limit:int)->tuple[int,str]:
+                 *,session,now:datetime,limit:int,
+                 attempts:list[dict]|None=None)->tuple[int,str]:
     if limit==0:
         return 0,"PDF_DOWNLOAD_DISABLED"
     existing={(r.get("Symbol"),r.get("Financial_Year"),
@@ -266,7 +335,17 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
             attempted+=1
             payload=public_pdf(session,url)
         except (OfficialAnnualPdfUnavailable,requests.RequestException) as exc:
-            if "ACCESS_BLOCKED" in str(exc):
+            code=_pdf_source_attempt_code(exc)
+            if attempts is not None:
+                attempts.append({
+                    "Symbol":item["Symbol"],
+                    "Financial_Year":item["Financial_Year"],
+                    "Official_Report_URL":url,
+                    "Original_Metadata_SHA256":item["Original_Metadata_SHA256"],
+                    "Attempted_At_UTC":now.astimezone(timezone.utc).isoformat(),
+                    "Attempt_Result":code,
+                })
+            if code in ("PDF_ACCESS_403","PDF_ACCESS_429"):
                 state="NSE_PDF_DOWNLOAD_ACCESS_BLOCKED"
                 break
             state="SOME_ANNUAL_PDFS_UNAVAILABLE"
@@ -302,6 +381,15 @@ def acquire_pdfs(root:Path,candidates:list[dict],receipts:list[dict],
             "Review_Status":"REQUIRES_AUDITED_CONSOLIDATED_FULL_YEAR_NUMERIC_RECONCILIATION",
         }
         receipts.append(receipt)
+        if attempts is not None:
+            attempts.append({
+                "Symbol":item["Symbol"],
+                "Financial_Year":item["Financial_Year"],
+                "Official_Report_URL":url,
+                "Original_Metadata_SHA256":item["Original_Metadata_SHA256"],
+                "Attempted_At_UTC":now.astimezone(timezone.utc).isoformat(),
+                "Attempt_Result":"ARCHIVED_SUCCESS",
+            })
         existing.add(key)
         size+=len(payload)
         added+=1
@@ -484,10 +572,25 @@ def offline_cached_index_intake(root:Path,*,downloads:int=0,
         # Prefer it over a 2022-23 PDF on equal issuer priority.
         0 if r["Financial_Year"]=="2023-24" else 1,
         r["Symbol"],r["Official_Report_URL"]))
+    retry_state,global_pdf_cooldown=cached_pdf_retry_state(root,unique,now)
+    eligible=[]
+    deferred=[]
+    for row in remaining:
+        key=(row["Symbol"],row["Financial_Year"],row["Official_Report_URL"])
+        attempt=retry_state.get(key)
+        if (global_pdf_cooldown or
+            (attempt and attempt[0]!="ARCHIVED_SUCCESS" and
+             now<attempt[1])):
+            deferred.append(row)
+        else:
+            eligible.append(row)
     stamp=now.astimezone(timezone.utc).isoformat()
     report={
         "checked_at_utc":stamp,
         "state":"OFFLINE_CACHED_NSE_ANNUAL_PDF_INDEX_REVIEW_COMPLETE",
+        "indexed_pdf_links_deferred_by_pdf_source_retry_guard":len(deferred),
+        "indexed_pdf_links_eligible_for_bounded_download":len(eligible),
+        "archived_pdf_source_host_cooldown_until_utc":global_pdf_cooldown,
         "official_nse_mainboard_eq_companies":len(owners),
         "previously_indexed_official_pdf_candidate_links":len(unique),
         "already_archived_original_pdf_receipts":len(receipt_keys),
@@ -501,34 +604,63 @@ def offline_cached_index_intake(root:Path,*,downloads:int=0,
         "annual_report_metadata_api_calls_this_run":0,
         "old_financial_results_api_calls_this_run":0,
         "pdf_archive_request_budget_this_run":downloads,
-        "pdf_archive_requests_this_run":0 if downloads==0 else "UP_TO_BUDGET",
+        "pdf_archive_requests_this_run":0,
         "new_archived_pdf_candidates_this_run":0,
         "pdf_index_is_previous_metadata_not_reverified_xml":True,
         "pdf_candidate_financials_strict_verified":False,
         "new_strict_fundamental_passes":0,
         "orders":"DISABLED",
     }
-    if not downloads or not remaining:
+    if not downloads or not eligible:
         if not remaining:
             report["state"]="CACHED_NSE_ANNUAL_PDF_INDEX_NO_PENDING_DOCUMENTS"
+        elif downloads and not eligible:
+            report["state"]="CACHED_NSE_ANNUAL_PDF_DOWNLOAD_RETRY_COOLDOWN_NO_REQUEST"
         atomic_status(root/CACHED_STATUS,report)
         return report
     own=session is None
     session=session or requests.Session()
+    new_attempts=[]
     try:
         if own:
             session.headers.update({
                 "User-Agent":"Mozilla/5.0",
                 "Referer":LANDING,"Accept":"application/pdf",
             })
-        added,state=acquire_pdfs(root,remaining,receipts,session=session,
-                                now=now,limit=downloads)
+        added,state=acquire_pdfs(root,eligible,receipts,session=session,
+                                now=now,limit=downloads,attempts=new_attempts)
         report["state"]="CACHED_NSE_ANNUAL_PDF_SOURCE_ARCHIVE_BOUNDED"
+        report["pdf_archive_requests_this_run"]=len(new_attempts)
         report["new_archived_pdf_candidates_this_run"]=added
         report["pdf_archive_state"]=state
         report["validated_indexed_pdf_links_pending_archive"]-=added
         if added:
             write_csv_atomic(root/PDF_LOG,PDF_FIELDS,receipts)
+        if new_attempts:
+            # Store only the most recent attempt for each immutable
+            # (issuer,FY,original NSE PDF URL,index SHA) source.
+            for attempt in new_attempts:
+                key=(attempt["Symbol"],attempt["Financial_Year"],
+                     attempt["Official_Report_URL"])
+                if key not in unique:
+                    raise OfficialAnnualPdfUnavailable(
+                        "CACHED_PDF_ATTEMPT_URL_NO_LONGER_OFFICIALLY_INDEXED")
+                retry_state[key]=(
+                    attempt["Attempt_Result"],
+                    datetime.fromisoformat(attempt["Attempted_At_UTC"]),
+                )
+            previous={
+                (r["Symbol"],r["Financial_Year"],r["Official_Report_URL"]):r
+                for r in read_rows(root/CACHED_ATTEMPTS)
+            }
+            for attempt in new_attempts:
+                previous[(attempt["Symbol"],attempt["Financial_Year"],
+                          attempt["Official_Report_URL"])]=attempt
+            (root/CACHED_ATTEMPTS).parent.mkdir(parents=True,exist_ok=True)
+            write_csv_atomic(root/CACHED_ATTEMPTS,CACHED_ATTEMPT_FIELDS,
+                             sorted(previous.values(),key=lambda r:(
+                                 r["Symbol"],r["Financial_Year"],
+                                 r["Official_Report_URL"])))
     finally:
         if own:
             session.close()

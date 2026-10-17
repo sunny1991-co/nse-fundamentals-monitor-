@@ -513,3 +513,62 @@ timestamp is retained under its own status; any cached-index source
 validation error or archive 403 is reported in the SEPARATE
 cached-index status instead and **cannot reset the original
 NSE API cooldown**. Tests cover these cases.
+
+## Archived original NSE Annual Report PDFs: safe cached-link-first daily intake
+
+Actual 2026-10-17 private Termux source plan: 2,344 NSE EQ Mainboard
+companies, 1,597 current baseline-tracked, 1,227 with six core fields
+populated in both newer-FY research baselines; 6 old FY2023–24
+official original annual PDF index links still need a cached original
+document. These links are *not yet downloaded/parsed/verified*.
+FY2023–24 PDF current column and FY2022–23 prior comparative values
+remain research candidates even after successful source PDF parsing.
+The previously attempted old original annual XBRL sources had zero
+verified strict annual context yield in the last 50 downloads.
+
+A new source-failure safety guard now applies to
+`nse_official_annual_pdf_auto_index.py --cached-index-only`.
+The cached index path validates current official EQ Mainboard symbol
+and ISIN, metadata source URL and SHA receipt, keeps its own
+`runtime/nse_official_annual_pdf_cached_download_attempts.csv`
+containing one recent attempt per indexed original PDF URL, and
+never calls NSE's annual-report metadata API. **404 gets a 7-day
+per-document retry deferment**. A genuine PDF-archive 403/429
+activates a **20-hour archive-host-wide cooldown**; other PDF
+network/response failures are deferred per URL for 20 hours. All
+are reported in the offline status alongside total previously
+indexed PDFs, already cached receipts, eligible and deferred URLs.
+Mismatched/ambiguous/source-forged old attempt ledger rows fail
+closed before any PDF request. The metadata API's independent
+old 403/429 cooldown status is never reset or rewritten.
+
+The Termux bounded daily maintenance now separates the two jobs:
+(1) official Annual Report *metadata index* discovery,
+`--limit 10 --download 0`, and
+(2) original **previously indexed PDF** archive,
+`--cached-index-only --download 1`. A source index API denial
+does not cause the cached-only stage to hit that blocked API,
+and cached download attempts cannot exceed **one** per run.
+Even a PDF 404 or 403 consumes the attempt budget. Successful
+PDF archive receipts still require original SHA and independently
+located audited consolidated statement pages, accounting checks
+and source audit; nothing enters historical XBRL facts or strict
+screens automatically.
+
+To inspect the real six existing indexed PDF candidate links with
+ZERO NSE HTTP requests:
+
+    cd ~/nse-fundamentals-monitor-
+    git pull --ff-only
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 0
+
+Only when its report says at least one original PDF is eligible,
+the user can explicitly run a **one-file** bounded archive:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_official_annual_pdf_auto_index.py --cached-index-only --download 1
+
+A failed result stays in the dedicated source attempt cooldown;
+the same stale/blocked PDF URL is not immediately retried.
+An archived PDF adds NO audited XBRL-verified financial fact,
+stock signal, SMS alert or live broker trade, and orders remain
+DISABLED.
