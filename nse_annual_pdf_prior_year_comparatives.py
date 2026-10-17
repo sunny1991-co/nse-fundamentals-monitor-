@@ -28,7 +28,7 @@ from nse_mainboard_discovery import write_csv_atomic
 from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
-VERSION="prior-year-comparative-candidate-v1"
+VERSION="prior-year-comparative-candidate-v2-revalidated-current-section"
 OUTPUT="nse_annual_pdf_prior_year_comparative_candidates.csv"
 STATUS="runtime/nse_annual_pdf_prior_year_comparative_status.json"
 MAX_FILES=2
@@ -203,7 +203,8 @@ def run(root:Path,*,max_files:int=1,now=None,reader_cls=None)->dict:
     current={
         (r.get("Symbol"),r.get("Financial_Year"),
          r.get("Official_Report_URL"),r.get("PDF_SHA256")):r
-        for r in numeric if r.get("Numeric_Review_Version")==NUMERIC_VERSION
+        for r in numeric if (r.get("Numeric_Review_Version")==NUMERIC_VERSION
+                             and r.get("Section_Review_Version")==SECTION_VERSION)
     }
     old=records(root/OUTPUT)
     archive={
