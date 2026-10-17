@@ -49,6 +49,12 @@ STEPS = [
      [sys.executable,
       str(CODE_ROOT/'nse_annual_pdf_prior_year_comparatives.py'),
       '--max-files', '2'], 8*60),
+    # Source-locked FY22/23 -> FY23/24 growth research from original annual
+    # PDF and its present/prior candidate files. Never feeds the screened
+    # fundamental universe, buy/sell alerts or orders.
+    ("archived_pdf_yoy_research_only",
+     [sys.executable, str(CODE_ROOT/'nse_annual_pdf_two_year_research.py'),
+      '--max-files', '2'], 8*60),
     # NSE Indices' broad constituent industry reference; not strict 4-tier sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
