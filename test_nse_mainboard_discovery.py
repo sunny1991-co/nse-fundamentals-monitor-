@@ -77,7 +77,7 @@ class NseMainboardDiscoveryTests(unittest.TestCase):
         # Some SME source exports expose only SYMBOL and a descriptive field.
         # That can remove a symbol, but must not manufacture an ISIN.
         self.feed[SME_URL] = (
-            "SYMBOL,COMPANY NAME\nSMEX,SME Company\n"
+            "SYMBOL,COMPANY NAME\nSMEX,SME Company Name For NSE Emerge Listed Securities Official\n"
         ).encode()
         report = self.run_refresh()
         self.assertEqual(report["sme_isin_rows"], 0)
@@ -97,7 +97,7 @@ class NseMainboardDiscoveryTests(unittest.TestCase):
 
     def test_unrecognized_header_error_is_source_specific(self):
         self.feed[SME_URL] = (
-            "UNKNOWN,NAME\nA,1\n"
+            "UNKNOWN,NAME\nA,Record with deliberately invalid official field names and sufficient bytes\n"
         ).encode()
         with self.assertRaisesRegex(
                 DiscoveryUnavailable, "SME_OFFICIAL_CSV_HEADERS_UNEXPECTED"):
