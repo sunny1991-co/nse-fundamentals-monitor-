@@ -179,9 +179,9 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
         # MISSING_SECTION decision permanently cached in the review index.
         self.root.joinpath(OUTPUT).write_text(
             "Symbol,ISIN,Financial_Year,Official_Report_URL,PDF_SHA256,"
-            "Review_Version,Section_Review_State\\n"
+            "Review_Version,Section_Review_State\n"
             + f"{SYMBOL},{ISIN},2022-23,{URL},{self.receipt[0]['PDF_SHA256']},"
-              "section-review-1,INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW\\n"
+              "section-review-1,INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW\n"
         )
         result=run(self.root,max_files=1,now=NOW,reader_cls=FakeSparseGapReader)
         self.assertEqual(result["reports_reviewed_this_run"],1)
