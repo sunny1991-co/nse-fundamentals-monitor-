@@ -7,8 +7,8 @@ Symbol,Macro_Economic_Sector,Sector,Industry,Basic_Industry,Lookup_Status,Lookup
 5PAISA,,,,,ERROR,2026-10-17,https://www.nseindia.com/,403 Client Error: Forbidden for url: https://www.nseindia.com/
 63MOONS,,,,,ERROR,2026-10-17,https://www.nseindia.com/,403 Client Error: Forbidden for url: https://www.nseindia.com/
 A2ZINFRA,,,,,ERROR,2026-10-17,https://www.nseindia.com/,403 Client Error: Forbidden for url: https://www.nseindia.com/
-AADHARHFC,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AADHARHFC,NSE quote HTTP 403 (blocked)
-AARTECH,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTECH,NSE quote HTTP 403 (blocked)
+AADHARHFC,,,,,ERROR,2026-10-17,https://www.nseindia.com/,403 Client Error: Forbidden for url: https://www.nseindia.com/
+AARTECH,,,,,ERROR,2026-10-17,https://www.nseindia.com/,403 Client Error: Forbidden for url: https://www.nseindia.com/
 AARTIDRUGS,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIDRUGS,NSE quote HTTP 403 (blocked)
 AARTIIND,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIIND,NSE quote HTTP 403 (blocked)
 AARTIPHARM,,,,,ERROR,2026-10-15,https://www.nseindia.com/api/quote-equity?symbol=AARTIPHARM,NSE quote HTTP 403 (blocked)
