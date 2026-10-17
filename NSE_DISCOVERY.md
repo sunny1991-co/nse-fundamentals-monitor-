@@ -488,3 +488,23 @@ blind spot. Checks then repeat at the normal two-minute cadence. The first
 scan reports worker startup as a grace period, NOT a stuck worker; the
 10-minute per-process safety delay and repeated health-check confirmation
 still apply before any automatic restart.
+
+## FY22/FY23 audited annual PDF locator precision (adaptive bounded scan)
+
+The first NSE archived-PDF candidate locator sparsely sampled late pages, so
+a small group of four real consolidated statement headings **between** its
+samples could be incorrectly marked missing. The section-review v2 adaptive
+scanner preserves the same strict 90-page extraction cap, but searches a
+contiguous likely late-report financial region (up to 50 pages) after at most
+24 sparse samples, then checks neighbors of headings when available.
+
+Already archived PDFs with a v1 review will be safely **re-examined** by the
+v2 versioned receipt while retaining both immutable source-hash records.
+Regression cases simulate a 280-page official annual report whose auditor,
+balance sheet, P&L and cash flow headings all fall between sparse samples,
+verify it remains READ-ONLY and confirm no strict fundamental PASS/order.
+
+The search is still intentionally partial: other report layouts, images,
+missing text extraction, standalone/consolidated ambiguity, period, monetary
+unit and auditor scope must be independently verified. Locating a likely
+section is never evidence of an audited numeric financial fact.

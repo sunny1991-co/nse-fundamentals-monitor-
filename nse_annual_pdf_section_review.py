@@ -27,7 +27,7 @@ from research_monitor.schedule import atomic_status
 
 OUTPUT="nse_annual_pdf_section_review.csv"
 STATUS="runtime/nse_annual_pdf_section_review_status.json"
-VERSION="section-review-1"
+VERSION="section-review-2-adaptive"
 MAX_FILES=2
 MAX_SCAN_PAGES=90
 MAX_PAGES=700
@@ -98,13 +98,27 @@ def checked_sources(root,now):
 
 
 def page_indices(count):
-    """Small coarse search + neighborhoods; report PARTIAL, never a full scan."""
+    """Coarse source samples, reserving most pages for a targeted dense scan."""
     if not 15<=count<=MAX_PAGES:
         raise SectionReviewBlocked("UNREASONABLE_PDF_PAGE_COUNT")
-    # Search first 4 pages for fiscal year and at most 10-page step 10
-    # from one-third to the end. Then inspect +/-5 for candidate headings.
     sample=list(range(max(5,count//3),count,max(9,(count//3)//16)))
-    return sample
+    # Keeping 24 or fewer sparse pages preserves the strictly bounded
+    # 90-page parsing budget on long annual reports.
+    stride=max(1,(len(sample)+23)//24)
+    return sample[::stride][:24]
+
+
+def dense_financial_band(count):
+    """Likely late-report consolidated section, never proof of its presence.
+
+    India annual reports commonly place consolidated statements after the
+    standalone report. Inspect adjacent pages rather than hoping one of four
+    consecutive statement pages exactly matches a sparse 9-page stride.
+    """
+    span=min(50,max(12,round(count*.18)))
+    center=round(count*.715)
+    start=max(4,min(count-span,center-span//2))
+    return range(start,start+span)
 
 
 def locate_sections(reader,year):
@@ -158,20 +172,26 @@ def locate_sections(reader,year):
                 found[key].append(i+1)
         return any(verdict.values())
 
-    # Broad samples find a likely section; nearby pages reveal adjacent
-    # individual statements. Source dates, amounts and audit basis are NOT
-    # independently verified by this textual locator.
+    # Broad sampling discovers headings outside the usual financial pages.
+    # A second dense late-report band rescues pages between sparse samples.
+    # Continue to reserve up to 12 pages for neighboring sections after a
+    # heading is located. The scanner is deliberately PARTIAL, not exhaustive.
     pivots=[]
     for i in seed:
         if len(scanned)>=MAX_SCAN_PAGES-12:
             break
         if match(i):
             pivots.append(i)
-    for i in pivots[:5]:
-        if len(scanned)>=MAX_SCAN_PAGES:
+    for i in dense_financial_band(count):
+        if len(scanned)>=MAX_SCAN_PAGES-12 or all(found.values()):
+            break
+        if match(i):
+            pivots.append(i)
+    for i in pivots:
+        if len(scanned)>=MAX_SCAN_PAGES or all(found.values()):
             break
         for j in range(max(4,i-7),min(count,i+8)):
-            if len(scanned)>=MAX_SCAN_PAGES:
+            if len(scanned)>=MAX_SCAN_PAGES or all(found.values()):
                 break
             match(j)
     for item in found.values():

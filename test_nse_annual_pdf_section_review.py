@@ -13,6 +13,7 @@ from nse_official_annual_pdf_auto_index import (
 )
 from nse_annual_pdf_section_review import (
     SectionReviewBlocked,run,inspect_pdf,STATUS,OUTPUT,MAX_SCAN_PAGES,
+    VERSION,page_indices,dense_financial_band,
 )
 
 
@@ -48,6 +49,28 @@ class FakeReader:
         assert stream.read(5)==b"%PDF-"
         self.is_encrypted=False
         self.pages=[FakePage(i) for i in range(180)]
+
+
+class FakeSparseGapPage:
+    def __init__(self,index):
+        self.index=index
+
+    def extract_text(self):
+        if self.index==0:
+            return "Annual Report 2022-23 of TESTEQ Limited"
+        labels={
+            205:"Independent Auditor's Report on Consolidated Financial Statements",
+            206:"Consolidated Balance Sheet for 31 March 2023",
+            207:"Consolidated Statement of Profit and Loss",
+            208:"Consolidated Cash Flow Statement",
+        }
+        return labels.get(self.index,"Directors statutory disclosures")
+
+
+class FakeSparseGapReader(FakeReader):
+    def __init__(self,stream,strict=True):
+        super().__init__(stream,strict=strict)
+        self.pages=[FakeSparseGapPage(i) for i in range(280)]
 
 
 class FakeWrongFY(FakeReader):
@@ -130,6 +153,42 @@ class AnnualArchivedSectionReviewTests(unittest.TestCase):
         self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
         repeat=run(self.root,max_files=1,now=NOW,reader_cls=FakeReader)
         self.assertEqual(repeat["reports_reviewed_this_run"],0)
+        self.assert_protected()
+
+    def test_adaptive_scan_recovers_four_consecutive_official_sections_between_samples(self):
+        # The old sparse 9-page stride entirely skipped pages 205-208 of
+        # a 280-page annual report, despite those statements being present.
+        self.assertFalse(set(range(205,209)) & set(page_indices(280)))
+        self.assertTrue(set(range(205,209)).issubset(set(dense_financial_band(280))))
+        report=run(self.root,max_files=1,now=NOW,reader_cls=FakeSparseGapReader)
+        self.assertEqual(report["reports_reviewed_this_run"],1)
+        with (self.root/OUTPUT).open() as handle:
+            row=next(csv.DictReader(handle))
+        self.assertEqual(row["Auditor_Page_1based"],"206")
+        self.assertEqual(row["Consolidated_Balance_Sheet_Page_1based"],"207")
+        self.assertEqual(row["Consolidated_Profit_Loss_Page_1based"],"208")
+        self.assertEqual(row["Consolidated_Cash_Flow_Page_1based"],"209")
+        self.assertEqual(row["Review_Version"],VERSION)
+        self.assertLessEqual(int(row["Pages_Scanned"]),MAX_SCAN_PAGES)
+        self.assertEqual(row["Audited_Consolidated_Facts_Verified"],"false")
+        self.assertEqual(report["strict_annual_passes_added"],0)
+        self.assert_protected()
+
+    def test_old_page_locator_records_are_reexamined_for_same_exact_pdf_sha(self):
+        # Changing review rules should not leave an old incorrect
+        # MISSING_SECTION decision permanently cached in the review index.
+        self.root.joinpath(OUTPUT).write_text(
+            "Symbol,ISIN,Financial_Year,Official_Report_URL,PDF_SHA256,"
+            "Review_Version,Section_Review_State\n"
+            + f"{SYMBOL},{ISIN},2022-23,{URL},{self.receipt[0]['PDF_SHA256']},"
+              "section-review-1,INCOMPLETE_SECTIONS_OR_FISCAL_YEAR_REQUIRES_REVIEW\n"
+        )
+        result=run(self.root,max_files=1,now=NOW,reader_cls=FakeSparseGapReader)
+        self.assertEqual(result["reports_reviewed_this_run"],1)
+        with (self.root/OUTPUT).open() as handle:
+            rows=list(csv.DictReader(handle))
+        self.assertEqual({r["Review_Version"] for r in rows},
+                         {"section-review-1",VERSION})
         self.assert_protected()
 
     def test_wrong_annual_year_cannot_satisfy_candidate_review(self):
