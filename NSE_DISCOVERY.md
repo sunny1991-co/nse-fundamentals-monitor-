@@ -717,3 +717,57 @@ original audited XBRL annual history intake and requires **no paid AI**.
 If this returns `ORIGINAL_NSE_XBRL_HISTORY_NOT_AVAILABLE` for
 20MICRONS FY2023-24, that's the accurate next blocker, NOT permission
 to use a PDF candidate or an Upstox vendor value as verified XBRL.
+
+## Legacy NSE official Financial Results Annual XBRL link auto-discovery
+
+Real Termux data confirms 20MICRONS FY2023–24 original NSE Annual Report
+PDF six core values are recovered, but offline PDF/XBRL comparison reports
+`missing_original_xbrl_years=1`. This means there is no independently
+verified *local* NSE XBRL entry for that symbol/year. Do not infer the
+filing was never made, or certify a PDF candidate as an XBRL audited fact.
+
+NSE's pre-Integrated **Corporate Filings > Financial Results** archive,
+`https://www.nseindia.com/companies-listing/corporate-filings-financial-results`,
+lists old filings, including explicit Annual, Audited/Unaudited,
+Consolidated/Non-Consolidated, fiscal dates and optional original XBRL XML
+links. This distinct archive is the intended source for annual years prior
+to the transition to the post-March-2025 Integrated Filing pipeline.
+The issuer-targeted NSE endpoint observed in public developer references is
+`/api/corporates-financial-results?index=equities&symbol=<SYMBOL>&period=Annual`.
+
+`nse_legacy_annual_official_auto_index.py` runs in the existing free
+supervised Termux maintenance **before** the independent
+`nse_legacy_xbrl_verify.py` step. It performs at most ONE
+issuer-targeted official metadata lookup per day by default (maximum 3
+when manually requested), prioritizing archived NSE PDF symbols whose
+independent XBRL source is missing. Only accept an exact currently
+officially attested NSE mainboard EQ issuer+ISIN, explicit
+`period=Annual`, `audited=Audited`,
+`consolidated=Consolidated`, exact FY April 1–March 31
+start/end dates, an explicit broadcast date AFTER fiscal end, and an
+actual source-supplied HTTPS NSE `/corporate/xbrl/*.xml` original URL.
+No guessed URLs, quarter-4 substitutions, third-party values, anti-block
+workarounds or unbounded API retries. HTTP 403/429 stops the batch.
+Duplicate source revisions are retained for separate resolution.
+
+The official original-row SHA256, source URL and index metadata are retained
+in the existing private `nse_legacy_financial_results_2022-23.csv`
+and `nse_legacy_financial_results_2023-24.csv`, where the existing
+`nse_legacy_annual_recovery.py` builds its review manifest.
+The **separate** legacy XBRL verifier (symbol/issuer, exact annual contexts,
+audited basis, INR unit, duplicate-fact checks) continues to decide whether
+any original NSE audited consolidated financial row may enter verified
+historical data. Finding an XML URL is NOT verified data. The diagnostic
+PDF/XBRL comparison and the strict four-year fundamental screen remain
+read-only until those independent checks are genuinely satisfied.
+
+Manual probe on updated Termux, once:
+
+    NSE_DATA_DIR="$HOME/nse-fundamentals-data" python nse_legacy_annual_official_auto_index.py --max-symbols 1
+    cat ~/nse-fundamentals-data/runtime/nse_legacy_annual_official_auto_index_status.json
+
+A useful result would show
+`new_official_old_annual_xbrl_links_indexed` greater than zero. It does
+**NOT** imply `recovered_audited_xbrl_facts` greater than zero.
+`access_blocked_without_retry=true` or a changed/empty official API
+must be reported as a blocker rather than fixed by weakening source gates.
