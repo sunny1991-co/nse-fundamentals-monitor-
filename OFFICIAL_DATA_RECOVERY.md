@@ -214,3 +214,27 @@ first when old source access has been unreliable. Actual subsequent
 downloads remain conditional on NSE allowing authorized access
 and the original XML independently passing the strict context and
 numeric verifier.
+
+## Faster source preflight for >2,500 older NSE index links
+
+A real local Mainboard snapshot has reported 2,515 indexed older
+company-year NSE annual XBRL source URLs, but **not** audited verified
+XML facts. The first preflight algorithm filtered each issuer/year
+by repeatedly scanning both full source index tables. On mobile
+Termux this can make the read-only `--plan-only` command spend
+unnecessary time on repeated metadata string parsing.
+
+The source metadata preflight now builds one exact
+`(Symbol, Original_XML_URL)` index per year **after** requiring
+Audited, Consolidated, Annual, exact fiscal-year end and approved
+original NSE XML URL. This makes the per-company original metadata
+row lookup nearly constant-time instead of searching thousands of
+rows for every issuer. It does not change which annual filing XML
+context is required, and it still calls no NSE API.
+
+The source-authority check is also stricter: two matching official
+index CSV rows for the same issuer/year/source URL are
+**ambiguous even when broadcast dates match**. The system leaves
+them in manual source-review and will not download the same source
+under an automated preflight-ready flag. Prior source cooldown,
+historical data and disabled orders are unchanged.

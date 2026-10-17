@@ -111,18 +111,18 @@ def evaluate_candidate(item,*,catalog,indexes,url_claims,ledger,now):
         r["Next_Evidence_Action"]="REVIEW_CROSS_ISSUER_SOURCE_IDENTITY"
         return r
     expected_end=legacy.LEGACY_YEARS[fy]
-    matched=[
-        row for row in indexes.get(item["Index_File"],[])
-        if legacy.field(row,"Symbol").upper()==sym
-        and legacy.field(row,"XBRL URL")==source
-        and legacy.audited_annual_consolidated(row,expected_end)[0]
-    ]
+    # Rows were indexed ONCE per official FY source file before this
+    # per-company loop. Avoid O(company-years * old-index-rows) scans on
+    # mobile Termux with thousands of audited filing candidates.
+    matched=indexes.get(item["Index_File"],{}).get((sym,source),[])
     r["Source_Index_Rows_Matched"]=len(matched)
     publications={parse_date(legacy.field(row,"Broadcast Date"))
                   for row in matched}
     r["Official_Publication_Dates_Matched"]="|".join(sorted(
         p.isoformat() if p else "MISSING" for p in publications))
-    if len(matched)!=1 and (not matched or len(publications)!=1):
+    # Two matching index rows are NOT a unique source even when their
+    # broadcast dates happen to be equal. Fail closed for duplicates.
+    if len(matched)!=1:
         r["Source_Review_State"]="SOURCE_INDEX_ROW_OR_PUBLICATION_AMBIGUOUS"
         r["Next_Evidence_Action"]="REVIEW_EXACT_OLD_NSE_INDEX_ROW_AND_BROADCAST_DATE"
         return r
@@ -169,7 +169,17 @@ def snapshot(root,*,now=None):
     indexes={}
     for fy in SOURCE_YEARS:
         name=f"nse_legacy_financial_results_{fy}.csv"
-        indexes[name]=read_table(root/name)
+        end=legacy.LEGACY_YEARS[fy]
+        index=defaultdict(list)
+        for row in read_table(root/name):
+            sym=legacy.field(row,"Symbol").upper()
+            source=legacy.field(row,"XBRL URL")
+            # Keep EXACT same audited/year/annual/index eligibility as
+            # the previous linear scan, including duplicate row count.
+            if (sym and source and
+                    legacy.audited_annual_consolidated(row,end)[0]):
+                index[(sym,source)].append(row)
+        indexes[name]=index
     claimed=defaultdict(set)
     for item in manifest:
         if item["Symbol"] not in verified or item["Financial_Year"] not in SOURCE_YEARS:
