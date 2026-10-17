@@ -22,6 +22,9 @@ from research_monitor.paths import data_root
 from research_monitor.schedule import atomic_status
 
 STEPS = [
+    # Research only; no trade/shortlist auto-promotion.
+    ('official_mainboard_discovery',
+     [sys.executable, str(CODE_ROOT/'nse_mainboard_discovery.py')], 2*60),
     # NSE Indices' broad constituent industry reference; never 4-tier strict sector.
     ("official_index_industry_reference",
      [sys.executable, str(CODE_ROOT/'nse_index_industry_reference.py')], 2*60),
@@ -84,7 +87,15 @@ def summary(root: Path) -> dict:
         history_state = json.loads((root/'runtime'/'nse_eod_history_status.json').read_text(encoding='utf-8'))
     except (OSError, ValueError, TypeError):
         history_state = {}
+    try:
+        discovery = json.loads((root/'runtime'/'nse_mainboard_discovery_status.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        discovery = {}
     return {
+        'nse_mainboard_discovery_state': discovery.get('state', 'NOT_STARTED'),
+        'nse_mainboard_eq_count': int(discovery.get('mainboard_eq_count') or 0),
+        'outside_annual_baseline_watch_only': int(discovery.get('outside_annual_baseline') or 0),
+        'discovery_research_queue_count': int(discovery.get('research_queue_count') or 0),
         'annual_full_pass': int(annual.get('Year_Data_Quality_Pass') or 0),
         'two_year_baseline_pass': int(annual.get('Six_Core_Fields_Complete') or 0),
         'final_shortlist': int(final.get('Final_Shortlist_Count') or 0),
