@@ -78,6 +78,12 @@ STEPS = [
     ("archived_pdf_vs_original_annual_xbrl_diagnostic",
      [sys.executable, str(CODE_ROOT/'nse_annual_pdf_xbrl_crosscheck.py'),
       '--max-files', '2'], 5*60),
+    # Daily, purely offline FY2022-23/FY2023-24 source coverage queue
+    # for EVERY currently attested mainboard EQ symbol. Distinguishes
+    # archived PDF current/prior columns from separately original NSE XBRL.
+    ("legacy_two_fy_evidence_queue_no_orders",
+     [sys.executable, str(CODE_ROOT/'nse_legacy_annual_evidence_queue.py')],
+     3*60),
     ("sector_refresh",
      [sys.executable, str(CODE_ROOT/'nse_sector_classification.py'), '--limit', '300'], 15*60),
     ("quarterly_refresh",
